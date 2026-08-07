@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { db } from './src/db/index.ts';
 import { 
@@ -11,8 +10,7 @@ import {
 } from './src/db/schema.ts';
 import { eq } from 'drizzle-orm';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = process.cwd();
 
 async function startServer() {
   const app = express();

@@ -263,6 +263,15 @@ EOF
         systemctl restart nginx
         echo -e "${GREEN}✅ پیکربندی Nginx با موفقیت اعمال و وب‌سرور راه‌اندازی مجدد شد.${NC}"
         
+        # Enable SELinux Nginx Network Connection if applicable
+        if command -v getenforce &> /dev/null; then
+            if [ "$(getenforce)" = "Enforcing" ]; then
+                echo -e "${YELLOW}🛡️ دیوار امنیتی SELinux فعال است. در حال باز کردن دسترسی Nginx به وب‌سرویس...${NC}"
+                setsebool -P httpd_can_network_connect 1 &> /dev/null
+                echo -e "${GREEN}✅ دسترسی Nginx در SELinux باز شد.${NC}"
+            fi
+        fi
+        
         if [ -n "$APP_DOMAIN" ]; then
             ACCESS_URL="http://$APP_DOMAIN"
 
