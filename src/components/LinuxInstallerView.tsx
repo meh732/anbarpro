@@ -8,12 +8,15 @@ export const LinuxInstallerView: React.FC = () => {
 
   const [copiedCmd, setCopiedCmd] = useState(false);
 
-  const installCommand = `curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/public/deploy.sh | bash`;
+  const installCommand = `bash <(curl -Ls https://raw.githubusercontent.com/meh732/anbarpro/main/install.sh)`;
+  const gitCloneCommand = `git clone https://github.com/meh732/anbarpro.git && cd anbarpro && chmod +x deploy.sh && ./deploy.sh`;
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(installCommand);
-    setCopiedCmd(true);
-    setTimeout(() => setCopiedCmd(false), 2000);
+  const [copiedType, setCopiedType] = useState<'curl' | 'git' | null>(null);
+
+  const copyToClipboard = (text: string, type: 'curl' | 'git') => {
+    navigator.clipboard.writeText(text);
+    setCopiedType(type);
+    setTimeout(() => setCopiedType(null), 2000);
   };
 
   return (
@@ -46,57 +49,105 @@ export const LinuxInstallerView: React.FC = () => {
             <Terminal className="w-5 h-5" />
           </div>
           <h2 className="text-lg font-bold text-slate-900">
-            {isFa ? 'دستور نصب سریع (One-Line Install)' : 'Quick Install Command'}
+            {isFa ? 'روش‌های نصب خودکار روی سرور لینوکس' : 'Automated Linux Server Installation Methods'}
           </h2>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative group">
-          <div className="flex items-center justify-between mb-3 border-b border-slate-700/50 pb-3">
-            <div className="flex gap-1.5">
-              <div className="w-3 h-3 rounded-full bg-rose-500/80"></div>
-              <div className="w-3 h-3 rounded-full bg-amber-500/80"></div>
-              <div className="w-3 h-3 rounded-full bg-emerald-500/80"></div>
+        {/* Method 1: Curl */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+            {isFa ? 'روش اول: نصب مستقیم با Curl (تک خطی)' : 'Method 1: Direct installation via Curl (One-Liner)'}
+          </h3>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative group">
+            <div className="flex items-center justify-between mb-3 border-b border-slate-700/50 pb-3">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-rose-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-amber-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-emerald-500/80"></div>
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono">root@server:~#</span>
             </div>
-            <span className="text-[10px] text-slate-500 font-mono">root@server:~#</span>
-          </div>
-          
-          <code className="text-sm md:text-base font-mono text-emerald-400 block break-all leading-relaxed" dir="ltr">
-            {installCommand}
-          </code>
+            
+            <code className="text-sm md:text-base font-mono text-emerald-400 block break-all leading-relaxed" dir="ltr">
+              {installCommand}
+            </code>
 
-          <button
-            onClick={copyToClipboard}
-            className={`absolute top-4 ${isFa ? 'left-4' : 'right-4'} px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              copiedCmd 
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
-            }`}
-          >
-            {copiedCmd ? (
-              <>
-                <Check className="w-4 h-4" />
-                <span>{isFa ? 'کپی شد' : 'Copied'}</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4" />
-                <span>{isFa ? 'کپی دستور' : 'Copy'}</span>
-              </>
-            )}
-          </button>
+            <button
+              onClick={() => copyToClipboard(installCommand, 'curl')}
+              className={`absolute top-4 ${isFa ? 'left-4' : 'right-4'} px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                copiedType === 'curl'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                  : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
+              }`}
+            >
+              {copiedType === 'curl' ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>{isFa ? 'کپی شد' : 'Copied'}</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  <span>{isFa ? 'کپی دستور' : 'Copy'}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Method 2: Git Clone */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+            {isFa ? 'روش دوم: کلون کردن مخزن گیت و اجرای سناریو' : 'Method 2: Git Clone & Execute Scenario'}
+          </h3>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative group">
+            <div className="flex items-center justify-between mb-3 border-b border-slate-700/50 pb-3">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-rose-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-amber-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-emerald-500/80"></div>
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono">root@server:~#</span>
+            </div>
+            
+            <code className="text-sm md:text-base font-mono text-indigo-300 block break-all leading-relaxed" dir="ltr">
+              {gitCloneCommand}
+            </code>
+
+            <button
+              onClick={() => copyToClipboard(gitCloneCommand, 'git')}
+              className={`absolute top-4 ${isFa ? 'left-4' : 'right-4'} px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                copiedType === 'git'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                  : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
+              }`}
+            >
+              {copiedType === 'git' ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>{isFa ? 'کپی شد' : 'Copied'}</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  <span>{isFa ? 'کپی دستور' : 'Copy'}</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Note block */}
-        <div className="bg-amber-50 border border-amber-200/50 rounded-2xl p-5 flex items-start gap-4">
-          <Globe className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+        <div className="bg-emerald-50 border border-emerald-200/50 rounded-2xl p-5 flex items-start gap-4">
+          <Globe className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <h3 className="font-bold text-slate-900">
-              {isFa ? 'توجه:' : 'Note:'}
+              {isFa ? 'اطلاعات مخزن متصل شده:' : 'Connected Repository Information:'}
             </h3>
             <p className="text-xs md:text-sm text-slate-700 leading-relaxed">
               {isFa 
-                ? 'ابتدا باید سورس کد خود را از این پلتفرم دانلود کرده و در گیت‌هاب (GitHub) آپلود کنید. سپس آدرس گیت‌هاب خود را در دستور بالا جایگزین نمایید (به جای YOUR_USERNAME/YOUR_REPO).'
-                : 'First, export your code and upload it to GitHub. Then replace YOUR_USERNAME/YOUR_REPO in the command with your actual repository path.'}
+                ? 'کدهای فوق به صورت کاملاً زنده به مخزن رسمی شما در گیت‌هاب (https://github.com/meh732/anbarpro.git) متصل هستند. هر تغییری که روی این مخزن اعمال کنید، در زمان نصب مجدد روی سرورهای جدید فوراً اعمال خواهد شد.'
+                : 'The scripts above are linked directly to your official GitHub repository (https://github.com/meh732/anbarpro.git). Any updates pushed to this repository will be instantly available on new server deployments.'}
             </p>
           </div>
         </div>

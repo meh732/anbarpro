@@ -31,7 +31,17 @@ then
 fi
 
 # Move to the app directory (assuming we run this script from inside the repo, or we clone it)
-# If this is run via curl, we'd clone the repo here. For now, assuming we're in the directory.
+if [ ! -f "package.json" ]; then
+    echo "=> package.json not found in current directory. Cloning repository from GitHub..."
+    if [ -d "anbarpro" ]; then
+        echo "=> Existing directory 'anbarpro' found. Navigating into it..."
+        cd "anbarpro"
+    else
+        git clone https://github.com/meh732/anbarpro.git
+        cd "anbarpro"
+    fi
+fi
+
 APP_DIR=$(pwd)
 echo "=> Application directory: $APP_DIR"
 
