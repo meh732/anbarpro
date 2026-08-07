@@ -1,0 +1,3 @@
+sed -i 's/LayoutGrid, Bell, ChevronDown, LogOut, QrCode, AlertTriangle, Clock, CheckCircle/LayoutGrid, Bell, ChevronDown, LogOut, QrCode, AlertTriangle, Clock, CheckCircle, ArrowRight/g' src/components/Navbar.tsx
+
+sed -i "s/className=\"bg-slate-900 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg shadow-slate-900\/20 cursor-pointer hover:scale-105 active:scale-95\"/className=\"bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:from-violet-600 hover:to-fuchsia-600 transition-all shadow-lg shadow-fuchsia-500\/30 cursor-pointer hover:scale-105 active:scale-95\"/g" src/components/Navbar.tsx

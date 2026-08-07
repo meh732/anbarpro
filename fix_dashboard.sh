@@ -1,0 +1,2 @@
+sed -i "s/const { setActiveTab, hasTabPermission, items, purchaseRequests } = useApp();/const { setActiveTab, hasTabPermission, items, purchaseRequests, inventory } = useApp();/g" src/components/DashboardView.tsx
+sed -i "s/const totalQty = it.warehouses.reduce((sum, w) => sum + w.quantity, 0);/const totalQty = inventory.filter(i => i.itemId === it.id).reduce((s, c) => s + c.quantity, 0);/g" src/components/DashboardView.tsx

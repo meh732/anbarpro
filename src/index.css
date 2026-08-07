@@ -1,0 +1,290 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+    background-color: #f0f4f9;
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+    /* Ultra-luxurious static Apple fluid color gradient system - 100% lag-free */
+    background-image: 
+      radial-gradient(circle at 15% 15%, hsla(243, 100%, 82%, 0.22) 0%, transparent 45%),
+      radial-gradient(circle at 85% 15%, hsla(285, 100%, 84%, 0.20) 0%, transparent 45%),
+      radial-gradient(circle at 50% 85%, hsla(195, 100%, 81%, 0.24) 0%, transparent 50%),
+      radial-gradient(circle at 80% 85%, hsla(335, 100%, 84%, 0.18) 0%, transparent 40%),
+      radial-gradient(circle at 35% 50%, hsla(155, 100%, 81%, 0.16) 0%, transparent 45%);
+    background-attachment: fixed;
+    background-size: cover;
+    position: relative;
+    overflow-x: hidden;
+  }
+}
+
+/* Highly Organic Liquid Blobs with GPU-accelerated translate3d (No layout repaints!) */
+@keyframes floatBlob1 {
+  0% { transform: translate3d(0, 0, 0) scale(1) rotate(0deg); }
+  33% { transform: translate3d(50px, -60px, 0) scale(1.15) rotate(120deg); }
+  66% { transform: translate3d(-30px, 30px, 0) scale(0.9) rotate(240deg); }
+  100% { transform: translate3d(0, 0, 0) scale(1) rotate(360deg); }
+}
+
+@keyframes floatBlob2 {
+  0% { transform: translate3d(0, 0, 0) scale(1.1) rotate(0deg); }
+  33% { transform: translate3d(-60px, 60px, 0) scale(0.85) rotate(-120deg); }
+  66% { transform: translate3d(40px, -40px, 0) scale(1.1) rotate(-240deg); }
+  100% { transform: translate3d(0, 0, 0) scale(1.1) rotate(-360deg); }
+}
+
+@keyframes floatBlob3 {
+  0% { transform: translate3d(0, 0, 0) scale(0.9) rotate(0deg); }
+  50% { transform: translate3d(40px, 70px, 0) scale(1.2) rotate(180deg); }
+  100% { transform: translate3d(0, 0, 0) scale(0.9) rotate(360deg); }
+}
+
+/* Floating animation for smaller water droplets */
+@keyframes floatDroplet {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(10px, -15px, 0) scale(1.03); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.liquid-blob-1 {
+  animation: floatBlob1 25s infinite ease-in-out;
+  will-change: transform;
+}
+.liquid-blob-2 {
+  animation: floatBlob2 30s infinite ease-in-out;
+  will-change: transform;
+}
+.liquid-blob-3 {
+  animation: floatBlob3 22s infinite ease-in-out;
+  will-change: transform;
+}
+
+/* Realist Glass Water Droplet Effect */
+.glass-droplet {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px) saturate(190%);
+  -webkit-backdrop-filter: blur(8px) saturate(190%);
+  border-top: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-left: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 
+    inset 0 4px 6px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.06),
+    0 8px 20px -6px rgba(31, 41, 120, 0.1);
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  will-change: transform;
+}
+
+.glass-droplet::after {
+  content: '';
+  position: absolute;
+  top: 14%;
+  left: 14%;
+  width: 25%;
+  height: 25%;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 50%;
+  filter: blur(0.5px);
+}
+
+.droplet-anim-1 {
+  animation: floatDroplet 15s infinite ease-in-out;
+}
+.droplet-anim-2 {
+  animation: floatDroplet 18s infinite ease-in-out alternate;
+}
+.droplet-anim-3 {
+  animation: floatDroplet 16s infinite ease-in-out 2s;
+}
+
+/* Custom premium iOS Liquid Glass utilities with high performance */
+.glass-card {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(20px) saturate(210%);
+  -webkit-backdrop-filter: blur(20px) saturate(210%);
+  /* 3D Glossy Double-Border with Refractive Top Highlight */
+  border-top: 2px solid rgba(255, 255, 255, 0.85);
+  border-left: 2px solid rgba(255, 255, 255, 0.65);
+  border-right: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 28px;
+  box-shadow: 
+    0 15px 35px -12px rgba(31, 41, 120, 0.08),
+    0 4px 12px -2px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0px rgba(255, 255, 255, 0.95),
+    inset 0 -1.5px 3px rgba(255, 255, 255, 0.25);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.4s, box-shadow 0.4s;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Apple-style Specs: Hover Glint Reflection Sweep */
+.glass-card::before, .glass-btn-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1) 20%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.1) 80%,
+    transparent
+  );
+  transform: skewX(-25deg);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.glass-card:hover::before, .glass-btn-active:hover::before {
+  animation: glassGlint 1.1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes glassGlint {
+  0% { left: -150%; }
+  100% { left: 150%; }
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.58);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  border-left-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 
+    0 25px 50px -15px rgba(31, 41, 120, 0.12),
+    0 8px 20px -4px rgba(15, 23, 42, 0.05),
+    inset 0 2px 0px rgba(255, 255, 255, 0.98),
+    inset 0 -2px 4px rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px) scale(1.005);
+}
+
+/* Apple Instant Tap Response (Slight bounce scale + glass brightening) */
+.glass-card:active {
+  transform: scale(0.97) translateY(0);
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 
+    0 10px 20px -10px rgba(31, 41, 120, 0.08),
+    inset 0 1px 0px rgba(255, 255, 255, 0.95);
+  transition: transform 0.08s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card-dense {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(20px) saturate(220%);
+  -webkit-backdrop-filter: blur(20px) saturate(220%);
+  border-top: 2px solid rgba(255, 255, 255, 0.9);
+  border-left: 2px solid rgba(255, 255, 255, 0.75);
+  border-right: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 12px 40px rgba(31, 41, 120, 0.07),
+    inset 0 1.5px 0px rgba(255, 255, 255, 0.95);
+}
+
+/* Hyper-Realistic Water Drop / Shiny Active State with specular highlight */
+.glass-btn-active {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.9) 0%, rgba(124, 58, 237, 0.9) 100%);
+  backdrop-filter: blur(10px) saturate(180%);
+  -webkit-backdrop-filter: blur(10px) saturate(180%);
+  border-top: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-left: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 
+    0 12px 25px -6px rgba(79, 70, 229, 0.45),
+    0 4px 10px -4px rgba(79, 70, 229, 0.25),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.55),
+    inset 0 -1.5px 3px rgba(0, 0, 0, 0.15);
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.4s, box-shadow 0.4s;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-btn-active:hover {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.98) 0%, rgba(124, 58, 237, 0.98) 100%);
+  box-shadow: 
+    0 16px 30px -5px rgba(79, 70, 229, 0.6),
+    0 6px 14px -3px rgba(79, 70, 229, 0.3),
+    inset 0 2px 1px rgba(255, 255, 255, 0.7);
+  transform: translateY(-1px);
+}
+
+.glass-btn-active:active {
+  transform: scale(0.96) translateY(0);
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.95) 0%, rgba(124, 58, 237, 0.95) 100%);
+  box-shadow: 
+    0 6px 12px -3px rgba(79, 70, 229, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  transition: transform 0.08s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 
+    inset 0 2px 4px rgba(31, 41, 120, 0.04),
+    0 1px 2px rgba(255, 255, 255, 0.25);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-input:focus {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(99, 102, 241, 0.55);
+  box-shadow: 
+    0 0 0 4px rgba(99, 102, 241, 0.18),
+    0 4px 15px rgba(31, 41, 120, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 0.85);
+}
+
+.glass-dropdown {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(30px) saturate(210%);
+  -webkit-backdrop-filter: blur(30px) saturate(210%);
+  border-top: 1.5px solid rgba(255, 255, 255, 0.9);
+  border-left: 1.5px solid rgba(255, 255, 255, 0.75);
+  border-right: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 20px 45px -8px rgba(31, 41, 120, 0.15),
+    0 4px 12px rgba(15, 23, 42, 0.04),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.9);
+}
+
+/* Custom organic button click feedback */
+.ios-press {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.25s, box-shadow 0.25s;
+  position: relative;
+  overflow: hidden;
+}
+.ios-press:active {
+  transform: scale(0.95);
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.2); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.4); }
+
+/* Pulse animation for scanner */
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(400%); }
+}
+.animate-scan {
+  animation: scan-line 2s linear infinite;
+}
+
+@media print {
+  body { background: white !important; color: black !important; }
+  .no-print { display: none !important; }
+}

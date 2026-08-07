@@ -1,0 +1,10 @@
+{
+  "name": "سامانه مدیریت انبار، Cloud SQL و تولید قطعات الکترونیک انبار‌مه",
+  "description": "سامانه جامع تحت وب و دسکتاپ بر پایه دیتابیس Cloud SQL PostgreSQL، همراه با اسکریپت منوی نصب، آپدیت، حذف و بکاپ گیری هوشمند ویندوز و به اشتراک گذاری پورت در شبکه محلی",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

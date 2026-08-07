@@ -1,0 +1,384 @@
+// Types for ElectroStock Core - Electronic Components Warehouse & Production Management
+
+export type ItemType = 
+  | 'RawMaterial'   // مواد اولیه
+  | 'Component'     // قطعه
+  | 'SemiFinished'  // نیمه ساخته
+  | 'Finished'      // محصول نهایی
+  | 'Tool'          // ابزار
+  | 'Consumable';   // مصرفی
+
+export interface Item {
+  id: string;
+  code: string;
+  name: string;
+  group: string;
+  subGroup: string;
+  unit: string; // e.g. عدد, متر, گرم, رول, پک
+  barcode: string;
+  description: string;
+  minStock: number;
+  maxStock: number;
+  itemType: ItemType;
+  unitPrice: number; // قیمت واحد به تومان
+  locationInRack?: string; // قفسه و ردیف
+  imageUrl?: string;
+  createdAt: string;
+}
+
+export interface ItemGroup {
+  id: string;
+  name: string;
+  code?: string;
+  description?: string;
+  parentId?: string; // برای ساختار شاخه درختی گروه‌بندی کالاها
+  subGroups: string[];
+}
+
+export type WarehouseType = 
+  | 'Central'        // انبار مرکزی
+  | 'Production'     // انبار تولید (قفسه‌ها = پروژه‌ها)
+  | 'SemiFinished'   // انبار نیمه ساخته
+  | 'FinishedGoods'  // انبار محصول نهایی
+  | 'QC'             // انبار کنترل کیفیت (QC)
+  | 'Contractor'     // انبار تحویل به پیمانکار
+  | 'Scrap';         // انبار ضایعات
+
+export interface Warehouse {
+  id: string;
+  code: string;
+  name: string;
+  group?: string; // گروه انبار (مثلاً انبار‌های مرکزی، انبار‌های تولید، انبار‌های ضایعات)
+  subGroup?: string; // زیرگروه انبار (مثلاً قطعات SMD، قطعات DIP، ملزومات بسته‌بندی)
+  description: string;
+  manager: string;
+  parentId?: string; // شناسه انبار مادر برای ساختار درختی
+  warehouseType?: WarehouseType;
+  linkedProjectId?: string; // ارتباط قفسه یا بخش انبار با پروژه مشتری
+  isQuarantine?: boolean;
+  isScrap?: boolean;
+  isFinishedGoods?: boolean;
+  location: string;
+}
+
+export interface InventoryBalance {
+  warehouseId: string;
+  itemId: string;
+  quantity: number;
+  reservedQuantity: number;
+  lastUpdated: string;
+}
+
+export type StockInType = 'Purchase' | 'ProductionReturn' | 'CustomerReturn' | 'TransferIn' | 'StockAdjustment';
+
+export interface StockInDoc {
+  id: string;
+  docNumber: string;
+  date: string;
+  supplier: string;
+  registeredBy: string;
+  warehouseId: string;
+  entryType: StockInType;
+  items: {
+    itemId: string;
+    quantity: number;
+    unitPrice: number;
+    notes?: string;
+  }[];
+  notes?: string;
+  status: 'Draft' | 'Confirmed';
+  attachments?: string[];
+  createdAt: string;
+}
+
+export type StockOutType = 'ProjectConsumption' | 'TransferOut' | 'Sale' | 'Scrap' | 'StockAdjustment';
+
+export interface StockOutDoc {
+  id: string;
+  docNumber: string;
+  date: string;
+  recipient: string;
+  registeredBy: string;
+  warehouseId: string;
+  exitType: StockOutType;
+  items: {
+    itemId: string;
+    quantity: number;
+    unitPrice: number;
+    notes?: string;
+  }[];
+  notes?: string;
+  status: 'Draft' | 'Confirmed';
+  attachments?: string[];
+  createdAt: string;
+}
+
+export type TransferStatus = 'Pending' | 'InTransit' | 'Completed' | 'Rejected';
+
+export interface WarehouseTransfer {
+  id: string;
+  docNumber: string;
+  date: string;
+  sourceWarehouseId: string;
+  targetWarehouseId: string;
+  registeredBy: string;
+  handlerName: string;
+  status: TransferStatus;
+  items: {
+    itemId: string;
+    quantity: number;
+  }[];
+  notes?: string;
+  createdAt: string;
+}
+
+export type PurchaseRequestStatus = 'Pending' | 'Approved_InStock' | 'Purchase_Needed' | 'Manufacturing_Needed' | 'Fulfilled' | 'Rejected';
+
+export interface PurchaseRequest {
+  id: string;
+  requestNumber: string;
+  date: string;
+  requestingUnit: string;
+  requesterName: string;
+  items: {
+    itemId: string;
+    quantity: number;
+    reason: string;
+  }[];
+  status: PurchaseRequestStatus;
+  urgency: 'Normal' | 'High' | 'Immediate';
+  notes?: string;
+  createdAt: string;
+}
+
+export type ProjectStatus = 'Planning' | 'Active' | 'Paused' | 'Testing' | 'Completed' | 'Cancelled';
+
+export interface ProjectStep {
+  id: string;
+  stepNumber: number;
+  stepCode?: string; // e.g. "1", "1.1", "1.1.1" برای نمایش کد مرحله شاخه درختی
+  parentId?: string; // شناسه مرحله مادر برای ساختار شاخه درختی
+  name: string; // e.g. مونتاژ برد, لحیم‌کاری SMD, تست نهایی, بسته‌بندی, تحویل
+  title?: string;
+  description?: string;
+  status: 'Pending' | 'InProgress' | 'Completed';
+  assignedOperators: string[]; // names or IDs
+  isOutsourced?: boolean; // آیا به پیمانکار برونسپاری شده؟
+  contractorName?: string; // نام پیمانکار
+  contractorId?: string;
+  contractorCost?: number; // هزینه پیمانکاری
+  outsourcingCost?: number;
+  outputItemId?: string; // کد یا شناسه کالای نیمه‌ساخته خروجی این مرحله
+  outputQuantity?: number; // تعداد تولید شده نیمه‌ساخته
+  targetWarehouseId?: string; // انبار مقصد پس از اتمام این مرحله
+  completedQuantity?: number;
+  completedDate?: string;
+  subSteps?: ProjectStep[];
+  children?: ProjectStep[];
+}
+
+export interface StockCountingItem {
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  barcode: string;
+  unit: string;
+  locationInRack?: string;
+  systemQuantity: number;  // موجودی سیستمی
+  physicalQuantity: number; // موجودی واقعی شمارش شده (که معمولا برابر finalCount است)
+  firstCount?: number;      // شمارش اول
+  secondCount?: number;     // شمارش دوم
+  finalCount?: number;      // شمارش مبنای نهایی
+  variance: number;         // مغایرت (موجودی واقعی - سیستمی)
+  notes?: string;
+  countedBy?: string;
+  countedAt?: string;
+}
+
+export interface StockCountingSession {
+  id: string;
+  sessionNumber: string;
+  title: string;
+  warehouseId: string;
+  warehouseName: string;
+  startDate: string;
+  endDate?: string;
+  status: 'InPlanning' | 'InCounting' | 'PendingReview' | 'AppliedAdjustments' | 'Closed';
+  registeredBy: string;
+  notes?: string;
+  items: StockCountingItem[];
+  createdAt: string;
+  filterType?: 'All' | 'Group' | 'Project' | 'Location';
+  filterValue?: string;
+}
+
+export interface Contractor {
+  id: string;
+  code: string;
+  name: string;
+  contactPerson: string;
+  phone: string;
+  specialty: string; // e.g. مونتاژ SMD, آبکاری, قالب‌سازی, تولید PCB
+  address: string;
+  activeContractsCount: number;
+}
+
+export interface Project {
+  id: string;
+  code: string;
+  name: string;
+  client: string;
+  startDate: string;
+  endDate: string;
+  status: ProjectStatus;
+  progressPercent: number;
+  projectManager: string;
+  targetFinishedItemId: string;
+  targetQuantity: number;
+  producedQuantity: number;
+  steps: ProjectStep[];
+  description?: string;
+}
+
+export interface BOMItem {
+  itemId: string;
+  quantityNeeded: number; // per 1 finished item
+  unit: string;
+  scrapAllowancePercent?: number; // درصد ضایعات پیش‌بینی شده
+}
+
+export interface BOM {
+  id: string;
+  finishedItemId: string; // کالای نهایی یا نیمه‌ساخته
+  name: string;
+  version: string; // e.g. v1.2
+  items: BOMItem[];
+  description?: string;
+  isActive: boolean;
+  createdAt: string;
+  projectId?: string; // شناسه پروژه مربوطه
+  projectStepId?: string; // شناسه مرحله پروژه تخصیص‌یافته
+}
+
+export interface MaterialHandover {
+  id: string;
+  docNumber: string;
+  shiftSupervisor: string;
+  salonName: string;
+  operatorId: string;
+  operatorName: string;
+  projectId: string;
+  stepId: string;
+  machineCode?: string;
+  date: string;
+  startTime: string;
+  sourceWarehouseId: string;
+  items: {
+    itemId: string;
+    itemCode: string;
+    itemName: string;
+    unit: string;
+    quantity: number;
+    notes?: string;
+  }[];
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ProductionLog {
+  id: string;
+  operatorId: string;
+  operatorName: string;
+  shift: 'Morning' | 'Evening' | 'Night';
+  projectId: string;
+  stepId: string;
+  finishedItemId: string;
+  quantityProduced: number;
+  quantityScrapped: number;
+  date: string;
+  time: string;
+  machineCode: string;
+  sourceWarehouseId: string; // انبار کسر مواد اولیه
+  targetWarehouseId: string; // انبار افزودن محصول
+  notes?: string;
+  registeredBy: string;
+  createdAt: string;
+}
+
+export interface Operator {
+  id: string;
+  code: string;
+  name: string;
+  shift: 'Morning' | 'Evening' | 'Night';
+  role: string;
+  activeProjects: string[];
+  totalProducedPieces: number;
+  totalWorkingHours: number;
+  status: 'Active' | 'Off' | 'OnLeave';
+  avatarUrl?: string;
+}
+
+export interface TraceabilityEvent {
+  id: string;
+  itemId: string;
+  timestamp: string;
+  eventType: 'StockIn' | 'Transfer' | 'ProjectConsumption' | 'ProductionOutput' | 'StockOut' | 'Scrap' | 'Adjustment';
+  sourceWarehouseId?: string;
+  targetWarehouseId?: string;
+  docNumber?: string;
+  projectId?: string;
+  operatorName?: string;
+  quantity: number;
+  details: string;
+  performedBy: string;
+}
+
+export type UserRole = 
+  | 'SystemAdmin'      // مدیر سیستم
+  | 'PlantManager'     // مدیر کارخانه
+  | 'WarehouseManager' // مدیر انبار
+  | 'Storekeeper'      // انباردار
+  | 'ShiftLead'        // سرشیفت
+  | 'Operator'         // اپراتور
+  | 'Purchasing'       // واحد خرید
+  | 'QC'               // کنترل کیفیت
+  | 'ProjectManager';  // مدیر پروژه
+
+export interface User {
+  id: string;
+  username: string;
+  password?: string;
+  fullName: string;
+  role: UserRole;
+  department: string;
+  email: string;
+  avatarUrl?: string;
+  allowedTabs?: string[]; // Array of tab IDs or ['*'] for all access
+  isActive?: boolean;
+  canAdd?: boolean;      // امکان ایجاد و افزودن داده جدید
+  canEdit?: boolean;     // امکان ویرایش اطلاعات
+  canDelete?: boolean;   // امکان حذف اسناد و کالاها
+  canExport?: boolean;   // امکان دریافت خروجی اکسل و بکاپ
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  role: UserRole;
+  action: string;
+  targetEntity: string;
+  targetId: string;
+  details: string;
+}
+
+export interface SystemNotification {
+  id: string;
+  type: 'LowStock' | 'ProjectFinished' | 'RequestSubmitted' | 'TransferAlert' | 'BOMShortage' | 'Info';
+  title: string;
+  message: string;
+  date: string;
+  isRead: boolean;
+  linkTab?: string;
+}

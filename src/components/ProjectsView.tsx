@@ -1,0 +1,2120 @@
+import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import { Project, ProjectStatus, ProjectStep } from '../types';
+import { 
+  Factory, Plus, CheckCircle2, Clock, PlayCircle, 
+  ChevronDown, ChevronUp, User, Users, Calendar, X, GitBranch, Building2,
+  Trash2, ArrowUp, ArrowDown, Cpu, ArrowRightLeft, AlertTriangle, Layers,
+  Boxes, Warehouse, Check, FileCheck, ShieldAlert, Sparkles,
+  PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3
+} from 'lucide-react';
+
+// Helper Component for True 2D Graphical Organizational Tree Diagram with Connecting Branch Lines
+const GraphicalOrgTreeNode: React.FC<{
+  step: ProjectStep;
+  projectId: string;
+  codePrefix: string;
+  items: any[];
+  boms: any[];
+  contractors: any[];
+  statusFilter: string;
+  typeFilter: string;
+  updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
+  setAddingSubStepTo: (val: { projectId: string; parentStepId: string } | null) => void;
+}> = ({
+  step,
+  projectId,
+  codePrefix,
+  items,
+  boms,
+  contractors,
+  statusFilter,
+  typeFilter,
+  updateProjectStep,
+  setAddingSubStepTo,
+}) => {
+  if (statusFilter !== 'all' && step.status !== statusFilter) return null;
+  if (typeFilter === 'outsourced' && !step.isOutsourced && !step.contractorId) return null;
+  if (typeFilter === 'internal' && (step.isOutsourced || step.contractorId)) return null;
+
+  const subSteps = step.subSteps || [];
+  const outputItem = items.find(i => i.id === step.outputItemId);
+  const matchedBom = boms.find(b => b.finishedItemId === step.outputItemId && b.isActive);
+  const contractor = contractors.find(c => c.id === step.contractorId);
+
+  return (
+    <div className="flex flex-col items-center relative">
+      {/* Step Card Box */}
+      <div className={`w-64 p-3 rounded-2xl border transition-all duration-200 shadow-sm relative z-10 hover:shadow-md hover:scale-[1.02] ${
+        step.status === 'Completed'
+          ? 'bg-emerald-50 border-emerald-300 text-emerald-950 ring-2 ring-emerald-200'
+          : step.status === 'InProgress'
+          ? 'bg-indigo-50 border-indigo-300 text-indigo-950 ring-2 ring-indigo-300'
+          : 'bg-white border-slate-300 text-slate-800'
+      }`}>
+        <div className="flex items-center justify-between gap-1 mb-1.5">
+          <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-200">
+            مرحله {codePrefix}
+          </span>
+
+          {step.status === 'Completed' ? (
+            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[9px] flex items-center gap-1 border border-emerald-300">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              تکمیل شد
+            </span>
+          ) : step.status === 'InProgress' ? (
+            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-bold text-[9px] flex items-center gap-1 border border-indigo-300 animate-pulse">
+              <Clock className="w-3 h-3 text-indigo-600 animate-spin" />
+              در حال انجام
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-bold text-[9px] flex items-center gap-1 border border-slate-200">
+              <PlayCircle className="w-3 h-3 text-slate-400" />
+              در انتظار
+            </span>
+          )}
+        </div>
+
+        <h5 className="font-bold text-xs text-slate-900 line-clamp-2 min-h-[1.75rem]">
+          {step.name || step.title}
+        </h5>
+
+        <div className="space-y-1 my-2 text-[10px]">
+          {step.isOutsourced || step.contractorId ? (
+            <div className="bg-amber-100/90 text-amber-900 px-2 py-1 rounded-lg font-bold border border-amber-300 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <Building2 className="w-3 h-3 text-amber-700 shrink-0" />
+                {step.contractorName || contractor?.name || 'پیمانکار برون‌سپاری'}
+              </span>
+              {(step.outsourcingCost || step.contractorCost) ? (
+                <span className="font-mono text-amber-800 font-extrabold">
+                  {(step.outsourcingCost || step.contractorCost || 0).toLocaleString('fa-IR')}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <div className="bg-slate-100 text-slate-700 px-2 py-1 rounded-lg font-medium flex items-center gap-1">
+              <Users className="w-3 h-3 text-indigo-600 shrink-0" />
+              <span className="truncate">{step.assignedOperators?.join(', ') || 'خط مونتاژ داخلی'}</span>
+            </div>
+          )}
+
+          {outputItem && (
+            <div className="bg-purple-50 text-purple-900 px-2 py-1 rounded-lg border border-purple-200 flex items-center justify-between">
+              <span className="flex items-center gap-1 truncate font-bold">
+                <Boxes className="w-3 h-3 text-purple-600 shrink-0" />
+                {outputItem.name}
+              </span>
+              <span className="font-mono font-bold text-purple-800 bg-purple-100 px-1 py-0.2 rounded text-[9px]">
+                {step.outputQuantity || 1} {outputItem.unit}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-slate-200/80">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              title="در حال انجام"
+              onClick={() => updateProjectStep(projectId, step.id, 'InProgress')}
+              className={`p-1 rounded text-[9px] font-bold transition-all ${
+                step.status === 'InProgress' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              اجرا
+            </button>
+            <button
+              type="button"
+              title="تکمیل شده"
+              onClick={() => updateProjectStep(projectId, step.id, 'Completed')}
+              className={`p-1 rounded text-[9px] font-bold transition-all ${
+                step.status === 'Completed' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              تکمیل
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setAddingSubStepTo({ projectId, parentStepId: step.id })}
+            className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-bold flex items-center gap-0.5 border border-indigo-200"
+          >
+            <Plus className="w-3 h-3 text-indigo-600" />
+            <span>زیرمرحله</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Sub-steps Trunk line connecting down */}
+      {subSteps.length > 0 && (
+        <div className="w-0.5 h-6 bg-indigo-500 my-0 relative z-0"></div>
+      )}
+
+      {/* Sub-steps Children Branch Row */}
+      {subSteps.length > 0 && (
+        <div className="relative flex justify-center pt-6 gap-6">
+          {/* Horizontal Connecting Branch Line Spanning Across Children */}
+          {subSteps.length > 1 && (
+            <div className="absolute top-0 left-32 right-32 h-0.5 bg-indigo-400 z-0"></div>
+          )}
+
+          {subSteps.map((sub, idx) => (
+            <div key={sub.id} className="flex flex-col items-center relative">
+              {/* Vertical line connecting from horizontal branch line down to child card */}
+              <div className="absolute -top-6 w-0.5 h-6 bg-indigo-400 z-0"></div>
+
+              <GraphicalOrgTreeNode
+                step={sub}
+                projectId={projectId}
+                codePrefix={`${codePrefix}.${idx + 1}`}
+                items={items}
+                boms={boms}
+                contractors={contractors}
+                statusFilter={statusFilter}
+                typeFilter={typeFilter}
+                updateProjectStep={updateProjectStep}
+                setAddingSubStepTo={setAddingSubStepTo}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Helper Recursive Component for Unlimited Depth Step Tree Rendering
+const RecursiveStepCard: React.FC<{
+  step: ProjectStep;
+  projectId: string;
+  depth?: number;
+  stepCodeStr?: string;
+  items: any[];
+  boms: any[];
+  contractors: any[];
+  updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
+  setAddingSubStepTo: (val: { projectId: string; parentStepId: string } | null) => void;
+}> = ({
+  step,
+  projectId,
+  depth = 0,
+  stepCodeStr = '1',
+  items,
+  boms,
+  contractors,
+  updateProjectStep,
+  setAddingSubStepTo,
+}) => {
+  const outputItem = items.find(i => i.id === step.outputItemId);
+  const matchedBom = boms.find(b => b.finishedItemId === step.outputItemId && b.isActive);
+
+  return (
+    <div className={`p-3 sm:p-3.5 rounded-2xl border space-y-2.5 transition-all relative ${
+      depth > 0 ? 'mr-2 sm:mr-3 border-r border-indigo-500/30 bg-slate-50/80 shadow-2xs' : ''
+    } ${
+      step.status === 'Completed' 
+        ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900' 
+        : step.status === 'InProgress'
+        ? 'bg-indigo-50/90 border-indigo-200 text-indigo-900 shadow-xs ring-1 ring-indigo-300'
+        : 'bg-white border-slate-200 text-slate-700'
+    }`}>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+          مرحله {stepCodeStr}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {step.status === 'Completed' ? (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              تکمیل شد
+            </span>
+          ) : step.status === 'InProgress' ? (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+              <Clock className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
+              در حال انجام
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+              <PlayCircle className="w-3.5 h-3.5 text-slate-400" />
+              در انتظار
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Step Title */}
+      <div className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">
+        {step.name || step.title}
+      </div>
+
+      {/* Details & Output Item / BOM */}
+      <div className="text-[11px] space-y-1.5 pt-1">
+        {step.isOutsourced || step.contractorId ? (
+          <div className="text-amber-800 font-bold flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 text-[10px]">
+            <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span>پیمانکار برون‌سپاری: <strong>{step.contractorName || contractors.find(c => c.id === step.contractorId)?.name || 'پیمانکار مجری'}</strong></span>
+          </div>
+        ) : (
+          <div className="text-slate-500 text-[10px]">
+            مجری / اپراتور: <span className="font-semibold text-slate-800">{step.assignedOperators?.join(', ') || 'داخلی کارخانه'}</span>
+          </div>
+        )}
+
+        {/* Output Item & Linked BOM status */}
+        {outputItem && (
+          <div className="p-2 bg-amber-50/80 text-amber-900 border border-amber-200/90 rounded-xl space-y-1 text-[10px]">
+            <div className="font-bold flex items-center gap-1.5">
+              <Boxes className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>خروجی نیمه‌ساخته/قطعه: <strong className="text-amber-950">{outputItem.name}</strong></span>
+              {step.outputQuantity && <span className="font-mono text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded font-bold">({step.outputQuantity} {outputItem.unit})</span>}
+            </div>
+            {matchedBom && Array.isArray(matchedBom.items) ? (
+              <div className="text-[10px] text-emerald-800 font-bold flex items-center gap-1 bg-emerald-100/60 p-1 rounded-md">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>فرمول ساخت BOM فعال ({matchedBom.items.length} قلم قطعه)</span>
+              </div>
+            ) : (
+              <div className="text-[10px] text-amber-800 font-medium flex items-center gap-1 bg-amber-100/60 p-1 rounded-md">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>فرمول BOM ثبت نشده است</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Recursive SubSteps Render (Unlimited Depth) */}
+      {step.subSteps && step.subSteps.length > 0 && (
+        <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
+          <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
+            <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
+            <span>زیرمراحل ({step.subSteps.length} زیرشاخه):</span>
+          </div>
+          <div className="space-y-2 pr-1">
+            {step.subSteps.map((sub, sIdx) => (
+              <RecursiveStepCard
+                key={sub.id}
+                step={sub}
+                projectId={projectId}
+                depth={depth + 1}
+                stepCodeStr={`${stepCodeStr}.${sIdx + 1}`}
+                items={items}
+                boms={boms}
+                contractors={contractors}
+                updateProjectStep={updateProjectStep}
+                setAddingSubStepTo={setAddingSubStepTo}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action Bar */}
+      <div className="pt-2 flex flex-col gap-1.5">
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => updateProjectStep(projectId, step.id, 'InProgress')}
+            className={`flex-1 py-1.5 rounded-xl text-[10px] font-bold transition-all active:scale-95 ${
+              step.status === 'InProgress' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            در حال اجرا
+          </button>
+          <button
+            type="button"
+            onClick={() => updateProjectStep(projectId, step.id, 'Completed')}
+            className={`flex-1 py-1.5 rounded-xl text-[10px] font-bold transition-all active:scale-95 ${
+              step.status === 'Completed' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            تکمیل شد
+          </button>
+        </div>
+        
+        <button
+          type="button"
+          onClick={() => setAddingSubStepTo({ projectId, parentStepId: step.id })}
+          className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all border border-indigo-200 active:scale-95"
+        >
+          <Plus className="w-3.5 h-3.5 text-indigo-600" />
+          <span>افزودن زیرمرحله جدید</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export const ProjectsView: React.FC = () => {
+  const { 
+    projects, items, boms, warehouses, inventory, contractors, 
+    addProject, updateProjectStep, addProjectSubStep, createTransfer, language 
+  } = useApp();
+
+  const isFa = language === 'fa';
+
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(projects[0]?.id || null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [addingSubStepTo, setAddingSubStepTo] = useState<{ projectId: string; parentStepId: string } | null>(null);
+
+  // BOM Explosion Modal state
+  const [bomExplosionProject, setBomExplosionProject] = useState<Project | null>(null);
+
+  // Tree Diagram & Management Reports Modal state
+  const [treeReportProject, setTreeReportProject] = useState<Project | null>(null);
+  const [treeActiveTab, setTreeActiveTab] = useState<'tree' | 'reports' | 'wbs'>('tree');
+  const [treeStatusFilter, setTreeStatusFilter] = useState<'all' | 'Completed' | 'InProgress' | 'Pending'>('all');
+  const [treeTypeFilter, setTreeTypeFilter] = useState<'all' | 'outsourced' | 'internal'>('all');
+  const [treeZoom, setTreeZoom] = useState<number>(1);
+
+  const flattenProjectSteps = (steps: ProjectStep[] = [], prefix = '1', depth = 0): Array<{ step: ProjectStep; code: string; depth: number }> => {
+    let list: Array<{ step: ProjectStep; code: string; depth: number }> = [];
+    if (!steps || !Array.isArray(steps)) return list;
+    steps.forEach((s, idx) => {
+      if (!s) return;
+      const code = prefix ? `${prefix}.${idx + 1}` : `${idx + 1}`;
+      list.push({ step: s, code, depth });
+      if (s.subSteps && Array.isArray(s.subSteps) && s.subSteps.length > 0) {
+        list = list.concat(flattenProjectSteps(s.subSteps, code, depth + 1));
+      }
+    });
+    return list;
+  };
+
+  const [subStepTitle, setSubStepTitle] = useState('');
+  const [subStepOutputItemId, setSubStepOutputItemId] = useState('');
+  const [subStepOutputQty, setSubStepOutputQty] = useState<number>(1);
+  const [subStepContractorId, setSubStepContractorId] = useState('');
+  const [subStepCost, setSubStepCost] = useState(0);
+
+  // Form State
+  const [code, setCode] = useState(`PRJ-2026-P${Math.floor(10 + Math.random() * 90)}`);
+  const [name, setName] = useState('');
+  const [client, setClient] = useState('');
+  const [startDate, setStartDate] = useState(new Date().toLocaleDateString('fa-IR'));
+  const [endDate, setEndDate] = useState('1405/09/30');
+  const [projectManager, setProjectManager] = useState('مهندس رضایی');
+  const [targetFinishedItemId, setTargetFinishedItemId] = useState(items.find(i => i.itemType === 'Finished')?.id || items[0]?.id || '');
+  const [targetQuantity, setTargetQuantity] = useState(100);
+  const [description, setDescription] = useState('');
+
+  // Custom Steps Form State (With Output Items & Default Step 1: Material Transfer)
+  const defaultInitialSteps = [
+    { 
+      id: 'step-init-1', 
+      name: 'تحویل و تخصیص مواد اولیه از انبار مرکزی به قفسه پروژه در خط تولید', 
+      operator: 'انباردار انبار مرکزی', 
+      isOutsourced: false,
+      outputItemId: '' 
+    },
+    { 
+      id: 'step-init-2', 
+      name: 'مونتاژ برد الکترونیکی (مونتاژ SMD و لحیم‌کاری)', 
+      operator: 'تیم مونتاژ الکترونیک', 
+      isOutsourced: false,
+      outputItemId: items.find(i => i.itemType === 'SemiFinished')?.id || ''
+    },
+    { 
+      id: 'step-init-3', 
+      name: 'تست عملکردی، کالیبراسیون و کنترل کیفیت QC', 
+      operator: 'تکنیسین تست و QC', 
+      isOutsourced: false,
+      outputItemId: ''
+    },
+    { 
+      id: 'step-init-4', 
+      name: 'مونتاژ مکانیکی در قاب، بسته‌بندی و تحویل به انبار محصول نهایی', 
+      operator: 'اپراتور مونتاژ نهایی', 
+      isOutsourced: false,
+      outputItemId: items.find(i => i.itemType === 'Finished')?.id || ''
+    },
+  ];
+  const [customSteps, setCustomSteps] = useState(defaultInitialSteps);
+
+  const handleOpenAdd = () => {
+    setCode(`PRJ-2026-P${Math.floor(10 + Math.random() * 90)}`);
+    setName('');
+    setClient('');
+    const semiItem = items.find(i => i.itemType === 'SemiFinished')?.id || '';
+    const finItem = targetFinishedItemId || items.find(i => i.itemType === 'Finished')?.id || '';
+
+    setCustomSteps([
+      { 
+        id: `step-${Date.now()}-1`, 
+        name: 'تحویل و تخصیص قطعات از انبار مرکزی به قفسه پروژه در خط تولید', 
+        operator: 'انباردار انبار مرکزی', 
+        isOutsourced: false,
+        outputItemId: ''
+      },
+      { 
+        id: `step-${Date.now()}-2`, 
+        name: 'مونتاژ برد الکترونیکی (مونتاژ SMD و لحیم‌کاری)', 
+        operator: 'تیم مونتاژ الکترونیک', 
+        isOutsourced: false,
+        outputItemId: semiItem
+      },
+      { 
+        id: `step-${Date.now()}-3`, 
+        name: 'تست عملکردی، برنامه‌ریزی و کنترل کیفیت QC', 
+        operator: 'تکنیسین کنترل کیفیت', 
+        isOutsourced: false,
+        outputItemId: ''
+      },
+      { 
+        id: `step-${Date.now()}-4`, 
+        name: 'مونتاژ مکانیکی، بسته‌بندی و تحویل نهایی به انبار محصول', 
+        operator: 'اپراتور مونتاژ نهایی', 
+        isOutsourced: false,
+        outputItemId: finItem
+      },
+    ]);
+    setIsModalOpen(true);
+  };
+
+  const handleAddStepRow = () => {
+    setCustomSteps(prev => [
+      ...prev,
+      {
+        id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        name: '',
+        operator: 'اپراتور خط',
+        isOutsourced: false,
+      }
+    ]);
+  };
+
+  const handleRemoveStepRow = (id: string) => {
+    if (customSteps.length <= 1) {
+      alert('پروژه باید حداقل دارای ۱ مرحله باشد.');
+      return;
+    }
+    setCustomSteps(prev => prev.filter(s => s.id !== id));
+  };
+
+  const handleUpdateStepRow = (id: string, field: string, value: any) => {
+    setCustomSteps(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      return { ...s, [field]: value };
+    }));
+  };
+
+  const handleMoveStepRow = (index: number, direction: 'up' | 'down') => {
+    if ((direction === 'up' && index === 0) || (direction === 'down' && index === customSteps.length - 1)) return;
+    const newSteps = [...customSteps];
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    const temp = newSteps[index];
+    newSteps[index] = newSteps[targetIdx];
+    newSteps[targetIdx] = temp;
+    setCustomSteps(newSteps);
+  };
+
+  const handleAddSubStep = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addingSubStepTo || !subStepTitle.trim()) return;
+
+    const isOutsourced = !!subStepContractorId;
+    const selectedCont = contractors.find(c => c.id === subStepContractorId);
+
+    addProjectSubStep(addingSubStepTo.projectId, addingSubStepTo.parentStepId, {
+      title: subStepTitle.trim(),
+      name: subStepTitle.trim(),
+      stepNumber: 1,
+      status: 'Pending',
+      assignedOperators: isOutsourced ? [selectedCont?.name || 'پیمانکار برون‌سپاری'] : ['تیم مونتاژ داخلی'],
+      isOutsourced,
+      contractorId: subStepContractorId || undefined,
+      contractorName: selectedCont?.name,
+      outsourcingCost: subStepCost || undefined,
+      outputItemId: subStepOutputItemId || undefined,
+      outputQuantity: subStepOutputQty || undefined,
+    });
+
+    setAddingSubStepTo(null);
+    setSubStepTitle('');
+    setSubStepOutputItemId('');
+    setSubStepOutputQty(1);
+    setSubStepContractorId('');
+    setSubStepCost(0);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !client) return;
+
+    if (customSteps.length === 0) {
+      alert('لطفا حداقل یک مرحله برای پروژه تعریف کنید.');
+      return;
+    }
+
+    const stepsToSave = customSteps.map((st, idx) => {
+      const selectedCont = contractors.find(c => c.id === st.contractorId);
+      const isOut = st.isOutsourced;
+      return {
+        id: `s-${Date.now()}-${idx + 1}`,
+        stepNumber: idx + 1,
+        stepCode: `${idx + 1}`,
+        name: st.name.trim() || `مرحله ${idx + 1}`,
+        title: st.name.trim() || `مرحله ${idx + 1}`,
+        status: 'Pending' as const,
+        assignedOperators: isOut ? [selectedCont?.name || 'پیمانکار برون‌سپاری'] : [st.operator || 'اپراتور خط'],
+        isOutsourced: isOut,
+        contractorId: st.contractorId,
+        contractorName: selectedCont?.name,
+        outsourcingCost: st.outsourcingCost,
+        outputItemId: st.outputItemId || undefined,
+      };
+    });
+
+    addProject({
+      code,
+      name,
+      client,
+      startDate,
+      endDate,
+      status: 'Active',
+      progressPercent: 0,
+      projectManager,
+      targetFinishedItemId,
+      targetQuantity,
+      producedQuantity: 0,
+      description,
+      steps: stepsToSave,
+    });
+
+    alert(`پروژه جدید با ${stepsToSave.length} مرحله سفارشی با موفقیت تعریف گردید.`);
+    setIsModalOpen(false);
+  };
+
+  // Helper for Multi-Level BOM Explosion with Scrap Allowance
+  interface RequiredMaterialItem {
+    itemId: string;
+    itemCode: string;
+    itemName: string;
+    unit: string;
+    quantityPerUnit: number;
+    scrapPercent: number;
+    totalNeededWithScrap: number;
+    centralStock: number;
+    projectRackStock: number;
+    shortage: number;
+    isSemiFinished: boolean;
+  }
+
+  const getCalculatedProjectBOM = (proj: Project): RequiredMaterialItem[] => {
+    const result: Map<string, RequiredMaterialItem> = new Map();
+    if (!proj) return [];
+
+    const explode = (itemId: string, currentTargetQty: number, visited = new Set<string>()) => {
+      if (!itemId || visited.has(itemId)) return;
+      visited.add(itemId);
+
+      const activeBOM = (boms || []).find(b => b.finishedItemId === itemId && b.isActive);
+      if (!activeBOM || !Array.isArray(activeBOM.items)) return;
+
+      for (const bomItem of activeBOM.items) {
+        if (!bomItem) continue;
+        const targetItem = (items || []).find(i => i.id === bomItem.itemId);
+        if (!targetItem) continue;
+
+        const scrapRate = bomItem.scrapAllowancePercent || 0;
+        const exactNeeded = Math.ceil((bomItem.quantityNeeded || 0) * currentTargetQty * (1 + scrapRate / 100));
+
+        const centralStock = (inventory || [])
+          .filter(inv => inv.itemId === targetItem.id && (inv.warehouseId === 'wh-central' || inv.warehouseId === 'wh-raw'))
+          .reduce((sum, curr) => sum + (curr.quantity || 0), 0);
+
+        const projectRackStock = (inventory || [])
+          .filter(inv => inv.itemId === targetItem.id && (inv.warehouseId === 'wh-prod-p101' || inv.warehouseId === `wh-prod-${(proj.code || '').toLowerCase()}`))
+          .reduce((sum, curr) => sum + (curr.quantity || 0), 0);
+
+        const existing = result.get(targetItem.id);
+        if (existing) {
+          existing.totalNeededWithScrap += exactNeeded;
+          existing.shortage = Math.max(0, existing.totalNeededWithScrap - existing.centralStock);
+        } else {
+          result.set(targetItem.id, {
+            itemId: targetItem.id,
+            itemCode: targetItem.code || '',
+            itemName: targetItem.name || '',
+            unit: targetItem.unit || '',
+            quantityPerUnit: bomItem.quantityNeeded || 0,
+            scrapPercent: scrapRate,
+            totalNeededWithScrap: exactNeeded,
+            centralStock,
+            projectRackStock,
+            shortage: Math.max(0, exactNeeded - centralStock),
+            isSemiFinished: targetItem.itemType === 'SemiFinished'
+          });
+        }
+
+        // Recursive explosion for child BOMs
+        const childBOM = (boms || []).find(b => b.finishedItemId === targetItem.id && b.isActive);
+        if (childBOM) {
+          explode(targetItem.id, exactNeeded, new Set(visited));
+        }
+      }
+    };
+
+    explode(proj.targetFinishedItemId, proj.targetQuantity || 1);
+    return Array.from(result.values());
+  };
+
+  const handleAutoIssueMaterialTransfer = (proj: Project, materials: RequiredMaterialItem[]) => {
+    if (materials.length === 0) {
+      alert('هیچ فرمول ساخت (BOM) فعال برای این محصول ثبت نشده است.');
+      return;
+    }
+
+    const itemsToTransfer = materials
+      .filter(m => m.totalNeededWithScrap > 0)
+      .map(m => ({
+        itemId: m.itemId,
+        quantity: m.totalNeededWithScrap
+      }));
+
+    if (itemsToTransfer.length === 0) {
+      alert('هیچ قطعه‌ای برای تحویل موجود نیست.');
+      return;
+    }
+
+    const targetWHId = warehouses.find(w => w.linkedProjectId === proj.id || w.id === 'wh-prod-p101')?.id || 'wh-prod-p101';
+
+    createTransfer({
+      docNumber: `TRF-PRJ-${proj.code.replace('PRJ-', '')}`,
+      date: new Date().toISOString().substring(0, 10),
+      sourceWarehouseId: 'wh-raw',
+      targetWarehouseId: targetWHId,
+      registeredBy: 'سیستم برنامه‌ریزی تولید',
+      handlerName: 'انباردار انبار مرکزی',
+      status: 'Completed',
+      items: itemsToTransfer,
+      notes: `انتقال و تحویل قطعات پروژه ${proj.code} از انبار مرکزی به قفسه اختصاصی پروژه در خط تولید (با احتساب ضایعات)`
+    });
+
+    // Mark Step 1 (Material Delivery) as Completed
+    const firstStep = proj.steps[0];
+    if (firstStep) {
+      updateProjectStep(proj.id, firstStep.id, 'Completed');
+    }
+
+    alert(`حواله خروج انبار مرکزی و تخصیص به قفسه پروژه با موفقیت صادر گردید. مرحله ۱ پروژه (تامین مواد اولیه) نیز به وضعیت "تکمیل شد" ارتقا یافت.`);
+    setBomExplosionProject(null);
+  };
+
+  const statusBadges: Record<ProjectStatus, { label: string; style: string }> = {
+    Planning: { label: 'برنامه‌ریزی اولیه', style: 'bg-slate-100 text-slate-600 border-slate-200' },
+    Active: { label: 'در حال تولید (فعال)', style: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    Paused: { label: 'متوقف‌شده', style: 'bg-amber-50 text-amber-700 border-amber-200' },
+    Testing: { label: 'در مرحله تست QC', style: 'bg-purple-50 text-purple-700 border-purple-200' },
+    Completed: { label: 'تکمیل و مختومه', style: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    Cancelled: { label: 'لغو شده', style: 'bg-rose-50 text-rose-700 border-rose-200' },
+  };
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-slate-100 shadow-sm p-5 rounded-2xl shadow-2xs">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Factory className="w-5 h-5 text-indigo-600" />
+            پروژه‌های ساخت و کنترل مراحل ۵گانه خط تولید
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            تعریف پروژه‌های سفارش مشتری، مدیریت درصد پیشرفت لحظه‌ای و گردش مراحل از مونتاژ SMD تا بسته‌بندی
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setTreeReportProject(projects[0] || null)}
+            className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold rounded-xl text-xs flex items-center justify-center gap-2 border border-indigo-200 transition-all shadow-2xs active:scale-95 shrink-0"
+          >
+            <FolderTree className="w-4 h-4 text-indigo-600" />
+            <span>نمودار شاخه درختی و گزارش‌های مدیریتی</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenAdd}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            تعریف پروژه جدید
+          </button>
+        </div>
+      </div>
+
+      {/* Projects List */}
+      <div className="space-y-4">
+        {projects.map(proj => {
+          const isExpanded = expandedProjectId === proj.id;
+          const finishedItem = items.find(i => i.id === proj.targetFinishedItemId);
+          const badge = statusBadges[proj.status];
+
+          return (
+            <div 
+              key={proj.id}
+              className="bg-white border border-slate-100 shadow-sm rounded-2xl overflow-hidden shadow-2xs transition-all"
+            >
+              {/* Project Main Header Bar */}
+              <div 
+                onClick={() => setExpandedProjectId(isExpanded ? null : proj.id)}
+                className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/80 transition-colors"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      {proj.code}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badge.style}`}>
+                      {badge.label}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-base text-slate-900">{proj.name}</h3>
+                  <div className="text-xs text-slate-500 flex flex-wrap items-center gap-4">
+                    <span>مشتری: <strong className="text-slate-800">{proj.client}</strong></span>
+                    <span>مدیر پروژه: <strong className="text-slate-800">{proj.projectManager}</strong></span>
+                    <span>محصول: <strong className="text-indigo-600">{finishedItem?.name || proj.targetFinishedItemId}</strong></span>
+                  </div>
+                </div>
+
+                {/* Progress & Output Stats */}
+                <div className="flex items-center gap-6 shrink-0">
+                  <div className="text-right">
+                    <div className="text-xs text-slate-500">تیراژ تولید شده</div>
+                    <div className="font-mono font-bold text-sm text-slate-900">
+                      <span className="text-emerald-600">{proj.producedQuantity}</span> / {proj.targetQuantity} {finishedItem?.unit || 'دستگاه'}
+                    </div>
+                  </div>
+
+                  <div className="w-32 space-y-1">
+                    <div className="flex justify-between text-[11px] font-mono">
+                      <span className="text-slate-500">پیشرفت:</span>
+                      <strong className="text-indigo-600">{proj.progressPercent}%</strong>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                      <div 
+                        className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-500" 
+                        style={{ width: `${proj.progressPercent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                </div>
+              </div>
+
+              {/* Project Step Workflow Drawer */}
+              {isExpanded && (
+                <div className="p-5 bg-slate-50 border-t border-slate-200 space-y-4">
+                  <div className="text-xs font-bold text-slate-800 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <GitBranch className="w-4 h-4 text-indigo-600" />
+                      <span>گردش و مراحل ۵ گانه تولید پروژه:</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTreeReportProject(proj)}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                      >
+                        <FolderTree className="w-4 h-4" />
+                        <span>نمودار درختی و گزارش مدیریتی</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setBomExplosionProject(proj)}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all"
+                      >
+                        <Boxes className="w-4 h-4" />
+                        <span>آنالیز قطعات، ضایعات و صدور حواله تحویل به قفسه پروژه (BOM Explosion)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
+                    {proj.steps.map((step, idx) => (
+                      <RecursiveStepCard
+                        key={step.id}
+                        step={step}
+                        projectId={proj.id}
+                        depth={0}
+                        stepCodeStr={`${step.stepNumber || idx + 1}`}
+                        items={items}
+                        boms={boms}
+                        contractors={contractors}
+                        updateProjectStep={updateProjectStep}
+                        setAddingSubStepTo={setAddingSubStepTo}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Modal Add Project */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-xl shadow-xl overflow-hidden flex flex-col max-h-[92vh] my-auto">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-sm text-indigo-600 flex items-center gap-2">
+                <Factory className="w-4 h-4" />
+                تعریف پروژه ساخت جدید
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setIsModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200/50 transition-colors"
+                title="بستن و انصراف"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 touch-pan-y custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">کد پروژه*</label>
+                  <input
+                    type="text"
+                    required
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">عنوان کامل پروژه*</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: تولید ۱۰۰ عدد برد کنترل برق"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">نام مشتری / سفارش‌دهنده*</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: شرکت توزیع نیروی برق"
+                    value={client}
+                    onChange={(e) => setClient(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">مدیر پروژه</label>
+                  <input
+                    type="text"
+                    value={projectManager}
+                    onChange={(e) => setProjectManager(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">محصول هدف پروژه*</label>
+                  <select
+                    value={targetFinishedItemId}
+                    onChange={(e) => setTargetFinishedItemId(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  >
+                    {items.map(i => (
+                      <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">تیراژ و تعداد هدف*</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={targetQuantity}
+                    onChange={(e) => setTargetQuantity(Number(e.target.value))}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 font-mono focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* BOM Auto-link status indicator */}
+                {(() => {
+                  const selectedItemObj = items.find(i => i.id === targetFinishedItemId);
+                  const matchedBom = boms.find(b => b.finishedItemId === targetFinishedItemId && b.isActive);
+                  if (matchedBom) {
+                    return (
+                      <div className="sm:col-span-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>فرمول ساخت (BOM) برای محصول «{selectedItemObj?.name}» فعال است ({matchedBom.items.length} قلم قطعه).</span>
+                        </div>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full shrink-0">ارتباط اتوماتیک برقرار است</span>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="sm:col-span-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2 shadow-2xs">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>فرمول ساخت (BOM) این محصول هنوز ثبت نشده است. می‌توانید پروژه را تعریف کنید و هر زمان BOM در تب "فرمول‌های ساخت" ایجاد شد، پروژه خودکار از آن استفاده خواهد کرد.</span>
+                      </div>
+                    );
+                  }
+                })()}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">توضیحات و الزامات فنی</label>
+                <textarea
+                  rows={2}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                ></textarea>
+              </div>
+
+              {/* Dynamic Project Steps Builder Section */}
+              <div className="border border-indigo-100 bg-indigo-50/40 rounded-xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                    <GitBranch className="w-4 h-4 text-indigo-600" />
+                    <span>تعریف مراحل اختصاصی این پروژه ({customSteps.length} مرحله)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddStepRow}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>افزودن مرحله جدید</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                  {customSteps.map((step, idx) => (
+                    <div key={step.id} className="p-2.5 bg-white border border-slate-200 rounded-xl space-y-2 shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-mono font-bold text-[11px] flex items-center justify-center shrink-0">
+                          {idx + 1}
+                        </span>
+                        
+                        <input
+                          type="text"
+                          required
+                          placeholder="عنوان مرحله (مثال: مونتاژ SMD، آون، کالیبراسیون)..."
+                          value={step.name}
+                          onChange={(e) => handleUpdateStepRow(step.id, 'name', e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveStepRow(idx, 'up')}
+                            disabled={idx === 0}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30"
+                            title="انتقال به بالا"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveStepRow(idx, 'down')}
+                            disabled={idx === customSteps.length - 1}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30"
+                            title="انتقال به پایین"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStepRow(step.id)}
+                            className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                            title="حذف مرحله"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-100">
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">اپراتور / تیم مسئول</label>
+                          <input
+                            type="text"
+                            placeholder="نام اپراتور یا مسئول..."
+                            value={step.operator}
+                            onChange={(e) => handleUpdateStepRow(step.id, 'operator', e.target.value)}
+                            className="w-full px-2 py-1 border border-slate-200 rounded-md text-[11px] focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">خروجی نیمه‌ساخته این مرحله (اختیاری)</label>
+                          <select
+                            value={step.outputItemId || ''}
+                            onChange={(e) => handleUpdateStepRow(step.id, 'outputItemId', e.target.value)}
+                            className="w-full px-2 py-1 border border-slate-200 rounded-md text-[11px] focus:outline-none focus:border-indigo-500 bg-white"
+                          >
+                            <option value="">بدون خروجی نیمه‌ساخته (فقط پیشبرد مرحله)</option>
+                            {items.map(i => (
+                              <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2 sm:col-span-2">
+                          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 font-semibold">
+                            <input
+                              type="checkbox"
+                              checked={step.isOutsourced}
+                              onChange={(e) => handleUpdateStepRow(step.id, 'isOutsourced', e.target.checked)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span>برون‌سپاری به پیمانکار خارج کارگاه</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {step.isOutsourced && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs p-2 bg-amber-50/60 rounded-lg border border-amber-200/60">
+                          <div>
+                            <label className="block text-[10px] text-amber-900 font-bold mb-0.5">انتخاب پیمانکار</label>
+                            <select
+                              value={step.contractorId || ''}
+                              onChange={(e) => handleUpdateStepRow(step.id, 'contractorId', e.target.value)}
+                              className="w-full px-2 py-1 border border-amber-300 rounded-md bg-white text-[11px]"
+                            >
+                              <option value="">-- انتخاب پیمانکار مجری --</option>
+                              {contractors.map(c => (
+                                <option key={c.id} value={c.id}>{c.name} ({c.specialty})</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] text-amber-900 font-bold mb-0.5">هزینه تخمینی (تومان)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="0"
+                              value={step.outsourcingCost || 0}
+                              onChange={(e) => handleUpdateStepRow(step.id, 'outsourcingCost', Number(e.target.value))}
+                              className="w-full px-2 py-1 border border-amber-300 rounded-md text-[11px] font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="sticky bottom-0 bg-white pt-3 pb-1 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold active:scale-95 transition-all"
+                >
+                  انصراف / برگشت
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-2xs active:scale-95 transition-all"
+                >
+                  ایجاد و ثبت پروژه
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal Add Sub-Step */}
+      {addingSubStepTo && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-xl p-4 sm:p-5 space-y-4 max-h-[92vh] flex flex-col my-auto overflow-y-auto touch-pan-y custom-scrollbar">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-bold text-sm text-indigo-600 flex items-center gap-2">
+                <GitBranch className="w-4 h-4" />
+                افزودن زیرمرحله جدید (شاخه درختی)
+              </h3>
+              <button onClick={() => setAddingSubStepTo(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSubStep} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">عنوان زیرمرحله*</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: مونتاژ ترانسفورماتور و قلع‌کاری پین‌ها..."
+                  value={subStepTitle}
+                  onChange={(e) => setSubStepTitle(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1 flex items-center gap-1">
+                  <Boxes className="w-3.5 h-3.5 text-amber-600" />
+                  <span>محصول / قطعه نیمه‌ساخته خروجی این زیرمرحله (اختیاری)</span>
+                </label>
+                <select
+                  value={subStepOutputItemId}
+                  onChange={(e) => setSubStepOutputItemId(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 font-medium"
+                >
+                  <option value="">-- بدون قطعه/محصول خروجی مجزا --</option>
+                  {items.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.itemType === 'SemiFinished' ? 'قطعه نیمه‌ساخته' : item.itemType === 'Finished' ? 'محصول نهایی' : 'ماده اولیه'}) - کد: {item.code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {subStepOutputItemId && (
+                <>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">تیراژ/تعداد خروجی زیرمرحله</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={subStepOutputQty}
+                      onChange={(e) => setSubStepOutputQty(Number(e.target.value))}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Active BOM Link Indicator */}
+                  {(() => {
+                    const matchedBom = boms.find(b => b.finishedItemId === subStepOutputItemId && b.isActive);
+                    if (matchedBom) {
+                      return (
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-[11px] flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <div>
+                            <div className="font-bold">فرمول ساخت (BOM) برای این زیرمرحله فعال است</div>
+                            <div className="text-[10px] text-emerald-700 mt-0.5">
+                              شامل {matchedBom.items.length} قلم قطعه مصرفی. مواد اولیه موقع صدور حواله تحویل به اپراتور طبق این فرمول لیست می‌شوند.
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <div className="font-bold">فرمول ساخت (BOM) هنوز برای این قطعه ساخته نشده است</div>
+                            <div className="text-[10px] text-amber-700 mt-0.5">
+                              می‌توانید زیرمرحله را ثبت کنید و بعداً از تب «فرمول‌های ساخت»، فرمول BOM این قطعه را تعریف کنید تا اتوماتیک متصل گردد.
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })()}
+                </>
+              )}
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">واگذاری به پیمانکار برون‌سپاری (اختیاری)</label>
+                <select
+                  value={subStepContractorId}
+                  onChange={(e) => setSubStepContractorId(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">-- انباشت/مونتاژ داخلی کارخانه --</option>
+                  {contractors.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.specialty})</option>
+                  ))}
+                </select>
+              </div>
+
+              {subStepContractorId && (
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">هزینه تخمینی برون‌سپاری (تومان)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={subStepCost}
+                    onChange={(e) => setSubStepCost(Number(e.target.value))}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setAddingSubStepTo(null)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-medium"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs"
+                >
+                  ثبت زیرمرحله
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal BOM Explosion & Auto Material Delivery */}
+      {bomExplosionProject && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <Boxes className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">
+                    آنالیز انفجار BOM و محاسبه تخصیص مواد اولیه پروژه {bomExplosionProject.code}
+                  </h3>
+                  <p className="text-[11px] text-amber-100 mt-0.5">
+                    محاسبه خودکار قطعات لازم برای تولید {bomExplosionProject.targetQuantity} عدد {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.name} با احتساب درصد ضایعات
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setBomExplosionProject(null)} 
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-xs">
+              {/* Project Target Info Box */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
+                <div>
+                  <span className="text-slate-500 block text-[10px]">کد و عنوان پروژه:</span>
+                  <strong className="text-slate-800 text-xs font-mono">{bomExplosionProject.code} - {bomExplosionProject.name}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">محصول نهایی و تیراژ هدف:</span>
+                  <strong className="text-amber-700 text-xs">
+                    {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.name} ({bomExplosionProject.targetQuantity} {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.unit})
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">قفسه اختصاصی انبار تولید:</span>
+                  <span className="inline-flex items-center gap-1 font-mono text-xs text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                    <Warehouse className="w-3 h-3" />
+                    قفسه PRJ-101 (انبار تولید)
+                  </span>
+                </div>
+              </div>
+
+              {/* Materials Table */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    جدول قطعات لازم با احتساب ضایعات (Multi-Level BOM Explosion):
+                  </h4>
+                  <span className="text-[10px] text-slate-500">فرمول: (تعداد در BOM × تیراژ پروژه) + % ضایعات</span>
+                </div>
+
+                {(() => {
+                  const requiredMaterials = getCalculatedProjectBOM(bomExplosionProject);
+                  const hasShortage = requiredMaterials.some(m => m.shortage > 0);
+
+                  if (requiredMaterials.length === 0) {
+                    return (
+                      <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-500 space-y-2">
+                        <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+                        <p className="font-bold text-xs">هیچ فرمول ساخت (BOM) برای این محصول یا قطعات آن تعریف نشده است.</p>
+                        <p className="text-[11px]">جهت محاسبه و انفجار قطعات، ابتدا در بخش "فرمول‌های ساخت (BOM)" یک فرمول فعال برای محصول ثبت نمایید.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                        <table className="w-full text-right text-xs">
+                          <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                            <tr>
+                              <th className="whitespace-nowrap p-2.5">کد قطعه</th>
+                              <th className="whitespace-nowrap p-2.5">نام قطعه / ماده اولیه</th>
+                              <th className="whitespace-nowrap p-2.5">نوع</th>
+                              <th className="whitespace-nowrap p-2.5 text-center">مقدار در ۱ واحد</th>
+                              <th className="whitespace-nowrap p-2.5 text-center">% ضایعات</th>
+                              <th className="whitespace-nowrap p-2.5 text-center bg-amber-50 text-amber-900">کل لازم با ضایعات</th>
+                              <th className="whitespace-nowrap p-2.5 text-center">موجودی انبار مرکزی</th>
+                              <th className="whitespace-nowrap p-2.5 text-center">موجودی قفسه پروژه</th>
+                              <th className="whitespace-nowrap p-2.5 text-center">وضعیت تامین</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium">
+                            {requiredMaterials.map(mat => (
+                              <tr key={mat.itemId} className="hover:bg-slate-50">
+                                <td className="whitespace-nowrap p-2.5 font-mono text-[11px] text-slate-600">{mat.itemCode}</td>
+                                <td className="whitespace-nowrap p-2.5 font-bold text-slate-900">{mat.itemName}</td>
+                                <td className="whitespace-nowrap p-2.5">
+                                  {mat.isSemiFinished ? (
+                                    <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded text-[10px] font-bold border border-purple-200">
+                                      نیمه‌ساخته
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]">
+                                      ماده اولیه
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center font-mono">{(mat.quantityPerUnit || 0)} {mat.unit}</td>
+                                <td className="whitespace-nowrap p-2.5 text-center font-mono text-rose-600 font-bold">%{(mat.scrapPercent || 0)}</td>
+                                <td className="whitespace-nowrap p-2.5 text-center font-mono font-bold text-amber-700 bg-amber-50/50">
+                                  {(mat.totalNeededWithScrap || 0).toLocaleString('fa-IR')} {mat.unit}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center font-mono text-slate-700">
+                                  {(mat.centralStock || 0).toLocaleString('fa-IR')} {mat.unit}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center font-mono text-indigo-700 font-bold">
+                                  {(mat.projectRackStock || 0).toLocaleString('fa-IR')} {mat.unit}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center">
+                                  {(mat.shortage || 0) > 0 ? (
+                                    <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                      <ShieldAlert className="w-3 h-3 text-rose-500" />
+                                      کسری: {(mat.shortage || 0).toLocaleString('fa-IR')}
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                      <Check className="w-3 h-3 text-emerald-600" />
+                                      موجود و کافی
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {hasShortage && (
+                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between text-rose-800 text-xs">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                            <span>توجه: برای برخی از قطعات، موجودی انبار مرکزی کمتر از مقدار کل محاسبه‌شده (با ضایعات) است. ابتدا خرید قطعات کسر شده انجام شود.</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                          <Warehouse className="w-4 h-4 text-indigo-600" />
+                          <span>با صدور حواله، قطعات فوق از انبار مرکزی کسر شده و به قفسه اختصاصی پروژه در انبار تولید تحویل داده می‌شوند.</span>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => setBomExplosionProject(null)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl"
+                          >
+                            انصراف
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => handleAutoIssueMaterialTransfer(bomExplosionProject, requiredMaterials)}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 text-xs transition-all"
+                          >
+                            <FileCheck className="w-4 h-4" />
+                            <span>صدور و تحویل قطعات به قفسه پروژه (تکمیل مرحله ۱)</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Tree Diagram & Management Reports Modal */}
+      {treeReportProject && (() => {
+        const finishedTargetItem = (items || []).find(i => i.id === treeReportProject.targetFinishedItemId);
+        const kpis = (() => {
+          const flattened = flattenProjectSteps(treeReportProject.steps || [], '1', 0);
+          const totalSteps = flattened.length;
+          const completedSteps = flattened.filter(f => f?.step?.status === 'Completed').length;
+          const inProgressSteps = flattened.filter(f => f?.step?.status === 'InProgress').length;
+          const pendingSteps = flattened.filter(f => f?.step?.status === 'Pending').length;
+          const outsourcedSteps = flattened.filter(f => f?.step?.isOutsourced || f?.step?.contractorId).length;
+          
+          let totalOutsourcingCost = 0;
+          flattened.forEach(f => {
+            if (f?.step?.isOutsourced || f?.step?.contractorId) {
+              totalOutsourcingCost += (f.step.outsourcingCost || f.step.contractorCost || 0);
+            }
+          });
+
+          const outputItemsDefined = flattened.filter(f => f?.step?.outputItemId).length;
+
+          return {
+            totalSteps,
+            completedSteps,
+            inProgressSteps,
+            pendingSteps,
+            outsourcedSteps,
+            totalOutsourcingCost,
+            outputItemsDefined,
+            flattened,
+          };
+        })();
+
+        const contractorsReport = (() => {
+          const map: Record<string, { name: string; stepCount: number; completedCount: number; cost: number }> = {};
+          kpis.flattened.forEach(f => {
+            if (!f || !f.step) return;
+            if (f.step.isOutsourced || f.step.contractorId) {
+              const cId = f.step.contractorId || f.step.contractorName || 'برون‌سپاری متفرقه';
+              const cName = f.step.contractorName || (contractors || []).find(c => c.id === f.step.contractorId)?.name || cId;
+
+              if (!map[cId]) {
+                map[cId] = { name: cName, stepCount: 0, completedCount: 0, cost: 0 };
+              }
+              map[cId].stepCount++;
+              if (f.step.status === 'Completed') map[cId].completedCount++;
+              map[cId].cost += (f.step.outsourcingCost || f.step.contractorCost || 0);
+            }
+          });
+          return Object.values(map);
+        })();
+
+        const consolidatedBOM = (() => {
+          const materialTotals: Record<string, {
+            itemId: string;
+            itemCode: string;
+            itemName: string;
+            unit: string;
+            totalQuantityNeeded: number;
+            centralStock: number;
+            shortage: number;
+            usedInSteps: string[];
+          }> = {};
+
+          const targetBom = (boms || []).find(b => b.finishedItemId === treeReportProject.targetFinishedItemId && b.isActive);
+          if (targetBom && Array.isArray(targetBom.items)) {
+            targetBom.items.forEach(bomItem => {
+              if (!bomItem) return;
+              const item = (items || []).find(i => i.id === bomItem.itemId);
+              if (!item) return;
+              const qtyNeeded = (bomItem.quantityNeeded * (1 + (bomItem.scrapAllowancePercent || 0) / 100)) * (treeReportProject.targetQuantity || 1);
+
+              if (!materialTotals[item.id]) {
+                materialTotals[item.id] = {
+                  itemId: item.id,
+                  itemCode: item.code || '',
+                  itemName: item.name || '',
+                  unit: item.unit || '',
+                  totalQuantityNeeded: 0,
+                  centralStock: item.systemQuantity || 0,
+                  shortage: 0,
+                  usedInSteps: ['محصول نهایی اصلی'],
+                };
+              }
+              materialTotals[item.id].totalQuantityNeeded += qtyNeeded;
+            });
+          }
+
+          kpis.flattened.forEach(f => {
+            if (f?.step?.outputItemId) {
+              const subBom = (boms || []).find(b => b.finishedItemId === f.step.outputItemId && b.isActive);
+              if (subBom && Array.isArray(subBom.items)) {
+                const runQty = f.step.outputQuantity || treeReportProject.targetQuantity || 1;
+                subBom.items.forEach(bomItem => {
+                  if (!bomItem) return;
+                  const item = (items || []).find(i => i.id === bomItem.itemId);
+                  if (!item) return;
+                  const qtyNeeded = (bomItem.quantityNeeded * (1 + (bomItem.scrapAllowancePercent || 0) / 100)) * runQty;
+
+                  if (!materialTotals[item.id]) {
+                    materialTotals[item.id] = {
+                      itemId: item.id,
+                      itemCode: item.code || '',
+                      itemName: item.name || '',
+                      unit: item.unit || '',
+                      totalQuantityNeeded: 0,
+                      centralStock: item.systemQuantity || 0,
+                      shortage: 0,
+                      usedInSteps: [],
+                    };
+                  }
+                  materialTotals[item.id].totalQuantityNeeded += qtyNeeded;
+                  if (!materialTotals[item.id].usedInSteps.includes(`مرحله ${f.code}`)) {
+                    materialTotals[item.id].usedInSteps.push(`مرحله ${f.code}`);
+                  }
+                });
+              }
+            }
+          });
+
+          return Object.values(materialTotals).map(m => ({
+            ...m,
+            shortage: Math.max(0, m.totalQuantityNeeded - m.centralStock)
+          }));
+        })();
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-6xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-scaleIn">
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-600 rounded-2xl shadow-inner">
+                    <FolderTree className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-base sm:text-lg">نمودار شاخه درختی و گزارش‌های مدیریتی پروژه</h3>
+                      <span className="font-mono text-xs font-bold text-indigo-300 bg-indigo-950/80 px-2.5 py-0.5 rounded-full border border-indigo-700">
+                        {treeReportProject.code}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      نام پروژه: <strong>{treeReportProject.name}</strong> | مشتری: {treeReportProject.client} | پیشرفت کل: <span className="text-emerald-400 font-bold">{treeReportProject.progressPercent}%</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Project Switcher Dropdown & Close */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={treeReportProject.id}
+                    onChange={(e) => {
+                      const sel = projects.find(p => p.id === e.target.value);
+                      if (sel) setTreeReportProject(sel);
+                    }}
+                    className="p-2 bg-slate-800 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 focus:outline-none cursor-pointer"
+                  >
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        پروژه {p.code}: {p.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => setTreeReportProject(null)}
+                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <div className="bg-slate-100 p-2 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 bg-slate-200/80 p-1 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setTreeActiveTab('tree')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                      treeActiveTab === 'tree' ? 'bg-white text-indigo-700 shadow-2xs font-extrabold' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FolderTree className="w-4 h-4 text-indigo-600" />
+                    <span>نمودار شاخه درختی مراحل</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTreeActiveTab('reports')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                      treeActiveTab === 'reports' ? 'bg-white text-indigo-700 shadow-2xs font-extrabold' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <PieChart className="w-4 h-4 text-emerald-600" />
+                    <span>گزارش‌های مدیریتی و KPIها</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTreeActiveTab('wbs')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                      treeActiveTab === 'wbs' ? 'bg-white text-indigo-700 shadow-2xs font-extrabold' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4 text-amber-600" />
+                    <span>جدول شکست کار (WBS)</span>
+                  </button>
+                </div>
+
+                {/* Filters */}
+                {treeActiveTab === 'tree' && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <select
+                      value={treeStatusFilter}
+                      onChange={(e: any) => setTreeStatusFilter(e.target.value)}
+                      className="p-1.5 bg-white border border-slate-300 rounded-xl text-slate-700 text-[11px] font-medium"
+                    >
+                      <option value="all">همه وضعیت‌ها</option>
+                      <option value="Completed">تکمیل شده 🟢</option>
+                      <option value="InProgress">در حال انجام 🔵</option>
+                      <option value="Pending">در انتظار ⚪</option>
+                    </select>
+
+                    <select
+                      value={treeTypeFilter}
+                      onChange={(e: any) => setTreeTypeFilter(e.target.value)}
+                      className="p-1.5 bg-white border border-slate-300 rounded-xl text-slate-700 text-[11px] font-medium"
+                    >
+                      <option value="all">همه اجراها (داخلی/پیمانکار)</option>
+                      <option value="outsourced">فقط برون‌سپاری 🏢</option>
+                      <option value="internal">فقط تیم داخلی کارخانه 🏭</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Body Tab Content */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/50">
+                {/* TAB 1: TREE DIAGRAM VIEW */}
+                {treeActiveTab === 'tree' && (
+                  <div className="space-y-4">
+                    {/* Root Node Header Banner */}
+                    <div className="p-4 bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-2xl shadow-md border border-indigo-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-indigo-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Boxes className="w-4 h-4 text-indigo-400" />
+                          <span>ریشه اصلی درخت پروژه (محصول نهایی هدف):</span>
+                        </div>
+                        <h4 className="font-bold text-base sm:text-lg text-white">
+                          {finishedTargetItem?.name || treeReportProject.targetFinishedItemId}
+                        </h4>
+                        <div className="text-xs text-indigo-200 flex flex-wrap gap-4 pt-1">
+                          <span>تیراژ هدف: <strong className="text-amber-300">{treeReportProject.targetQuantity} {finishedTargetItem?.unit || 'دستگاه'}</strong></span>
+                          <span>تولید شده: <strong className="text-emerald-300">{treeReportProject.producedQuantity} {finishedTargetItem?.unit || 'دستگاه'}</strong></span>
+                          <span>مدیر پروژه: <strong className="text-white">{treeReportProject.projectManager}</strong></span>
+                        </div>
+                      </div>
+
+                      <div className="w-full md:w-48 space-y-1 bg-indigo-950/60 p-3 rounded-xl border border-indigo-700/60">
+                        <div className="flex justify-between text-xs text-indigo-200 font-mono">
+                          <span>پیشرفت کلی:</span>
+                          <strong className="text-emerald-400">{treeReportProject.progressPercent}%</strong>
+                        </div>
+                        <div className="w-full h-2.5 bg-indigo-900/80 rounded-full overflow-hidden border border-indigo-600">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-400 to-emerald-400"
+                            style={{ width: `${treeReportProject.progressPercent}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step Branches Canvas View */}
+                    <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
+                      <div className="text-xs font-bold text-slate-800 flex flex-wrap items-center justify-between border-b pb-2 gap-2">
+                        <span className="flex items-center gap-1.5 text-indigo-700">
+                          <FolderTree className="w-4 h-4" />
+                          <span>نمودار شاخه‌ای ساختار شکست کار (Org/WBS Tree Diagram):</span>
+                        </span>
+
+                        {/* Zoom Controls */}
+                        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => setTreeZoom(z => Math.max(0.5, z - 0.1))}
+                            className="px-2 py-0.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg border border-slate-300 shadow-2xs cursor-pointer"
+                            title="کوچکنمایی (-)"
+                          >
+                            -
+                          </button>
+                          <span className="font-mono text-[11px] font-bold px-1.5 text-slate-700">
+                            {Math.round(treeZoom * 100)}%
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setTreeZoom(z => Math.min(1.5, z + 0.1))}
+                            className="px-2 py-0.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg border border-slate-300 shadow-2xs cursor-pointer"
+                            title="بزرگنمایی (+)"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTreeZoom(1)}
+                            className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg border border-indigo-200 mr-1 cursor-pointer"
+                          >
+                            100%
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Canvas Area with dotted engineering background */}
+                      <div className="overflow-x-auto overflow-y-auto p-8 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:20px_20px] bg-slate-50/80 rounded-2xl border border-slate-200 min-h-[450px]">
+                        <div 
+                          className="flex flex-col items-center min-w-[700px] transition-transform duration-200 origin-top"
+                          style={{ transform: `scale(${treeZoom})` }}
+                        >
+                          {/* ROOT NODE CARD */}
+                          <div className="w-80 p-4 rounded-2xl bg-gradient-to-r from-indigo-900 to-slate-900 text-white shadow-xl border-2 border-indigo-500 text-center relative z-10 space-y-1.5">
+                            <div className="inline-flex p-2 bg-indigo-600 rounded-xl mb-1">
+                              <Cpu className="w-5 h-5 text-white" />
+                            </div>
+                            <h4 className="font-extrabold text-sm text-white">
+                              {finishedTargetItem?.name || treeReportProject.targetFinishedItemId}
+                            </h4>
+                            <div className="text-[11px] text-indigo-200 flex items-center justify-center gap-3 pt-1 border-t border-indigo-800/80">
+                              <span>تیراژ هدف: <strong className="text-amber-300">{treeReportProject.targetQuantity}</strong></span>
+                              <span>کد پروژه: <strong className="font-mono text-indigo-300">{treeReportProject.code}</strong></span>
+                            </div>
+                          </div>
+
+                          {/* ROOT TRUNK LINE */}
+                          {(treeReportProject.steps || []).length > 0 && (
+                            <div className="w-1 h-8 bg-indigo-600 z-0"></div>
+                          )}
+
+                          {/* LEVEL 1 CHILDREN BRANCH ROW */}
+                          {(treeReportProject.steps || []).length > 0 && (
+                            <div className="relative flex justify-center pt-8 gap-8">
+                              {/* Horizontal Branch Bar Across Main Steps */}
+                              {(treeReportProject.steps || []).length > 1 && (
+                                <div className="absolute top-0 left-36 right-36 h-1 bg-indigo-500 z-0"></div>
+                              )}
+
+                              {(treeReportProject.steps || []).map((step, idx) => (
+                                <div key={step.id || idx} className="flex flex-col items-center relative">
+                                  {/* Vertical Branch Connector Line Down to Step Card */}
+                                  <div className="absolute -top-8 w-0.5 h-8 bg-indigo-500 z-0"></div>
+
+                                  <GraphicalOrgTreeNode
+                                    step={step}
+                                    projectId={treeReportProject.id}
+                                    codePrefix={`${idx + 1}`}
+                                    items={items}
+                                    boms={boms}
+                                    contractors={contractors}
+                                    statusFilter={treeStatusFilter}
+                                    typeFilter={treeTypeFilter}
+                                    updateProjectStep={updateProjectStep}
+                                    setAddingSubStepTo={setAddingSubStepTo}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: MANAGEMENT REPORTS & KPIS */}
+                {treeActiveTab === 'reports' && (
+                  <div className="space-y-6">
+                    {/* Top 4 KPI Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-1.5">
+                        <div className="text-xs text-slate-500 font-medium flex items-center justify-between">
+                          <span>پیشرفت کل پروژه</span>
+                          <BarChart3 className="w-4 h-4 text-indigo-600" />
+                        </div>
+                        <div className="font-mono font-bold text-2xl text-slate-900">
+                          {treeReportProject.progressPercent}%
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-100">
+                          <span>مراحل تکمیل شده:</span>
+                          <strong className="text-emerald-600">{kpis.completedSteps} از {kpis.totalSteps}</strong>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-1.5">
+                        <div className="text-xs text-slate-500 font-medium flex items-center justify-between">
+                          <span>هزینه برون‌سپاری و پیمانکاران</span>
+                          <Building2 className="w-4 h-4 text-amber-600" />
+                        </div>
+                        <div className="font-mono font-bold text-lg text-amber-700">
+                          {kpis.totalOutsourcingCost.toLocaleString('fa-IR')} <span className="text-xs text-slate-500 font-normal">تومان</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-100">
+                          <span>مراحل برون‌سپاری شده:</span>
+                          <strong className="text-amber-800">{kpis.outsourcedSteps} مرحله</strong>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-1.5">
+                        <div className="text-xs text-slate-500 font-medium flex items-center justify-between">
+                          <span>قطعات نیمه‌ساخته تعریف‌شده</span>
+                          <Boxes className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div className="font-mono font-bold text-2xl text-purple-900">
+                          {kpis.outputItemsDefined} <span className="text-xs text-slate-500 font-normal">قلم</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-100">
+                          <span>حجم کل تولید هدف:</span>
+                          <strong className="text-purple-800">{treeReportProject.targetQuantity} دستگاه</strong>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-1.5">
+                        <div className="text-xs text-slate-500 font-medium flex items-center justify-between">
+                          <span>مراحل در انتظار (باقیمانده)</span>
+                          <Clock className="w-4 h-4 text-indigo-600" />
+                        </div>
+                        <div className="font-mono font-bold text-2xl text-indigo-700">
+                          {kpis.pendingSteps + kpis.inProgressSteps} <span className="text-xs text-slate-500 font-normal">مرحله</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-100">
+                          <span>در حال انجام:</span>
+                          <strong className="text-indigo-600">{kpis.inProgressSteps} | در انتظار: {kpis.pendingSteps}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contractors Breakdown Table */}
+                    <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
+                      <div className="text-xs font-bold text-slate-800 flex items-center gap-2 border-b pb-2">
+                        <Building2 className="w-4 h-4 text-amber-600" />
+                        <span>گزارش عملکرد پیمانکاران برون‌سپاری در درخت پروژه:</span>
+                      </div>
+
+                      {contractorsReport.length === 0 ? (
+                        <div className="text-xs text-slate-500 py-4 text-center">
+                          هیچ مرحله‌ای به پیمانکار برون‌سپاری واگذار نشده است (تمام مراحل توسط تیم داخلی انجام می‌شود).
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-right text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-600 border-b">
+                                <th className="whitespace-nowrap p-2.5">نام پیمانکار / مجری</th>
+                                <th className="whitespace-nowrap p-2.5 text-center">تعداد مراحل واگذارشده</th>
+                                <th className="whitespace-nowrap p-2.5 text-center">تکمیل‌شده</th>
+                                <th className="whitespace-nowrap p-2.5 text-center">جمع کل هزینه (تومان)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {contractorsReport.map((c, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/80">
+                                  <td className="whitespace-nowrap p-2.5 font-bold text-slate-900">{c.name}</td>
+                                  <td className="whitespace-nowrap p-2.5 text-center font-mono font-bold">{c.stepCount} مرحله</td>
+                                  <td className="whitespace-nowrap p-2.5 text-center">
+                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded-full border border-emerald-200 text-[10px]">
+                                      {c.completedCount} از {c.stepCount}
+                                    </span>
+                                  </td>
+                                  <td className="whitespace-nowrap p-2.5 text-center font-mono font-bold text-amber-800">
+                                    {c.cost.toLocaleString('fa-IR')}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Consolidated BOM Explosion Material Requirements */}
+                    <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
+                      <div className="text-xs font-bold text-slate-800 flex items-center justify-between border-b pb-2">
+                        <div className="flex items-center gap-2">
+                          <Boxes className="w-4 h-4 text-indigo-600" />
+                          <span>گزارش تجمیعی مواد اولیه و قطعات موردنیاز برای کل درخت پروژه (BOM Consolidated):</span>
+                        </div>
+                        <span className="text-[11px] text-slate-500">
+                          محاسبه اتوماتیک فرمول BOM محصول اصلی و زیرمراحل
+                        </span>
+                      </div>
+
+                      {consolidatedBOM.length === 0 ? (
+                        <div className="text-xs text-slate-500 py-4 text-center">
+                          فرمول ساخت (BOM) برای محصول اصلی یا قطعات خروجی زیرمراحل هنوز ثبت نشده است.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-right text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-600 border-b">
+                                <th className="whitespace-nowrap p-2.5">کد قطعه</th>
+                                <th className="whitespace-nowrap p-2.5">نام ماده اولیه / قطعه</th>
+                                <th className="whitespace-nowrap p-2.5 text-center">مقدار کل موردنیاز</th>
+                                <th className="whitespace-nowrap p-2.5 text-center">موجودی انبار مرکزی</th>
+                                <th className="whitespace-nowrap p-2.5 text-center">وضعیت تأمین / کسری</th>
+                                <th className="whitespace-nowrap p-2.5">کاربرد در مراحل</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {consolidatedBOM.map((mat) => (
+                                <tr key={mat.itemId} className="hover:bg-slate-50/80">
+                                  <td className="whitespace-nowrap p-2.5 font-mono text-slate-600 text-[11px]">{mat.itemCode}</td>
+                                  <td className="whitespace-nowrap p-2.5 font-bold text-slate-900">{mat.itemName}</td>
+                                  <td className="whitespace-nowrap p-2.5 text-center font-mono font-bold text-indigo-900 bg-indigo-50/50">
+                                    {mat.totalQuantityNeeded.toLocaleString('fa-IR')} {mat.unit}
+                                  </td>
+                                  <td className="whitespace-nowrap p-2.5 text-center font-mono text-slate-700">
+                                    {mat.centralStock.toLocaleString('fa-IR')} {mat.unit}
+                                  </td>
+                                  <td className="whitespace-nowrap p-2.5 text-center">
+                                    {mat.shortage > 0 ? (
+                                      <span className="px-2.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                        <ShieldAlert className="w-3 h-3 text-rose-500" />
+                                        کسری: {mat.shortage.toLocaleString('fa-IR')} {mat.unit}
+                                      </span>
+                                    ) : (
+                                      <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                        موجودی کافی
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="whitespace-nowrap p-2.5 text-[11px] text-slate-500">
+                                    {mat.usedInSteps.join(' ، ')}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: WORK BREAKDOWN STRUCTURE (WBS TABLE) */}
+                {treeActiveTab === 'wbs' && (
+                  <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-4">
+                    <div className="text-xs font-bold text-slate-800 flex items-center justify-between border-b pb-2">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-amber-600" />
+                        <span>جدول ساختار شکست کار (WBS Table):</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        تعداد کل عناصر شکست کار: {kpis.flattened.length}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 border-b">
+                            <th className="whitespace-nowrap p-2.5">کد WBS</th>
+                            <th className="whitespace-nowrap p-2.5">عنوان مرحله</th>
+                            <th className="whitespace-nowrap p-2.5 text-center">نوع مجری</th>
+                            <th className="whitespace-nowrap p-2.5">نام مجری / پیمانکار</th>
+                            <th className="whitespace-nowrap p-2.5">قطعه خروجی</th>
+                            <th className="whitespace-nowrap p-2.5 text-center">هزینه (تومان)</th>
+                            <th className="whitespace-nowrap p-2.5 text-center">وضعیت</th>
+                            <th className="whitespace-nowrap p-2.5 text-center">عملیات</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {kpis.flattened.map(({ step, code, depth }) => {
+                            const outputItem = items.find(i => i.id === step.outputItemId);
+                            return (
+                              <tr key={step.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="whitespace-nowrap p-2.5 font-mono text-[11px] font-bold text-indigo-700">
+                                  {code}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 font-semibold text-slate-900" style={{ paddingRight: `${(depth * 16) + 10}px` }}>
+                                  {depth > 0 && <span className="text-indigo-400 font-mono ml-1">└─</span>}
+                                  {step.name || step.title}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center">
+                                  {step.isOutsourced || step.contractorId ? (
+                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded text-[10px] font-bold border border-amber-200">
+                                      برون‌سپاری
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold border border-slate-200">
+                                      داخلی
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 font-medium text-slate-800">
+                                  {step.contractorName || (step.assignedOperators?.join(', ') || 'خط مونتاژ داخلی')}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-slate-700">
+                                  {outputItem ? (
+                                    <span className="font-bold text-purple-900">{outputItem.name} ({step.outputQuantity || treeReportProject.targetQuantity} {outputItem.unit})</span>
+                                  ) : (
+                                    <span className="text-slate-400">-</span>
+                                  )}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center font-mono font-bold text-slate-800">
+                                  {(step.outsourcingCost || step.contractorCost) ? (step.outsourcingCost || step.contractorCost || 0).toLocaleString('fa-IR') : '-'}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center">
+                                  {step.status === 'Completed' ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[10px]">
+                                      تکمیل شد
+                                    </span>
+                                  ) : step.status === 'InProgress' ? (
+                                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 font-bold rounded-full text-[10px]">
+                                      در حال انجام
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-medium rounded-full text-[10px]">
+                                      در انتظار
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="whitespace-nowrap p-2.5 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateProjectStep(treeReportProject.id, step.id, 'Completed')}
+                                      className="px-2 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[10px] rounded border border-emerald-200"
+                                    >
+                                      تکمیل
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setAddingSubStepTo({ projectId: treeReportProject.id, parentStepId: step.id })}
+                                      className="px-2 py-0.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[10px] rounded border border-indigo-200"
+                                    >
+                                      + زیرمرحله
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+};
