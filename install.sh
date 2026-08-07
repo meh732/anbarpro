@@ -207,7 +207,7 @@ EOF
     SERVER_IP=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
     ACCESS_URL="http://$SERVER_IP:$APP_PORT"
 
-    # 7. Configure Nginx and SSL if Domain is provided
+    # 7. Configure Nginx and SSL
     if [ -n "$APP_DOMAIN" ]; then
         echo -e "\n${YELLOW}🌐 در حال پیکربندی وب‌سرور Nginx برای دامنه $APP_DOMAIN...${NC}"
         
@@ -227,20 +227,43 @@ EOF
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }"
-
-        if [ -d "/etc/nginx/sites-available" ]; then
-            echo "$NGINX_CONF" > "/etc/nginx/sites-available/anbarpro"
-            ln -sf "/etc/nginx/sites-available/anbarpro" "/etc/nginx/sites-enabled/anbarpro"
-            # Remove default configuration if conflicting on port 80
-            rm -f /etc/nginx/sites-enabled/default
-        elif [ -d "/etc/nginx/conf.d" ]; then
-            echo "$NGINX_CONF" > "/etc/nginx/conf.d/anbarpro.conf"
-        fi
+    else
+        echo -e "\n${YELLOW}🌐 در حال پیکربندی Nginx به عنوان وب‌سرور پیش‌فرض روی پورت 80 سرور...${NC}"
         
-        nginx -t &> /dev/null
-        if [ $? -eq 0 ]; then
-            systemctl restart nginx
-            echo -e "${GREEN}✅ پیکربندی Nginx با موفقیت اعمال و وب‌سرور راه‌اندازی مجدد شد.${NC}"
+        NGINX_CONF="server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}"
+    fi
+
+    if [ -d "/etc/nginx/sites-available" ]; then
+        echo "$NGINX_CONF" > "/etc/nginx/sites-available/anbarpro"
+        ln -sf "/etc/nginx/sites-available/anbarpro" "/etc/nginx/sites-enabled/anbarpro"
+        # Remove default configuration if conflicting on port 80
+        rm -f /etc/nginx/sites-enabled/default
+    elif [ -d "/etc/nginx/conf.d" ]; then
+        echo "$NGINX_CONF" > "/etc/nginx/conf.d/anbarpro.conf"
+    fi
+    
+    nginx -t &> /dev/null
+    if [ $? -eq 0 ]; then
+        systemctl restart nginx
+        echo -e "${GREEN}✅ پیکربندی Nginx با موفقیت اعمال و وب‌سرور راه‌اندازی مجدد شد.${NC}"
+        
+        if [ -n "$APP_DOMAIN" ]; then
             ACCESS_URL="http://$APP_DOMAIN"
 
             # Obtain SSL via Certbot if requested
@@ -257,8 +280,10 @@ EOF
                 fi
             fi
         else
-            echo -e "${RED}❌ فایل پیکربندی Nginx نامعتبر است. تنظیمات Nginx لغو شد.${NC}"
+            ACCESS_URL="http://$SERVER_IP"
         fi
+    else
+        echo -e "${RED}❌ فایل پیکربندی Nginx نامعتبر است. تنظیمات Nginx لغو شد.${NC}"
     fi
     
     echo -e "\n${GREEN}==================================================================${NC}"
