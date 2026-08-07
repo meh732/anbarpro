@@ -65,8 +65,29 @@ install_anbarpro() {
     if [ -z "$INSTALL_DIR" ]; then
         INSTALL_DIR="/usr/local/anbarpro"
     fi
-    
     echo -e "${CYAN}🚀 مسیر انتخابی شما: $INSTALL_DIR${NC}"
+    
+    # 1.1 Ask for application port
+    read -p "🔌 پورت اجرای وب‌سرویس انبار را وارد کنید [Default: 3000]: " APP_PORT
+    if [ -z "$APP_PORT" ]; then
+        APP_PORT="3000"
+    fi
+    echo -e "${CYAN}🚀 پورت وب‌سرویس: $APP_PORT${NC}"
+
+    # 1.2 Ask for domain setup
+    read -p "🌐 آیا می‌خواهید دامنه (Domain) برای برنامه تنظیم کنید؟ (y/n) [Default: n]: " WANT_DOMAIN
+    APP_DOMAIN=""
+    WANT_SSL="n"
+    if [[ "$WANT_DOMAIN" =~ ^[Yy]$ ]]; then
+        read -p "🔗 آدرس دامنه یا زیردامنه خود را وارد کنید (مثال: inventory.yourdomain.com): " APP_DOMAIN
+        if [ -n "$APP_DOMAIN" ]; then
+            echo -e "${CYAN}🚀 دامنه ثبت شده: $APP_DOMAIN${NC}"
+            read -p "🔒 آیا مایل به دریافت گواهی رایگان SSL (HTTPS) با Let's Encrypt هستید؟ (y/n) [Default: y]: " WANT_SSL_INPUT
+            if [ -z "$WANT_SSL_INPUT" ] || [[ "$WANT_SSL_INPUT" =~ ^[Yy]$ ]]; then
+                WANT_SSL="y"
+            fi
+        fi
+    fi
     
     # 2. Package installation based on OS
     echo -e "\n${YELLOW}📦 در حال بررسی و نصب ملزومات سیستم...${NC}"
@@ -136,7 +157,7 @@ WorkingDirectory=$INSTALL_DIR
 ExecStart=$(which node) dist/server.cjs
 Restart=always
 RestartSec=10
-Environment=NODE_ENV=production PORT=3000
+Environment=NODE_ENV=production PORT=$APP_PORT
 
 [Install]
 WantedBy=multi-user.target
@@ -148,13 +169,69 @@ EOF
     
     # Get primary IP address
     SERVER_IP=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
+    ACCESS_URL="http://$SERVER_IP:$APP_PORT"
+
+    # 7. Configure Nginx and SSL if Domain is provided
+    if [ -n "$APP_DOMAIN" ]; then
+        echo -e "\n${YELLOW}🌐 در حال پیکربندی وب‌سرور Nginx برای دامنه $APP_DOMAIN...${NC}"
+        
+        NGINX_CONF="server {
+    listen 80;
+    server_name $APP_DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}"
+
+        if [ -d "/etc/nginx/sites-available" ]; then
+            echo "$NGINX_CONF" > "/etc/nginx/sites-available/anbarpro"
+            ln -sf "/etc/nginx/sites-available/anbarpro" "/etc/nginx/sites-enabled/anbarpro"
+            # Remove default configuration if conflicting on port 80
+            rm -f /etc/nginx/sites-enabled/default
+        elif [ -d "/etc/nginx/conf.d" ]; then
+            echo "$NGINX_CONF" > "/etc/nginx/conf.d/anbarpro.conf"
+        fi
+        
+        nginx -t &> /dev/null
+        if [ $? -eq 0 ]; then
+            systemctl restart nginx
+            echo -e "${GREEN}✅ پیکربندی Nginx با موفقیت اعمال و وب‌سرور راه‌اندازی مجدد شد.${NC}"
+            ACCESS_URL="http://$APP_DOMAIN"
+
+            # Obtain SSL via Certbot if requested
+            if [ "$WANT_SSL" = "y" ]; then
+                echo -e "\n${YELLOW}🔒 در حال صادر کردن گواهی امنیتی SSL (Let's Encrypt) برای دامنه $APP_DOMAIN...${NC}"
+                # Stop nginx temporarily if standalone is needed or use --nginx plugin directly
+                certbot --nginx -d "$APP_DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect
+                
+                if [ $? -eq 0 ]; then
+                    echo -e "${GREEN}✅ گواهی امنیتی SSL با موفقیت فعال شد و آدرس به HTTPS منتقل گردید!${NC}"
+                    ACCESS_URL="https://$APP_DOMAIN"
+                else
+                    echo -e "${RED}⚠️ صدور گواهی SSL با خطا مواجه شد. لطفاً مطمئن شوید دامنه به IP سرور ($SERVER_IP) متصل باشد.${NC}"
+                fi
+            fi
+        else
+            echo -e "${RED}❌ فایل پیکربندی Nginx نامعتبر است. تنظیمات Nginx لغو شد.${NC}"
+        fi
+    fi
     
     echo -e "\n${GREEN}==================================================================${NC}"
     echo -e "${GREEN}🎉 سامانه مدیریت انبار و تولید انبار‌مه با موفقیت نصب و فعال شد!${NC}"
     echo -e "${GREEN}==================================================================${NC}"
     echo -e "   🔹 مسیر فیزیکی: $INSTALL_DIR"
     echo -e "   🔹 وضعیت سرویس: فعال و در حال اجرا (Active)"
-    echo -e "   🔹 آدرس ورود به سامانه: ${CYAN}http://$SERVER_IP:3000${NC}"
+    echo -e "   🔹 پورت داخلی: $APP_PORT"
+    echo -e "   🔹 آدرس ورود به سامانه: ${CYAN}$ACCESS_URL${NC}"
     echo -e "   🔹 توجه: دیتابیس به صورت کاملاً خام فعال شده و در اولین ورود"
     echo -e "      پنجره خوش‌آمدگویی برای ثبت برند و ادمین نمایش داده می‌شود."
     echo -e "${GREEN}==================================================================${NC}\n"
