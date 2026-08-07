@@ -145,6 +145,9 @@ install_anbarpro() {
     # 6. Setup Systemd Service
     echo -e "\n${YELLOW}🛡️ در حال ثبت سرویس در سیستم‌عامل برای اجرای خودکار در پس‌زمینه...${NC}"
     
+    NODE_BIN_PATH=$(command -v node || echo "/usr/bin/node")
+    echo -e "${CYAN}🔹 Node.js Executable: $NODE_BIN_PATH${NC}"
+
     cat > /etc/systemd/system/anbarpro.service <<EOF
 [Unit]
 Description=AnbarMeh Smart Enterprise ERP Application
@@ -154,7 +157,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$(which node) dist/server.cjs
+ExecStart=$NODE_BIN_PATH dist/server.cjs
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production PORT=$APP_PORT
@@ -166,6 +169,39 @@ EOF
     systemctl daemon-reload
     systemctl enable anbarpro
     systemctl restart anbarpro
+    
+    # 6.1 Open firewall ports (UFW / Firewalld)
+    echo -e "\n${YELLOW}🛡️ در حال بررسی و باز کردن پورت‌های دیوار آتش...${NC}"
+    if command -v ufw &> /dev/null; then
+        if ufw status | grep -q "active"; then
+            echo -e "${YELLOW}🔥 دیوار آتش UFW فعال است. در حال باز کردن پورت $APP_PORT...${NC}"
+            ufw allow $APP_PORT/tcp &> /dev/null
+            ufw allow 80/tcp &> /dev/null
+            ufw allow 443/tcp &> /dev/null
+            ufw reload &> /dev/null
+            echo -e "${GREEN}✅ پورت با موفقیت در UFW باز شد.${NC}"
+        fi
+    fi
+
+    if command -v firewall-cmd &> /dev/null; then
+        if systemctl is-active --quiet firewalld; then
+            echo -e "${YELLOW}🔥 دیوار آتش Firewalld فعال است. در حال باز کردن پورت $APP_PORT...${NC}"
+            firewall-cmd --permanent --add-port=$APP_PORT/tcp &> /dev/null
+            firewall-cmd --permanent --add-port=80/tcp &> /dev/null
+            firewall-cmd --permanent --add-port=443/tcp &> /dev/null
+            firewall-cmd --reload &> /dev/null
+            echo -e "${GREEN}✅ پورت با موفقیت در Firewalld باز شد.${NC}"
+        fi
+    fi
+
+    # 6.2 Verify service status
+    sleep 2
+    if ! systemctl is-active --quiet anbarpro; then
+        echo -e "${RED}❌ شروع بکار سرویس با شکست مواجه شد! خطا در لاگ‌های سیستم:${NC}"
+        journalctl -u anbarpro -n 15 --no-pager
+    else
+        echo -e "${GREEN}✅ سرویس لینوکس با موفقیت فعال و اجرا شد.${NC}"
+    fi
     
     # Get primary IP address
     SERVER_IP=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
