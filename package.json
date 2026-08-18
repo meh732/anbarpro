@@ -61,6 +61,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "^4.1.14",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
@@ -69,11 +70,5 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "@types/express": "^4.17.21"
-  },
-  "optionalDependencies": {
-    "@tailwindcss/oxide-linux-x64-gnu": "^4.1.14",
-    "@tailwindcss/oxide-linux-x64-musl": "^4.1.14",
-    "@tailwindcss/oxide-linux-arm64-gnu": "^4.1.14",
-    "@tailwindcss/oxide-linux-arm64-musl": "^4.1.14"
   }
 }

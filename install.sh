@@ -56,68 +56,119 @@ check_node() {
     return 0
 }
 
-# Run NPM command with real-time progress, duration and directory size tracking
+# Run NPM command with real-time countdown, remaining size, and dynamic progress bar
 run_npm_with_progress() {
     local cmd="$1"
     local desc="$2"
+    local target_mb="${3:-230}"   # Default estimated package size in MB
+    local est_secs="${4:-45}"     # Default estimated duration in seconds
     
-    echo -e "${YELLOW}⚙️ $desc...${NC}"
+    echo -e "\n${YELLOW}⚙️ $desc...${NC}"
+    echo -e "   ${PURPLE}📊 Estimated Target: ~${target_mb} MB  |  ⏳ Estimated Duration: ~${est_secs}s${NC}"
     
     # Run the npm command in the background
     eval "$cmd" > /dev/null 2>&1 &
     local PID=$!
     
-    local SECONDS=0
-    # Keep printing progress while npm is running
+    local elapsed=0
+    
+    # Keep updating progress bar, remaining time and size while process is running
     while kill -0 $PID 2>/dev/null; do
-        local size="0B"
+        local curr_kb=0
         if [ -d "node_modules" ]; then
-            size=$(du -sh node_modules 2>/dev/null | awk '{print $1}')
-            if [ -z "$size" ]; then
-                size="0B"
+            curr_kb=$(du -sk node_modules 2>/dev/null | awk '{print $1}')
+            curr_kb=${curr_kb:-0}
+        fi
+        local curr_mb=$(( curr_kb / 1024 ))
+        
+        # Calculate percentage (cap at 98% until process completes)
+        local percent=0
+        if [ $target_mb -gt 0 ]; then
+            percent=$(( curr_mb * 100 / target_mb ))
+            if [ $percent -gt 98 ]; then
+                percent=98
+            fi
+            if [ $percent -lt 0 ]; then
+                percent=0
             fi
         fi
         
-        # Format elapsed time
-        local mins=$((SECONDS / 60))
-        local secs=$((SECONDS % 60))
-        local time_str=""
-        if [ $mins -gt 0 ]; then
-            time_str="${mins}m ${secs}s"
-        else
-            time_str="${secs}s"
+        # Calculate remaining download size (MB)
+        local remaining_mb=$(( target_mb - curr_mb ))
+        if [ $remaining_mb -lt 0 ]; then
+            remaining_mb=0
         fi
         
-        echo -ne "   ${CYAN}⏳ [Time: $time_str] [Installed Size: $size] Installing packages...${NC}\r"
+        # Calculate remaining time (dynamic countdown)
+        local rem_secs=0
+        if [ $elapsed -gt 2 ] && [ $curr_mb -gt 3 ]; then
+            local speed_kbps=$(( curr_kb / elapsed ))
+            if [ $speed_kbps -gt 0 ]; then
+                local rem_kb=$(( remaining_mb * 1024 ))
+                rem_secs=$(( rem_kb / speed_kbps ))
+            else
+                rem_secs=$(( est_secs - elapsed ))
+            fi
+        else
+            rem_secs=$(( est_secs - elapsed ))
+        fi
+        
+        if [ $rem_secs -lt 1 ]; then
+            rem_secs=1
+        fi
+        
+        # Format remaining time string
+        local rem_time_str=""
+        if [ $rem_secs -ge 60 ]; then
+            local r_mins=$(( rem_secs / 60 ))
+            local r_secs=$(( rem_secs % 60 ))
+            rem_time_str="${r_mins}m ${r_secs}s"
+        else
+            rem_time_str="${rem_secs}s"
+        fi
+        
+        # Build 20-character visual progress bar
+        local bar_len=20
+        local filled=$(( percent * bar_len / 100 ))
+        local empty=$(( bar_len - filled ))
+        local bar=""
+        for ((i=0; i<filled; i++)); do bar="${bar}█"; done
+        for ((i=0; i<empty; i++)); do bar="${bar}░"; done
+        
+        echo -ne "   ${CYAN}⏳ Remaining: ${YELLOW}${rem_time_str}${CYAN} | ⬇️  ${curr_mb}MB/${target_mb}MB (Left: ${remaining_mb}MB) | [${GREEN}${bar}${CYAN}] ${percent}%${NC}\r"
+        
         sleep 1
-        ((SECONDS++))
+        ((elapsed++))
     done
     
     # Wait for the process to finish and get exit code
     wait $PID
     local exit_code=$?
     
-    # Print final status
-    local size="0B"
+    # Final measurements
+    local final_kb=0
     if [ -d "node_modules" ]; then
-        size=$(du -sh node_modules 2>/dev/null | awk '{print $1}')
+        final_kb=$(du -sk node_modules 2>/dev/null | awk '{print $1}')
+        final_kb=${final_kb:-0}
     fi
-    local mins=$((SECONDS / 60))
-    local secs=$((SECONDS % 60))
-    local time_str=""
-    if [ $mins -gt 0 ]; then
-        time_str="${mins}m ${secs}s"
+    local final_mb=$(( final_kb / 1024 ))
+    
+    local total_mins=$(( elapsed / 60 ))
+    local total_secs=$(( elapsed % 60 ))
+    local total_time_str=""
+    if [ $total_mins -gt 0 ]; then
+        total_time_str="${total_mins}m ${total_secs}s"
     else
-        time_str="${secs}s"
+        total_time_str="${total_secs}s"
     fi
     
-    # Clear line and print completion
+    # Clear line and print final status
     echo -ne "\r\033[K"
     if [ $exit_code -eq 0 ]; then
-        echo -e "   ${GREEN}✅ Done in $time_str! Final installed size: $size${NC}"
+        echo -e "   ${GREEN}✅ Done in ${total_time_str}! [Installed: ${final_mb} MB] [████████████████████] 100%${NC}"
         return 0
     else
-        echo -e "   ${RED}❌ Failed after $time_str. Please check npm logs.${NC}"
+        echo -e "   ${RED}❌ Failed after ${total_time_str}. Please check npm logs.${NC}"
         return $exit_code
     fi
 }
@@ -213,22 +264,27 @@ install_anbarpro() {
     fi
     
     # 4. Install NPM Dependencies
-    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing main NPM dependencies"
+    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing main NPM dependencies" 230 45
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
     ARCH=$(uname -m)
     echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
     if [ "$ARCH" = "x86_64" ]; then
-        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-x64-musl" "Installing native Linux x64 bindings for @tailwindcss/oxide"
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide" 15 10
     elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-arm64-gnu @tailwindcss/oxide-linux-arm64-musl" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
-    else
-        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-arm64-gnu" "Installing optional packages by default"
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide" 15 10
     fi
     
     # 5. Build
     echo -e "\n${YELLOW}📦 Compiling project and building assets (Vite)...${NC}"
     npm run build
+    
+    # Auto-repair fallback if native binary fails during build
+    if [ ! -f "dist/server.cjs" ]; then
+        echo -e "\n${YELLOW}🔄 Attempting automatic native bindings repair and rebuilding...${NC}"
+        npm install --save-dev --force @tailwindcss/oxide @tailwindcss/oxide-linux-x64-gnu
+        npm run build
+    fi
     
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${RED}❌ Critical Error: Production server file (dist/server.cjs) not found! Build failed.${NC}"
@@ -438,20 +494,25 @@ update_anbarpro() {
     fi
     
     # 4. Install NPM Dependencies
-    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing/Updating main NPM dependencies"
+    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing/Updating main NPM dependencies" 230 35
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
     ARCH=$(uname -m)
     echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
     if [ "$ARCH" = "x86_64" ]; then
-        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-x64-musl" "Installing native Linux x64 bindings for @tailwindcss/oxide"
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide" 15 10
     elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-arm64-gnu @tailwindcss/oxide-linux-arm64-musl" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
-    else
-        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-arm64-gnu" "Installing optional packages by default"
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide" 15 10
     fi
     
     npm run build
+    
+    # Auto-repair fallback if native binary fails during build
+    if [ ! -f "dist/server.cjs" ]; then
+        echo -e "\n${YELLOW}🔄 Attempting automatic native bindings repair and rebuilding...${NC}"
+        npm install --save-dev --force @tailwindcss/oxide @tailwindcss/oxide-linux-x64-gnu
+        npm run build
+    fi
     
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${RED}❌ Critical Error: Update build failed! dist/server.cjs was not created.${NC}"
