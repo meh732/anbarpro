@@ -185,6 +185,12 @@ install_anbarpro() {
     echo -e "${GREEN}✅ Node.js: $(node -v) detected successfully.${NC}"
     
     # 3. Clone Repository
+    # Ensure current working directory is a safe location (e.g. /root or /tmp)
+    # so moving or recreating $INSTALL_DIR does not invalidate the shell's cwd for git
+    cd /root 2>/dev/null || cd /tmp
+    mkdir -p "$(dirname "$INSTALL_DIR")"
+    systemctl stop anbarpro &> /dev/null
+
     if [ -d "$INSTALL_DIR" ]; then
         echo -e "${YELLOW}⚠️ Destination path already exists. Creating backup copy...${NC}"
         mv "$INSTALL_DIR" "${INSTALL_DIR}_backup_$(date +%Y%m%d%H%M%S)"
@@ -471,6 +477,7 @@ uninstall_anbarpro() {
         systemctl daemon-reload
         
         INSTALL_DIR="/usr/local/anbarpro"
+        cd /root 2>/dev/null || cd /tmp
         if [ -d "$INSTALL_DIR" ]; then
             echo -e "${YELLOW}🗑️ Deleting physical application files directory...${NC}"
             rm -rf "$INSTALL_DIR"
