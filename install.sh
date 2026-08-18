@@ -56,24 +56,26 @@ check_node() {
     return 0
 }
 
-# Run NPM command with real-time countdown, remaining size, and dynamic progress bar
+# Run NPM command with compact, single-line in-place progress that never wraps
 run_npm_with_progress() {
     local cmd="$1"
     local desc="$2"
-    local target_mb="${3:-230}"   # Default estimated package size in MB
-    local est_secs="${4:-45}"     # Default estimated duration in seconds
     
     echo -e "\n${YELLOW}⚙️ $desc...${NC}"
-    echo -e "   ${PURPLE}📊 Estimated Target: ~${target_mb} MB  |  ⏳ Estimated Duration: ~${est_secs}s${NC}"
     
     # Run the npm command in the background
     eval "$cmd" > /dev/null 2>&1 &
     local PID=$!
     
     local elapsed=0
+    local spin='-\|/'
+    local i=0
     
-    # Keep updating progress bar, remaining time and size while process is running
+    # Strictly in-place single-line progress update
     while kill -0 $PID 2>/dev/null; do
+        i=$(( (i+1) % 4 ))
+        local char="${spin:$i:1}"
+        
         local curr_kb=0
         if [ -d "node_modules" ]; then
             curr_kb=$(du -sk node_modules 2>/dev/null | awk '{print $1}')
@@ -81,71 +83,16 @@ run_npm_with_progress() {
         fi
         local curr_mb=$(( curr_kb / 1024 ))
         
-        # Calculate percentage (cap at 98% until process completes)
-        local percent=0
-        if [ $target_mb -gt 0 ]; then
-            percent=$(( curr_mb * 100 / target_mb ))
-            if [ $percent -gt 98 ]; then
-                percent=98
-            fi
-            if [ $percent -lt 0 ]; then
-                percent=0
-            fi
-        fi
-        
-        # Calculate remaining download size (MB)
-        local remaining_mb=$(( target_mb - curr_mb ))
-        if [ $remaining_mb -lt 0 ]; then
-            remaining_mb=0
-        fi
-        
-        # Calculate remaining time (dynamic countdown)
-        local rem_secs=0
-        if [ $elapsed -gt 2 ] && [ $curr_mb -gt 3 ]; then
-            local speed_kbps=$(( curr_kb / elapsed ))
-            if [ $speed_kbps -gt 0 ]; then
-                local rem_kb=$(( remaining_mb * 1024 ))
-                rem_secs=$(( rem_kb / speed_kbps ))
-            else
-                rem_secs=$(( est_secs - elapsed ))
-            fi
-        else
-            rem_secs=$(( est_secs - elapsed ))
-        fi
-        
-        if [ $rem_secs -lt 1 ]; then
-            rem_secs=1
-        fi
-        
-        # Format remaining time string
-        local rem_time_str=""
-        if [ $rem_secs -ge 60 ]; then
-            local r_mins=$(( rem_secs / 60 ))
-            local r_secs=$(( rem_secs % 60 ))
-            rem_time_str="${r_mins}m ${r_secs}s"
-        else
-            rem_time_str="${rem_secs}s"
-        fi
-        
-        # Build 20-character visual progress bar
-        local bar_len=20
-        local filled=$(( percent * bar_len / 100 ))
-        local empty=$(( bar_len - filled ))
-        local bar=""
-        for ((i=0; i<filled; i++)); do bar="${bar}█"; done
-        for ((i=0; i<empty; i++)); do bar="${bar}░"; done
-        
-        echo -ne "   ${CYAN}⏳ Remaining: ${YELLOW}${rem_time_str}${CYAN} | ⬇️  ${curr_mb}MB/${target_mb}MB (Left: ${remaining_mb}MB) | [${GREEN}${bar}${CYAN}] ${percent}%${NC}\r"
+        # Single-line compact progress (approx 40 chars max, never wraps)
+        printf "\r\033[K   ${CYAN}[%s] ⏳ %ds | 📦 %d MB downloaded...${NC}" "$char" "$elapsed" "$curr_mb"
         
         sleep 1
         ((elapsed++))
     done
     
-    # Wait for the process to finish and get exit code
     wait $PID
     local exit_code=$?
     
-    # Final measurements
     local final_kb=0
     if [ -d "node_modules" ]; then
         final_kb=$(du -sk node_modules 2>/dev/null | awk '{print $1}')
@@ -153,22 +100,13 @@ run_npm_with_progress() {
     fi
     local final_mb=$(( final_kb / 1024 ))
     
-    local total_mins=$(( elapsed / 60 ))
-    local total_secs=$(( elapsed % 60 ))
-    local total_time_str=""
-    if [ $total_mins -gt 0 ]; then
-        total_time_str="${total_mins}m ${total_secs}s"
-    else
-        total_time_str="${total_secs}s"
-    fi
-    
-    # Clear line and print final status
-    echo -ne "\r\033[K"
+    # Clean the line completely and print final success/failure
+    printf "\r\033[K"
     if [ $exit_code -eq 0 ]; then
-        echo -e "   ${GREEN}✅ Done in ${total_time_str}! [Installed: ${final_mb} MB] [████████████████████] 100%${NC}"
+        echo -e "   ${GREEN}✅ Done in ${elapsed}s (Total: ${final_mb} MB)${NC}"
         return 0
     else
-        echo -e "   ${RED}❌ Failed after ${total_time_str}. Please check npm logs.${NC}"
+        echo -e "   ${RED}❌ Failed after ${elapsed}s.${NC}"
         return $exit_code
     fi
 }
@@ -264,15 +202,15 @@ install_anbarpro() {
     fi
     
     # 4. Install NPM Dependencies
-    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing main NPM dependencies" 230 45
+    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing main NPM dependencies"
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
     ARCH=$(uname -m)
     echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
     if [ "$ARCH" = "x86_64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide" 15 10
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide"
     elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide" 15 10
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
     fi
     
     # 5. Build
@@ -494,15 +432,15 @@ update_anbarpro() {
     fi
     
     # 4. Install NPM Dependencies
-    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing/Updating main NPM dependencies" 230 35
+    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing/Updating main NPM dependencies"
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
     ARCH=$(uname -m)
     echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
     if [ "$ARCH" = "x86_64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide" 15 10
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide"
     elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide" 15 10
+        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
     fi
     
     npm run build
