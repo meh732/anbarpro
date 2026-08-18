@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { TransferStatus } from '../types';
+import { TransferStatus, WarehouseTransfer } from '../types';
 import { 
   ArrowLeftRight, Plus, CheckCircle2, Clock, 
-  XCircle, Truck, FileText, X 
+  XCircle, Truck, FileText, X, Pencil, Trash2 
 } from 'lucide-react';
 
 export const TransfersView: React.FC = () => {
   const { 
-    transfers, warehouses, items, projects, boms, currentUser, createTransfer, updateTransferStatus 
+    transfers, warehouses, items, projects, boms, currentUser, 
+    createTransfer, updateTransfer, updateTransferStatus, deleteTransfer,
+    hasActionPermission
   } = useApp();
 
+  const canAdd = hasActionPermission('add');
+  const canEdit = hasActionPermission('edit');
+  const canDelete = hasActionPermission('delete');
+
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransfer, setEditingTransfer] = useState<WarehouseTransfer | null>(null);
 
   // Form State
   const [docNumber, setDocNumber] = useState(`TRF-2026-${Math.floor(100 + Math.random() * 900)}`);
@@ -21,16 +28,43 @@ export const TransfersView: React.FC = () => {
   const [handlerName, setHandlerName] = useState('حسن نوری (مسئول حمل داخلی)');
   const [notes, setNotes] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [transferStatus, setTransferStatus] = useState<TransferStatus>('Completed');
 
   const [transferItems, setTransferItems] = useState<{ itemId: string; quantity: number }[]>([
     { itemId: items[0]?.id || '', quantity: 50 }
   ]);
 
   const handleOpenNew = () => {
+    setEditingTransfer(null);
     setDocNumber(`TRF-2026-${Math.floor(100 + Math.random() * 900)}`);
+    setDate(new Date().toLocaleDateString('fa-IR'));
+    setSourceWarehouseId(warehouses[0]?.id || 'wh-raw');
+    setTargetWarehouseId(warehouses[1]?.id || 'wh-smd');
+    setHandlerName('حسن نوری (مسئول حمل داخلی)');
+    setNotes('');
+    setTransferStatus('Completed');
     setTransferItems([{ itemId: items[0]?.id || '', quantity: 50 }]);
     setSelectedProjectId('');
     setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (trf: WarehouseTransfer) => {
+    setEditingTransfer(trf);
+    setDocNumber(trf.docNumber);
+    setDate(trf.date);
+    setSourceWarehouseId(trf.sourceWarehouseId);
+    setTargetWarehouseId(trf.targetWarehouseId);
+    setHandlerName(trf.handlerName);
+    setNotes(trf.notes || '');
+    setTransferStatus(trf.status);
+    setTransferItems(trf.items.map(it => ({ ...it })));
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (trf: WarehouseTransfer) => {
+    if (confirm(`آیا از حذف حواله انتقال "${trf.docNumber}" اطمینان دارید؟`)) {
+      deleteTransfer(trf.id);
+    }
   };
 
   const handleLoadProjectBOM = (projectId: string) => {
@@ -64,19 +98,33 @@ export const TransfersView: React.FC = () => {
       return;
     }
 
-    createTransfer({
-      docNumber,
-      date,
-      sourceWarehouseId,
-      targetWarehouseId,
-      registeredBy: currentUser.fullName,
-      handlerName,
-      status: 'Completed', // Direct instant completion or pending
-      items: transferItems,
-      notes,
-    });
+    if (editingTransfer) {
+      updateTransfer(editingTransfer.id, {
+        docNumber,
+        date,
+        sourceWarehouseId,
+        targetWarehouseId,
+        handlerName,
+        status: transferStatus,
+        items: transferItems,
+        notes,
+      });
+      alert('حواله انتقال با موفقیت به‌روزرسانی شد.');
+    } else {
+      createTransfer({
+        docNumber,
+        date,
+        sourceWarehouseId,
+        targetWarehouseId,
+        registeredBy: currentUser.fullName,
+        handlerName,
+        status: transferStatus,
+        items: transferItems,
+        notes,
+      });
+      alert('حواله انتقال بین انبارها ثبت شد و موجودی انبار مبدا و مقصد به‌روزرسانی گردید.');
+    }
 
-    alert('حواله انتقال بین انبارها ثبت شد و موجودی انبار مبدا و مقصد به صورت خودکار به‌روزرسانی گردید.');
     setIsModalOpen(false);
   };
 
@@ -101,13 +149,15 @@ export const TransfersView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenNew}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          ثبت حواله انتقال جدید
-        </button>
+        {canAdd && (
+          <button
+            onClick={handleOpenNew}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            ثبت حواله انتقال جدید
+          </button>
+        )}
       </div>
 
       {/* Transfers Table */}
@@ -125,12 +175,13 @@ export const TransfersView: React.FC = () => {
                 <th className="whitespace-nowrap p-3.5">ثبت‌کننده</th>
                 <th className="whitespace-nowrap p-3.5">وضعیت</th>
                 <th className="whitespace-nowrap p-3.5 text-center">تغییر وضعیت</th>
+                <th className="whitespace-nowrap p-3.5 text-center">عملیات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {transfers.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400">
+                  <td colSpan={10} className="p-8 text-center text-slate-400">
                     هیچ حواله انتقالی تاکنون ثبت نشده است.
                   </td>
                 </tr>
@@ -158,22 +209,54 @@ export const TransfersView: React.FC = () => {
                       </td>
                       <td className="whitespace-nowrap p-3.5 text-center">
                         {trf.status !== 'Completed' && trf.status !== 'Rejected' ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => updateTransferStatus(trf.id, 'Completed')}
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-[10px] shadow-2xs"
-                            >
-                              تکمیل تحویل
-                            </button>
-                            <button
-                              onClick={() => updateTransferStatus(trf.id, 'Rejected')}
-                              className="px-2 py-1 bg-slate-100 text-rose-600 hover:bg-rose-50 border border-slate-200 rounded text-[10px] font-medium"
-                            >
-                              رد
-                            </button>
-                          </div>
+                          canEdit ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => updateTransferStatus(trf.id, 'Completed')}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-[10px] shadow-2xs"
+                              >
+                                تکمیل تحویل
+                              </button>
+                              <button
+                                onClick={() => updateTransferStatus(trf.id, 'Rejected')}
+                                className="px-2 py-1 bg-slate-100 text-rose-600 hover:bg-rose-50 border border-slate-200 rounded text-[10px] font-medium"
+                              >
+                                رد
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">بدون دسترسی ویرایش</span>
+                          )
                         ) : (
                           <span className="text-[10px] text-slate-400 font-mono">نهایی شده</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap p-3.5 text-center">
+                        {(canEdit || canDelete) ? (
+                          <div className="flex items-center justify-center gap-1">
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(trf)}
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="ویرایش حواله انتقال"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(trf)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                title="حذف حواله انتقال"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">-</span>
                         )}
                       </td>
                     </tr>
@@ -185,14 +268,14 @@ export const TransfersView: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal New Transfer */}
+      {/* Modal New / Edit Transfer */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <h3 className="font-bold text-sm text-indigo-600 flex items-center gap-2">
                 <ArrowLeftRight className="w-4 h-4" />
-                ثبت جابجایی و انتقال کالا بین انبارها
+                {editingTransfer ? `ویرایش حواله انتقال (${editingTransfer.docNumber})` : 'ثبت جابجایی و انتقال کالا بین انبارها'}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -337,7 +420,7 @@ export const TransfersView: React.FC = () => {
                   type="submit"
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-2xs"
                 >
-                  ثبت جابجایی
+                  {editingTransfer ? 'ذخیره تغییرات حواله' : 'ثبت جابجایی'}
                 </button>
               </div>
             </form>

@@ -7,11 +7,19 @@ import {
 } from 'lucide-react';
 
 export const BOMView: React.FC = () => {
-  const { boms, items, warehouses, inventory, projects, addBOM, updateBOM } = useApp();
+  const { 
+    boms, items, warehouses, inventory, projects, 
+    addBOM, updateBOM, deleteBOM, hasActionPermission 
+  } = useApp();
+
+  const canAdd = hasActionPermission('add');
+  const canEdit = hasActionPermission('edit');
+  const canDelete = hasActionPermission('delete');
 
   const [selectedBomId, setSelectedBomId] = useState<string>(boms[0]?.id || '');
   const [testProduceQty, setTestProduceQty] = useState<number>(100);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingBom, setEditingBom] = useState<BOM | null>(null);
 
   const selectedBom = boms.find(b => b.id === selectedBomId) || boms[0];
   const finishedItem = items.find(i => i.id === selectedBom?.finishedItemId);
@@ -51,9 +59,13 @@ export const BOMView: React.FC = () => {
   });
 
   const handleOpenAdd = () => {
+    setEditingBom(null);
     setBomName('فرمول ساخت برد کنترل جدید');
+    setVersion('v1.0');
+    setDescription('');
     setSelectedProjectId('');
     setSelectedProjectStepId('');
+    setFinishedItemId(items.find(i => i.itemType === 'Finished')?.id || items[0]?.id || '');
     setBomItems([
       { itemId: items.find(i => i.code === 'E-PCB-001')?.id || items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 2 },
       { itemId: items.find(i => i.code === 'E-IC-328')?.id || items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 1 },
@@ -62,6 +74,32 @@ export const BOMView: React.FC = () => {
       { itemId: items.find(i => i.code === 'E-CAP-0805-100N')?.id || items[0]?.id || '', quantityNeeded: 8, unit: 'عدد', scrapAllowancePercent: 2 },
     ]);
     setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (bom: BOM, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingBom(bom);
+    setBomName(bom.name);
+    setVersion(bom.version);
+    setDescription(bom.description || '');
+    setFinishedItemId(bom.finishedItemId);
+    setSelectedProjectId(bom.projectId || '');
+    setSelectedProjectStepId(bom.projectStepId || '');
+    setBomItems(bom.items.map(it => ({ ...it })));
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (bom: BOM, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (confirm(`آیا از حذف فرمول ساخت "${bom.name}" اطمینان دارید؟`)) {
+      deleteBOM(bom.id);
+      if (selectedBomId === bom.id) {
+        const remaining = boms.filter(b => b.id !== bom.id);
+        if (remaining.length > 0) {
+          setSelectedBomId(remaining[0].id);
+        }
+      }
+    }
   };
 
   const handleAddItemLine = () => {
@@ -73,17 +111,30 @@ export const BOMView: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addBOM({
-      finishedItemId,
-      name: bomName,
-      version,
-      items: bomItems,
-      description,
-      isActive: true,
-      projectId: selectedProjectId || undefined,
-      projectStepId: selectedProjectStepId || undefined,
-    });
-    alert('فرمول ساخت (BOM) جدید با موفقیت ثبت شد و به پروژه و مرحله تخصیص داده شد.');
+    if (editingBom) {
+      updateBOM(editingBom.id, {
+        finishedItemId,
+        name: bomName,
+        version,
+        items: bomItems,
+        description,
+        projectId: selectedProjectId || undefined,
+        projectStepId: selectedProjectStepId || undefined,
+      });
+      alert('فرمول ساخت (BOM) با موفقیت به‌روزرسانی شد.');
+    } else {
+      addBOM({
+        finishedItemId,
+        name: bomName,
+        version,
+        items: bomItems,
+        description,
+        isActive: true,
+        projectId: selectedProjectId || undefined,
+        projectStepId: selectedProjectStepId || undefined,
+      });
+      alert('فرمول ساخت (BOM) جدید با موفقیت ثبت شد و به پروژه و مرحله تخصیص داده شد.');
+    }
     setIsModalOpen(false);
   };
 
@@ -101,13 +152,15 @@ export const BOMView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          تعریف فرمول ساخت جدید
-        </button>
+        {canAdd && (
+          <button
+            onClick={handleOpenAdd}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            تعریف فرمول ساخت جدید
+          </button>
+        )}
       </div>
 
       {/* BOM Selector Grid */}
@@ -134,9 +187,31 @@ export const BOMView: React.FC = () => {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs text-slate-900">{bom.name}</span>
-                    <span className="font-mono text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-semibold">
-                      {bom.version}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-semibold">
+                        {bom.version}
+                      </span>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenEdit(bom, e)}
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+                          title="ویرایش فرمول ساخت"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDelete(bom, e)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                          title="حذف فرمول ساخت"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
                     محصول: <strong className="text-indigo-600">{finItem?.name || bom.finishedItemId}</strong>
@@ -266,7 +341,7 @@ export const BOMView: React.FC = () => {
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <h3 className="font-bold text-sm text-indigo-600 flex items-center gap-2">
                 <Cpu className="w-4 h-4" />
-                تعریف فرمول ساخت جدید (BOM)
+                {editingBom ? `ویرایش فرمول ساخت (${editingBom.name})` : 'تعریف فرمول ساخت جدید (BOM)'}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />

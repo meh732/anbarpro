@@ -1,20 +1,23 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { StockInType, StockOutType } from '../types';
+import { StockInType, StockOutType, StockInDoc, StockOutDoc } from '../types';
 import { 
   ArrowDownUp, ArrowDownLeft, ArrowUpRight, Plus, 
-  Search, Printer, CheckCircle2, FileText, Trash2, X 
+  Search, Printer, CheckCircle2, FileText, Trash2, Pencil, X 
 } from 'lucide-react';
 
 export const StockMovementView: React.FC = () => {
   const { 
     stockInDocs, stockOutDocs, warehouses, items, currentUser, 
-    createStockInDoc, createStockOutDoc 
+    createStockInDoc, updateStockInDoc, deleteStockInDoc,
+    createStockOutDoc, updateStockOutDoc, deleteStockOutDoc 
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'IN' | 'OUT'>('IN');
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
+  const [editingInDoc, setEditingInDoc] = useState<StockInDoc | null>(null);
+  const [editingOutDoc, setEditingOutDoc] = useState<StockOutDoc | null>(null);
 
   // Form State for new Document
   const [docType, setDocType] = useState<'IN' | 'OUT'>('IN');
@@ -48,12 +51,57 @@ export const StockMovementView: React.FC = () => {
 
   const handleOpenNewDoc = (type: 'IN' | 'OUT') => {
     setDocType(type);
+    setEditingInDoc(null);
+    setEditingOutDoc(null);
     const prefix = type === 'IN' ? 'REC-2026-' : 'ISS-2026-';
     setDocNumber(`${prefix}${Math.floor(100 + Math.random() * 900)}`);
+    setDocDate(new Date().toLocaleDateString('fa-IR'));
     setPartyName(type === 'IN' ? 'شرکت تامین‌کننده قطعات الکترونیک' : 'سالن تولید و مونتاژ شماره ۱');
     setMovementType(type === 'IN' ? 'Purchase' : 'ProjectConsumption');
+    setSelectedWarehouseId(warehouses[0]?.id || 'wh-raw');
+    setDocNotes('');
     setDocItems([{ itemId: items[0]?.id || '', quantity: 100, unitPrice: items[0]?.unitPrice || 10000, notes: '' }]);
     setIsDocModalOpen(true);
+  };
+
+  const handleOpenEditInDoc = (doc: StockInDoc) => {
+    setDocType('IN');
+    setEditingInDoc(doc);
+    setEditingOutDoc(null);
+    setDocNumber(doc.docNumber);
+    setDocDate(doc.date);
+    setPartyName(doc.supplier);
+    setMovementType(doc.entryType);
+    setSelectedWarehouseId(doc.warehouseId);
+    setDocNotes(doc.notes || '');
+    setDocItems(doc.items.map(it => ({ ...it })));
+    setIsDocModalOpen(true);
+  };
+
+  const handleOpenEditOutDoc = (doc: StockOutDoc) => {
+    setDocType('OUT');
+    setEditingOutDoc(doc);
+    setEditingInDoc(null);
+    setDocNumber(doc.docNumber);
+    setDocDate(doc.date);
+    setPartyName(doc.recipient);
+    setMovementType(doc.exitType);
+    setSelectedWarehouseId(doc.warehouseId);
+    setDocNotes(doc.notes || '');
+    setDocItems(doc.items.map(it => ({ ...it })));
+    setIsDocModalOpen(true);
+  };
+
+  const handleDeleteInDoc = (doc: StockInDoc) => {
+    if (confirm(`آیا از حذف رسید ورود "${doc.docNumber}" اطمینان دارید؟`)) {
+      deleteStockInDoc(doc.id);
+    }
+  };
+
+  const handleDeleteOutDoc = (doc: StockOutDoc) => {
+    if (confirm(`آیا از حذف حواله خروج "${doc.docNumber}" اطمینان دارید؟`)) {
+      deleteStockOutDoc(doc.id);
+    }
   };
 
   const handleAddItemLine = () => {
@@ -72,31 +120,57 @@ export const StockMovementView: React.FC = () => {
     if (!docNumber || docItems.length === 0) return;
 
     if (docType === 'IN') {
-      createStockInDoc({
-        docNumber,
-        date: docDate,
-        supplier: partyName,
-        registeredBy: currentUser.fullName,
-        warehouseId: selectedWarehouseId,
-        entryType: movementType as StockInType,
-        items: docItems,
-        notes: docNotes,
-        status: 'Confirmed',
-      });
-      alert('رسید ورود به انبار با موفقیت ثبت شد و موجودی انبار به‌روزرسانی گردید.');
+      if (editingInDoc) {
+        updateStockInDoc(editingInDoc.id, {
+          docNumber,
+          date: docDate,
+          supplier: partyName,
+          warehouseId: selectedWarehouseId,
+          entryType: movementType as StockInType,
+          items: docItems,
+          notes: docNotes,
+        });
+        alert('رسید ورود با موفقیت به‌روزرسانی شد.');
+      } else {
+        createStockInDoc({
+          docNumber,
+          date: docDate,
+          supplier: partyName,
+          registeredBy: currentUser.fullName,
+          warehouseId: selectedWarehouseId,
+          entryType: movementType as StockInType,
+          items: docItems,
+          notes: docNotes,
+          status: 'Confirmed',
+        });
+        alert('رسید ورود به انبار با موفقیت ثبت شد و موجودی انبار به‌روزرسانی گردید.');
+      }
     } else {
-      createStockOutDoc({
-        docNumber,
-        date: docDate,
-        recipient: partyName,
-        registeredBy: currentUser.fullName,
-        warehouseId: selectedWarehouseId,
-        exitType: movementType as StockOutType,
-        items: docItems,
-        notes: docNotes,
-        status: 'Confirmed',
-      });
-      alert('حواله خروج از انبار با موفقیت ثبت شد و از موجودی کسر گردید.');
+      if (editingOutDoc) {
+        updateStockOutDoc(editingOutDoc.id, {
+          docNumber,
+          date: docDate,
+          recipient: partyName,
+          warehouseId: selectedWarehouseId,
+          exitType: movementType as StockOutType,
+          items: docItems,
+          notes: docNotes,
+        });
+        alert('حواله خروج با موفقیت به‌روزرسانی شد.');
+      } else {
+        createStockOutDoc({
+          docNumber,
+          date: docDate,
+          recipient: partyName,
+          registeredBy: currentUser.fullName,
+          warehouseId: selectedWarehouseId,
+          exitType: movementType as StockOutType,
+          items: docItems,
+          notes: docNotes,
+          status: 'Confirmed',
+        });
+        alert('حواله خروج از انبار با موفقیت ثبت شد و از موجودی کسر گردید.');
+      }
     }
 
     setIsDocModalOpen(false);
@@ -177,12 +251,13 @@ export const StockMovementView: React.FC = () => {
                   <th className="whitespace-nowrap p-3.5">کاربر ثبت‌کننده</th>
                   <th className="whitespace-nowrap p-3.5">وضعیت</th>
                   <th className="whitespace-nowrap p-3.5 text-center">چاپ سند</th>
+                  <th className="whitespace-nowrap p-3.5 text-center">عملیات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {stockInDocs.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-400">
+                    <td colSpan={10} className="p-8 text-center text-slate-400">
                       هیچ سند ورودی ثبت نشده است.
                     </td>
                   </tr>
@@ -217,6 +292,26 @@ export const StockMovementView: React.FC = () => {
                             <Printer className="w-3.5 h-3.5" />
                           </button>
                         </td>
+                        <td className="whitespace-nowrap p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditInDoc(doc)}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="ویرایش رسید ورود"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteInDoc(doc)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="حذف رسید ورود"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
@@ -236,12 +331,13 @@ export const StockMovementView: React.FC = () => {
                   <th className="whitespace-nowrap p-3.5">کاربر ثبت‌کننده</th>
                   <th className="whitespace-nowrap p-3.5">وضعیت</th>
                   <th className="whitespace-nowrap p-3.5 text-center">چاپ سند</th>
+                  <th className="whitespace-nowrap p-3.5 text-center">عملیات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {stockOutDocs.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-400">
+                    <td colSpan={10} className="p-8 text-center text-slate-400">
                       هیچ سند خروجی ثبت نشده است.
                     </td>
                   </tr>
@@ -276,6 +372,26 @@ export const StockMovementView: React.FC = () => {
                             <Printer className="w-3.5 h-3.5" />
                           </button>
                         </td>
+                        <td className="whitespace-nowrap p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditOutDoc(doc)}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="ویرایش حواله خروج"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteOutDoc(doc)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="حذف حواله خروج"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
@@ -286,14 +402,20 @@ export const StockMovementView: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal Wizard for New Stock Document */}
+      {/* Modal Wizard for New / Edit Stock Document */}
       {isDocModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <h3 className={`font-bold text-sm flex items-center gap-2 ${docType === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
                 {docType === 'IN' ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
-                {docType === 'IN' ? 'ثبت رسید ورودی جدید به انبار' : 'ثبت حواله خروجی جدید از انبار'}
+                {editingInDoc 
+                  ? `ویرایش رسید ورود (${editingInDoc.docNumber})`
+                  : editingOutDoc
+                  ? `ویرایش حواله خروج (${editingOutDoc.docNumber})`
+                  : docType === 'IN' 
+                  ? 'ثبت رسید ورودی جدید به انبار' 
+                  : 'ثبت حواله خروجی جدید از انبار'}
               </h3>
               <button onClick={() => setIsDocModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -502,7 +624,7 @@ export const StockMovementView: React.FC = () => {
                     docType === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
                   }`}
                 >
-                  تایید و ثبت نهایی سند
+                  {editingInDoc || editingOutDoc ? 'ذخیره تغییرات سند' : 'تایید و ثبت نهایی سند'}
                 </button>
               </div>
             </form>

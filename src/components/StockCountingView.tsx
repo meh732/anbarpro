@@ -4,13 +4,13 @@ import { StockCountingSession, StockCountingItem } from '../types';
 import { 
   ClipboardCheck, Plus, CheckCircle2, AlertTriangle, Search, Filter, 
   ArrowRightLeft, FileSpreadsheet, Layers, RefreshCw, Warehouse, 
-  ShieldAlert, Check, Barcode, HelpCircle, Download, FileText, CheckCircle, Info, X
+  ShieldAlert, Check, Barcode, HelpCircle, Download, FileText, CheckCircle, Info, X, Trash2 
 } from 'lucide-react';
 
 export const StockCountingView: React.FC = () => {
   const { 
     stockCountings, warehouses, items, inventory, createStockCountingSession, 
-    updateStockCountItem, applyStockCountingAdjustments, currentUser, language, t,
+    updateStockCountItem, applyStockCountingAdjustments, deleteStockCountingSession, currentUser, language, t,
     projects, boms, itemGroups
   } = useApp();
 
@@ -366,13 +366,32 @@ export const StockCountingView: React.FC = () => {
                 >
                   <div className="flex items-center justify-between font-bold text-slate-900">
                     <span className="font-mono">{session.sessionNumber}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                      isApplied 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                        : 'bg-amber-50 text-amber-700 border border-amber-200'
-                    }`}>
-                      {isApplied ? 'سند اصلاحی زده شده' : 'در حال شمارش'}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                        isApplied 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}>
+                        {isApplied ? 'سند اصلاحی زده شده' : 'در حال شمارش'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`آیا از حذف دوره انبارگردانی "${session.sessionNumber}" اطمینان دارید؟`)) {
+                            deleteStockCountingSession(session.id);
+                            if (activeSessionId === session.id) {
+                              const remaining = stockCountings.filter(s => s.id !== session.id);
+                              setActiveSessionId(remaining[0]?.id || null);
+                            }
+                          }
+                        }}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                        title="حذف دوره انبارگردانی"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div className="text-[11px] font-bold text-slate-700 mt-2 flex items-center gap-1">
                     <Warehouse className="w-3.5 h-3.5 text-slate-400" />

@@ -6,7 +6,8 @@ import {
   ChevronDown, ChevronUp, User, Users, Calendar, X, GitBranch, Building2,
   Trash2, ArrowUp, ArrowDown, Cpu, ArrowRightLeft, AlertTriangle, Layers,
   Boxes, Warehouse, Check, FileCheck, ShieldAlert, Sparkles,
-  PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3
+  PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3,
+  Pencil, Edit, Eye
 } from 'lucide-react';
 
 // Helper Component for True 2D Graphical Organizational Tree Diagram with Connecting Branch Lines
@@ -21,6 +22,8 @@ const GraphicalOrgTreeNode: React.FC<{
   typeFilter: string;
   updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
   setAddingSubStepTo: (val: { projectId: string; parentStepId: string } | null) => void;
+  onEditStep?: (step: ProjectStep, projectId: string) => void;
+  onDeleteStep?: (stepId: string, projectId: string) => void;
 }> = ({
   step,
   projectId,
@@ -32,7 +35,11 @@ const GraphicalOrgTreeNode: React.FC<{
   typeFilter,
   updateProjectStep,
   setAddingSubStepTo,
+  onEditStep,
+  onDeleteStep,
 }) => {
+  const [isTreeExpanded, setIsTreeExpanded] = useState(true);
+
   if (statusFilter !== 'all' && step.status !== statusFilter) return null;
   if (typeFilter === 'outsourced' && !step.isOutsourced && !step.contractorId) return null;
   if (typeFilter === 'internal' && (step.isOutsourced || step.contractorId)) return null;
@@ -53,26 +60,63 @@ const GraphicalOrgTreeNode: React.FC<{
           : 'bg-white border-slate-300 text-slate-800'
       }`}>
         <div className="flex items-center justify-between gap-1 mb-1.5">
-          <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-200">
-            مرحله {codePrefix}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-200">
+              مرحله {codePrefix}
+            </span>
+            {subSteps.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsTreeExpanded(!isTreeExpanded)}
+                className="p-1 hover:bg-slate-200/80 rounded-md text-indigo-700 transition-all flex items-center gap-0.5 text-[9px] font-bold"
+                title={isTreeExpanded ? 'بستن زیرمراحل' : 'باز کردن زیرمراحل'}
+              >
+                <span className={`inline-block transform transition-transform duration-200 text-[9px] ${isTreeExpanded ? 'rotate-90 text-indigo-600' : 'rotate-0 text-slate-500'}`}>
+                  ▶
+                </span>
+                <span>({subSteps.length})</span>
+              </button>
+            )}
+          </div>
 
-          {step.status === 'Completed' ? (
-            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[9px] flex items-center gap-1 border border-emerald-300">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              تکمیل شد
-            </span>
-          ) : step.status === 'InProgress' ? (
-            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-bold text-[9px] flex items-center gap-1 border border-indigo-300 animate-pulse">
-              <Clock className="w-3 h-3 text-indigo-600 animate-spin" />
-              در حال انجام
-            </span>
-          ) : (
-            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-bold text-[9px] flex items-center gap-1 border border-slate-200">
-              <PlayCircle className="w-3 h-3 text-slate-400" />
-              در انتظار
-            </span>
-          )}
+          <div className="flex items-center gap-1">
+            {step.status === 'Completed' ? (
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[9px] flex items-center gap-1 border border-emerald-300">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                تکمیل شد
+              </span>
+            ) : step.status === 'InProgress' ? (
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-bold text-[9px] flex items-center gap-1 border border-indigo-300 animate-pulse">
+                <Clock className="w-3 h-3 text-indigo-600 animate-spin" />
+                در حال انجام
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-bold text-[9px] flex items-center gap-1 border border-slate-200">
+                <PlayCircle className="w-3 h-3 text-slate-400" />
+                در انتظار
+              </span>
+            )}
+            {onEditStep && (
+              <button
+                type="button"
+                onClick={() => onEditStep(step, projectId)}
+                className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+                title="ویرایش مرحله"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
+            {onDeleteStep && (
+              <button
+                type="button"
+                onClick={() => onDeleteStep(step.id, projectId)}
+                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                title="حذف مرحله"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
         </div>
 
         <h5 className="font-bold text-xs text-slate-900 line-clamp-2 min-h-[1.75rem]">
@@ -149,12 +193,12 @@ const GraphicalOrgTreeNode: React.FC<{
       </div>
 
       {/* Sub-steps Trunk line connecting down */}
-      {subSteps.length > 0 && (
+      {subSteps.length > 0 && isTreeExpanded && (
         <div className="w-0.5 h-6 bg-indigo-500 my-0 relative z-0"></div>
       )}
 
       {/* Sub-steps Children Branch Row */}
-      {subSteps.length > 0 && (
+      {subSteps.length > 0 && isTreeExpanded && (
         <div className="relative flex justify-center pt-6 gap-6">
           {/* Horizontal Connecting Branch Line Spanning Across Children */}
           {subSteps.length > 1 && (
@@ -177,6 +221,8 @@ const GraphicalOrgTreeNode: React.FC<{
                 typeFilter={typeFilter}
                 updateProjectStep={updateProjectStep}
                 setAddingSubStepTo={setAddingSubStepTo}
+                onEditStep={onEditStep}
+                onDeleteStep={onDeleteStep}
               />
             </div>
           ))}
@@ -186,7 +232,7 @@ const GraphicalOrgTreeNode: React.FC<{
   );
 };
 
-// Helper Recursive Component for Unlimited Depth Step Tree Rendering
+// Helper Recursive Component for Unlimited Depth Step Tree Rendering with Expand/Collapse Triangle
 const RecursiveStepCard: React.FC<{
   step: ProjectStep;
   projectId: string;
@@ -197,6 +243,9 @@ const RecursiveStepCard: React.FC<{
   contractors: any[];
   updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
   setAddingSubStepTo: (val: { projectId: string; parentStepId: string } | null) => void;
+  onEditStep?: (step: ProjectStep, projectId: string) => void;
+  onDeleteStep?: (stepId: string, projectId: string) => void;
+  canAddSubStep?: boolean;
 }> = ({
   step,
   projectId,
@@ -207,13 +256,18 @@ const RecursiveStepCard: React.FC<{
   contractors,
   updateProjectStep,
   setAddingSubStepTo,
+  onEditStep,
+  onDeleteStep,
+  canAddSubStep = true,
 }) => {
+  const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const outputItem = items.find(i => i.id === step.outputItemId);
   const matchedBom = boms.find(b => b.finishedItemId === step.outputItemId && b.isActive);
+  const hasSubSteps = Boolean(step.subSteps && step.subSteps.length > 0);
 
   return (
     <div className={`p-3 sm:p-3.5 rounded-2xl border space-y-2.5 transition-all relative ${
-      depth > 0 ? 'mr-2 sm:mr-3 border-r border-indigo-500/30 bg-slate-50/80 shadow-2xs' : ''
+      depth > 0 ? 'mr-2 sm:mr-3 border-r-2 border-indigo-500/40 bg-slate-50/90 shadow-2xs' : ''
     } ${
       step.status === 'Completed' 
         ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900' 
@@ -223,10 +277,30 @@ const RecursiveStepCard: React.FC<{
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-          مرحله {stepCodeStr}
-        </span>
         <div className="flex items-center gap-1.5">
+          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+            مرحله {stepCodeStr}
+          </span>
+          {hasSubSteps && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-1 hover:bg-slate-200/70 rounded-md transition-all text-indigo-700 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+              title={isExpanded ? 'بستن زیرمراحل' : 'مشاهده زیرمراحل'}
+            >
+              <span 
+                className={`inline-block transform transition-transform duration-200 text-[10px] ${
+                  isExpanded ? 'rotate-90 text-indigo-600' : 'rotate-0 text-slate-500'
+                }`}
+              >
+                ▶
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">({step.subSteps?.length})</span>
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1">
           {step.status === 'Completed' ? (
             <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -242,6 +316,28 @@ const RecursiveStepCard: React.FC<{
               <PlayCircle className="w-3.5 h-3.5 text-slate-400" />
               در انتظار
             </span>
+          )}
+
+          {onEditStep && (
+            <button
+              type="button"
+              onClick={() => onEditStep(step, projectId)}
+              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+              title="ویرایش مرحله"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {onDeleteStep && (
+            <button
+              type="button"
+              onClick={() => onDeleteStep(step.id, projectId)}
+              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+              title="حذف مرحله"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
       </div>
@@ -287,29 +383,49 @@ const RecursiveStepCard: React.FC<{
         )}
       </div>
 
-      {/* Recursive SubSteps Render (Unlimited Depth) */}
-      {step.subSteps && step.subSteps.length > 0 && (
+      {/* Recursive SubSteps Render with Expand/Collapse Triangle Toggle */}
+      {hasSubSteps && (
         <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
-          <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
-            <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
-            <span>زیرمراحل ({step.subSteps.length} زیرشاخه):</span>
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100/80 px-2 py-1 rounded-lg border border-indigo-200 transition-all cursor-pointer select-none"
+            >
+              <span 
+                className={`inline-block transform transition-transform duration-200 text-[10px] ${
+                  isExpanded ? 'rotate-90 text-indigo-600' : 'rotate-0 text-slate-400'
+                }`}
+              >
+                ▶
+              </span>
+              <span>{isExpanded ? 'بستن زیرمراحل' : 'مشاهده زیرمراحل'}</span>
+              <span className="font-mono text-[10px] bg-indigo-200/70 text-indigo-900 px-1.5 py-0.2 rounded-full font-bold">
+                {step.subSteps?.length}
+              </span>
+            </button>
           </div>
-          <div className="space-y-2 pr-1">
-            {step.subSteps.map((sub, sIdx) => (
-              <RecursiveStepCard
-                key={sub.id}
-                step={sub}
-                projectId={projectId}
-                depth={depth + 1}
-                stepCodeStr={`${stepCodeStr}.${sIdx + 1}`}
-                items={items}
-                boms={boms}
-                contractors={contractors}
-                updateProjectStep={updateProjectStep}
-                setAddingSubStepTo={setAddingSubStepTo}
-              />
-            ))}
-          </div>
+
+          {isExpanded && (
+            <div className="space-y-2 pr-1">
+              {step.subSteps?.map((sub, sIdx) => (
+                <RecursiveStepCard
+                  key={sub.id}
+                  step={sub}
+                  projectId={projectId}
+                  depth={depth + 1}
+                  stepCodeStr={`${stepCodeStr}.${sIdx + 1}`}
+                  items={items}
+                  boms={boms}
+                  contractors={contractors}
+                  updateProjectStep={updateProjectStep}
+                  setAddingSubStepTo={setAddingSubStepTo}
+                  onEditStep={onEditStep}
+                  onDeleteStep={onDeleteStep}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -336,14 +452,16 @@ const RecursiveStepCard: React.FC<{
           </button>
         </div>
         
-        <button
-          type="button"
-          onClick={() => setAddingSubStepTo({ projectId, parentStepId: step.id })}
-          className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all border border-indigo-200 active:scale-95"
-        >
-          <Plus className="w-3.5 h-3.5 text-indigo-600" />
-          <span>افزودن زیرمرحله جدید</span>
-        </button>
+        {canAddSubStep && (
+          <button
+            type="button"
+            onClick={() => setAddingSubStepTo({ projectId, parentStepId: step.id })}
+            className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all border border-indigo-200 active:scale-95"
+          >
+            <Plus className="w-3.5 h-3.5 text-indigo-600" />
+            <span>افزودن زیرمرحله جدید</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -352,14 +470,45 @@ const RecursiveStepCard: React.FC<{
 export const ProjectsView: React.FC = () => {
   const { 
     projects, items, boms, warehouses, inventory, contractors, 
-    addProject, updateProjectStep, addProjectSubStep, createTransfer, language 
+    addProject, updateProject, deleteProject, updateProjectStep, 
+    updateProjectStepDetails, addProjectSubStep, deleteProjectStep, 
+    createTransfer, language, hasActionPermission
   } = useApp();
 
   const isFa = language === 'fa';
+  const canAdd = hasActionPermission('add');
+  const canEdit = hasActionPermission('edit');
+  const canDelete = hasActionPermission('delete');
+  const canExport = hasActionPermission('export');
 
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(projects[0]?.id || null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [addingSubStepTo, setAddingSubStepTo] = useState<{ projectId: string; parentStepId: string } | null>(null);
+
+  // Edit Project Modal state
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editProjName, setEditProjName] = useState('');
+  const [editProjClient, setEditProjClient] = useState('');
+  const [editProjManager, setEditProjManager] = useState('');
+  const [editProjStatus, setEditProjStatus] = useState<ProjectStatus>('Active');
+  const [editProjTargetQty, setEditProjTargetQty] = useState(100);
+  const [editProjProducedQty, setEditProjProducedQty] = useState(0);
+  const [editProjProgress, setEditProjProgress] = useState(0);
+  const [editProjStartDate, setEditProjStartDate] = useState('');
+  const [editProjEndDate, setEditProjEndDate] = useState('');
+  const [editProjDescription, setEditProjDescription] = useState('');
+  const [editProjTargetItemId, setEditProjTargetItemId] = useState('');
+
+  // Edit Step Modal state
+  const [editingStepData, setEditingStepData] = useState<{ step: ProjectStep; projectId: string } | null>(null);
+  const [editStepTitle, setEditStepTitle] = useState('');
+  const [editStepIsOutsourced, setEditStepIsOutsourced] = useState(false);
+  const [editStepContractorId, setEditStepContractorId] = useState('');
+  const [editStepCost, setEditStepCost] = useState(0);
+  const [editStepOperators, setEditStepOperators] = useState('');
+  const [editStepOutputItemId, setEditStepOutputItemId] = useState('');
+  const [editStepOutputQty, setEditStepOutputQty] = useState(1);
+  const [editStepStatus, setEditStepStatus] = useState<'Pending' | 'InProgress' | 'Completed'>('Pending');
 
   // BOM Explosion Modal state
   const [bomExplosionProject, setBomExplosionProject] = useState<Project | null>(null);
@@ -473,6 +622,92 @@ export const ProjectsView: React.FC = () => {
       },
     ]);
     setIsModalOpen(true);
+  };
+
+  const handleOpenEditProject = (proj: Project, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingProject(proj);
+    setEditProjName(proj.name || '');
+    setEditProjClient(proj.client || '');
+    setEditProjManager(proj.projectManager || '');
+    setEditProjStatus(proj.status || 'Active');
+    setEditProjTargetQty(proj.targetQuantity || 100);
+    setEditProjProducedQty(proj.producedQuantity || 0);
+    setEditProjProgress(proj.progressPercent || 0);
+    setEditProjStartDate(proj.startDate || '');
+    setEditProjEndDate(proj.endDate || '');
+    setEditProjDescription(proj.description || '');
+    setEditProjTargetItemId(proj.targetFinishedItemId || '');
+  };
+
+  const handleSaveEditProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProject) return;
+
+    updateProject(editingProject.id, {
+      name: editProjName,
+      client: editProjClient,
+      projectManager: editProjManager,
+      status: editProjStatus,
+      targetQuantity: Number(editProjTargetQty),
+      producedQuantity: Number(editProjProducedQty),
+      progressPercent: Number(editProjProgress),
+      startDate: editProjStartDate,
+      endDate: editProjEndDate,
+      description: editProjDescription,
+      targetFinishedItemId: editProjTargetItemId,
+    });
+
+    setEditingProject(null);
+  };
+
+  const handleDeleteProject = (projId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (confirm('آیا از حذف این پروژه و کلیه مراحل آن اطمینان دارید؟')) {
+      deleteProject(projId);
+    }
+  };
+
+  const handleOpenEditStep = (step: ProjectStep, projectId: string) => {
+    setEditingStepData({ step, projectId });
+    setEditStepTitle(step.name || step.title || '');
+    setEditStepIsOutsourced(!!(step.isOutsourced || step.contractorId));
+    setEditStepContractorId(step.contractorId || '');
+    setEditStepCost(step.outsourcingCost || step.contractorCost || 0);
+    setEditStepOperators(step.assignedOperators?.join(', ') || '');
+    setEditStepOutputItemId(step.outputItemId || '');
+    setEditStepOutputQty(step.outputQuantity || 1);
+    setEditStepStatus(step.status || 'Pending');
+  };
+
+  const handleSaveEditStep = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStepData) return;
+
+    const selectedCont = contractors.find(c => c.id === editStepContractorId);
+
+    updateProjectStepDetails(editingStepData.projectId, editingStepData.step.id, {
+      name: editStepTitle.trim(),
+      title: editStepTitle.trim(),
+      status: editStepStatus,
+      isOutsourced: editStepIsOutsourced,
+      contractorId: editStepIsOutsourced ? editStepContractorId || undefined : undefined,
+      contractorName: editStepIsOutsourced ? selectedCont?.name : undefined,
+      outsourcingCost: editStepIsOutsourced ? editStepCost : undefined,
+      assignedOperators: editStepIsOutsourced 
+        ? [selectedCont?.name || 'پیمانکار برون‌سپاری'] 
+        : editStepOperators ? editStepOperators.split(',').map(s => s.trim()) : ['خط مونتاژ داخلی'],
+      outputItemId: editStepOutputItemId || undefined,
+      outputQuantity: editStepOutputQty || undefined,
+    });
+
+    setEditingStepData(null);
+  };
+
+  const handleDeleteStep = (stepId: string, projectId: string) => {
+    if (confirm('آیا از حذف این مرحله از ساختار پروژه اطمینان دارید؟')) {
+      deleteProjectStep(projectId, stepId);
+    }
   };
 
   const handleAddStepRow = () => {
@@ -738,14 +973,16 @@ export const ProjectsView: React.FC = () => {
             <span>نمودار شاخه درختی و گزارش‌های مدیریتی</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleOpenAdd}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            تعریف پروژه جدید
-          </button>
+          {canAdd && (
+            <button
+              type="button"
+              onClick={handleOpenAdd}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>تعریف پروژه جدید</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -784,7 +1021,7 @@ export const ProjectsView: React.FC = () => {
                 </div>
 
                 {/* Progress & Output Stats */}
-                <div className="flex items-center gap-6 shrink-0">
+                <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                   <div className="text-right">
                     <div className="text-xs text-slate-500">تیراژ تولید شده</div>
                     <div className="font-mono font-bold text-sm text-slate-900">
@@ -792,7 +1029,7 @@ export const ProjectsView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="w-32 space-y-1">
+                  <div className="w-28 sm:w-32 space-y-1">
                     <div className="flex justify-between text-[11px] font-mono">
                       <span className="text-slate-500">پیشرفت:</span>
                       <strong className="text-indigo-600">{proj.progressPercent}%</strong>
@@ -804,6 +1041,32 @@ export const ProjectsView: React.FC = () => {
                       ></div>
                     </div>
                   </div>
+
+                  {/* Actions: Edit & Delete buttons */}
+                  {(canEdit || canDelete) && (
+                    <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-1" onClick={e => e.stopPropagation()}>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenEditProject(proj, e)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="ویرایش پروژه"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteProject(proj.id, e)}
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="حذف پروژه"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                 </div>
@@ -852,6 +1115,9 @@ export const ProjectsView: React.FC = () => {
                         contractors={contractors}
                         updateProjectStep={updateProjectStep}
                         setAddingSubStepTo={setAddingSubStepTo}
+                        onEditStep={canEdit ? handleOpenEditStep : undefined}
+                        onDeleteStep={canDelete ? handleDeleteStep : undefined}
+                        canAddSubStep={canAdd}
                       />
                     ))}
                   </div>
@@ -1274,6 +1540,316 @@ export const ProjectsView: React.FC = () => {
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs"
                 >
                   ثبت زیرمرحله
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Edit Project */}
+      {editingProject && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-xl shadow-xl overflow-hidden flex flex-col max-h-[92vh] my-auto">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-sm text-indigo-600 flex items-center gap-2">
+                <Pencil className="w-4 h-4" />
+                ویرایش اطلاعات پروژه ({editingProject.code})
+              </h3>
+              <button onClick={() => setEditingProject(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditProject} className="p-5 overflow-y-auto space-y-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">نام پروژه*</label>
+                  <input
+                    type="text"
+                    required
+                    value={editProjName}
+                    onChange={(e) => setEditProjName(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">کارفرما / مشتری*</label>
+                  <input
+                    type="text"
+                    required
+                    value={editProjClient}
+                    onChange={(e) => setEditProjClient(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">مدیر پروژه</label>
+                  <input
+                    type="text"
+                    value={editProjManager}
+                    onChange={(e) => setEditProjManager(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">وضعیت پروژه</label>
+                  <select
+                    value={editProjStatus}
+                    onChange={(e) => setEditProjStatus(e.target.value as ProjectStatus)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="Active">در حال اجرا (Active)</option>
+                    <option value="OnHold">متوقف / معلق (OnHold)</option>
+                    <option value="Completed">تکمیل شده (Completed)</option>
+                    <option value="Cancelled">لغو شده (Cancelled)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">درصد پیشرفت (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={editProjProgress}
+                    onChange={(e) => setEditProjProgress(Number(e.target.value))}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">تیراژ هدف کل</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editProjTargetQty}
+                    onChange={(e) => setEditProjTargetQty(Number(e.target.value))}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">تعداد تولید شده تا کنون</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editProjProducedQty}
+                    onChange={(e) => setEditProjProducedQty(Number(e.target.value))}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">تاریخ شروع</label>
+                  <input
+                    type="text"
+                    value={editProjStartDate}
+                    onChange={(e) => setEditProjStartDate(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">تاریخ پایان برنامه‌ریزی</label>
+                  <input
+                    type="text"
+                    value={editProjEndDate}
+                    onChange={(e) => setEditProjEndDate(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">محصول خروجی نهایی پروژه</label>
+                <select
+                  value={editProjTargetItemId}
+                  onChange={(e) => setEditProjTargetItemId(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">-- بدون انتخاب --</option>
+                  {items.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">توضیحات و یادداشت</label>
+                <textarea
+                  rows={2}
+                  value={editProjDescription}
+                  onChange={(e) => setEditProjDescription(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setEditingProject(null)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-medium"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs"
+                >
+                  ذخیره تغییرات
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Edit Step */}
+      {editingStepData && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-xl p-4 sm:p-5 space-y-4 max-h-[92vh] flex flex-col my-auto overflow-y-auto touch-pan-y custom-scrollbar">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-bold text-sm text-indigo-600 flex items-center gap-2">
+                <Pencil className="w-4 h-4" />
+                ویرایش اطلاعات مرحله
+              </h3>
+              <button onClick={() => setEditingStepData(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditStep} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">عنوان مرحله*</label>
+                <input
+                  type="text"
+                  required
+                  value={editStepTitle}
+                  onChange={(e) => setEditStepTitle(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">وضعیت مرحله</label>
+                  <select
+                    value={editStepStatus}
+                    onChange={(e) => setEditStepStatus(e.target.value as any)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 font-medium"
+                  >
+                    <option value="Pending">در انتظار (Pending)</option>
+                    <option value="InProgress">در حال انجام (InProgress)</option>
+                    <option value="Completed">تکمیل شده (Completed)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">نوع اجرا</label>
+                  <select
+                    value={editStepIsOutsourced ? 'out' : 'in'}
+                    onChange={(e) => setEditStepIsOutsourced(e.target.value === 'out')}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 font-medium"
+                  >
+                    <option value="in">تیم داخلی کارخانه</option>
+                    <option value="out">برون‌سپاری به پیمانکار</option>
+                  </select>
+                </div>
+              </div>
+
+              {editStepIsOutsourced ? (
+                <div className="space-y-3 p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">انتخاب پیمانکار مجری</label>
+                    <select
+                      value={editStepContractorId}
+                      onChange={(e) => setEditStepContractorId(e.target.value)}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 font-medium"
+                    >
+                      <option value="">-- انتخاب از لیست پیمانکاران --</option>
+                      {contractors.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.specialty})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">هزینه برون‌سپاری (تومان)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editStepCost}
+                      onChange={(e) => setEditStepCost(Number(e.target.value))}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">اپراتورها / تیم مجری داخلی</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: تیم مونتاژ برد، تکنیسین QC"
+                    value={editStepOperators}
+                    onChange={(e) => setEditStepOperators(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1 flex items-center gap-1">
+                  <Boxes className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>محصول / قطعه نیمه‌ساخته خروجی این مرحله (اختیاری)</span>
+                </label>
+                <select
+                  value={editStepOutputItemId}
+                  onChange={(e) => setEditStepOutputItemId(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 font-medium"
+                >
+                  <option value="">-- بدون قطعه/محصول خروجی مجزا --</option>
+                  {items.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {editStepOutputItemId && (
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">تیراژ خروجی به ازای هر واحد محصول</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editStepOutputQty}
+                    onChange={(e) => setEditStepOutputQty(Number(e.target.value))}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setEditingStepData(null)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-medium"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs"
+                >
+                  ذخیره تغییرات
                 </button>
               </div>
             </form>
@@ -1824,6 +2400,8 @@ export const ProjectsView: React.FC = () => {
                                     typeFilter={treeTypeFilter}
                                     updateProjectStep={updateProjectStep}
                                     setAddingSubStepTo={setAddingSubStepTo}
+                                    onEditStep={handleOpenEditStep}
+                                    onDeleteStep={handleDeleteStep}
                                   />
                                 </div>
                               ))}
@@ -2090,6 +2668,7 @@ export const ProjectsView: React.FC = () => {
                                       type="button"
                                       onClick={() => updateProjectStep(treeReportProject.id, step.id, 'Completed')}
                                       className="px-2 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[10px] rounded border border-emerald-200"
+                                      title="علامت‌گذاری به عنوان تکمیل‌شده"
                                     >
                                       تکمیل
                                     </button>
@@ -2097,8 +2676,25 @@ export const ProjectsView: React.FC = () => {
                                       type="button"
                                       onClick={() => setAddingSubStepTo({ projectId: treeReportProject.id, parentStepId: step.id })}
                                       className="px-2 py-0.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[10px] rounded border border-indigo-200"
+                                      title="افزودن زیرمرحله جدید"
                                     >
                                       + زیرمرحله
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditStep(step, treeReportProject.id)}
+                                      className="p-1 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded transition-colors"
+                                      title="ویرایش مرحله"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteStep(step.id, treeReportProject.id)}
+                                      className="p-1 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded transition-colors"
+                                      title="حذف مرحله"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                 </td>

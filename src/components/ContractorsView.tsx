@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Contractor } from '../types';
-import { Building2, Plus, Phone, MapPin, Wrench, FileText, Search } from 'lucide-react';
+import { Building2, Plus, Phone, MapPin, Wrench, FileText, Search, Pencil, Trash2, X } from 'lucide-react';
 
 export const ContractorsView: React.FC = () => {
-  const { contractors, addContractor, projects, language } = useApp();
+  const { 
+    contractors, addContractor, updateContractor, deleteContractor, 
+    projects, language, hasActionPermission 
+  } = useApp();
+
+  const canAdd = hasActionPermission('add');
+  const canEdit = hasActionPermission('edit');
+  const canDelete = hasActionPermission('delete');
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterText, setFilterText] = useState('');
+
+  const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
 
   const [code, setCode] = useState(`CONT-${Math.floor(100 + Math.random() * 900)}`);
   const [name, setName] = useState('');
@@ -18,6 +28,7 @@ export const ContractorsView: React.FC = () => {
   const isFa = language === 'fa';
 
   const handleOpenAdd = () => {
+    setEditingContractor(null);
     setCode(`CONT-${Math.floor(100 + Math.random() * 900)}`);
     setName('');
     setContactPerson('');
@@ -27,19 +38,47 @@ export const ContractorsView: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const handleOpenEdit = (c: Contractor) => {
+    setEditingContractor(c);
+    setCode(c.code);
+    setName(c.name);
+    setContactPerson(c.contactPerson || '');
+    setPhone(c.phone);
+    setSpecialty(c.specialty);
+    setAddress(c.address || '');
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (c: Contractor) => {
+    if (confirm(`آیا از حذف پیمانکار "${c.name}" اطمینان دارید؟`)) {
+      deleteContractor(c.id);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !phone) return;
 
-    addContractor({
-      code,
-      name,
-      contactPerson,
-      phone,
-      specialty,
-      address,
-      activeContractsCount: 0,
-    });
+    if (editingContractor) {
+      updateContractor(editingContractor.id, {
+        code,
+        name,
+        contactPerson,
+        phone,
+        specialty,
+        address,
+      });
+    } else {
+      addContractor({
+        code,
+        name,
+        contactPerson,
+        phone,
+        specialty,
+        address,
+        activeContractsCount: 0,
+      });
+    }
 
     setIsModalOpen(false);
   };
@@ -68,13 +107,15 @@ export const ContractorsView: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="px-4 py-2.5 bg-amber-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-amber-700 transition-all shadow-xs"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{isFa ? 'افزودن پیمانکار جدید' : 'Add New Contractor'}</span>
-        </button>
+        {canAdd && (
+          <button
+            onClick={handleOpenAdd}
+            className="px-4 py-2.5 bg-amber-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-amber-700 transition-all shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{isFa ? 'افزودن پیمانکار جدید' : 'Add New Contractor'}</span>
+          </button>
+        )}
       </div>
 
       {/* Filter and Cards */}
@@ -106,9 +147,35 @@ export const ContractorsView: React.FC = () => {
                     </span>
                     <h3 className="font-bold text-slate-900 text-sm mt-1">{c.name}</h3>
                   </div>
-                  <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold">
-                    {assignedSteps.length} {isFa ? 'مرحله فعال' : 'active steps'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold">
+                      {assignedSteps.length} {isFa ? 'مرحله فعال' : 'active steps'}
+                    </span>
+                    {(canEdit || canDelete) && (
+                      <div className="flex items-center gap-1 border-r border-slate-200 pr-1.5 mr-0.5">
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(c)}
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            title="ویرایش پیمانکار"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(c)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="حذف پیمانکار"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-2 text-xs text-slate-600">
@@ -136,14 +203,21 @@ export const ContractorsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal Add Contractor */}
+      {/* Modal Add/Edit Contractor */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-xl border border-slate-200 space-y-4">
-            <h3 className="font-bold text-sm text-amber-600 border-b border-slate-200 pb-3 flex items-center gap-2">
-              <Building2 className="w-4 h-4" />
-              {isFa ? 'تعریف شرکت / کارگاه پیمانکار جدید' : 'New Contractor'}
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-bold text-sm text-amber-600 flex items-center gap-2">
+                <Building2 className="w-4 h-4" />
+                {editingContractor 
+                  ? (isFa ? `ویرایش پیمانکار (${editingContractor.name})` : `Edit Contractor (${editingContractor.name})`)
+                  : (isFa ? 'تعریف شرکت / کارگاه پیمانکار جدید' : 'New Contractor')}
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
               <div>
@@ -227,7 +301,7 @@ export const ContractorsView: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 shadow-xs"
                 >
-                  ثبت پیمانکار
+                  {editingContractor ? 'ذخیره تغییرات' : 'ثبت پیمانکار'}
                 </button>
               </div>
             </form>

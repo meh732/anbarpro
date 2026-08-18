@@ -11,7 +11,8 @@ import {
 export const OperatorLoggerView: React.FC = () => {
   const { 
     operators, projects, items, warehouses, boms, currentUser, 
-    registerProduction, materialHandovers, addMaterialHandover, productionLogs 
+    registerProduction, materialHandovers, addMaterialHandover, deleteMaterialHandover,
+    productionLogs, deleteProductionLog 
   } = useApp();
 
   const [activeTabMode, setActiveTabMode] = useState<'handover' | 'production'>('handover');
@@ -562,13 +563,28 @@ export const OperatorLoggerView: React.FC = () => {
                         <td className="whitespace-nowrap p-2.5 text-center font-mono text-slate-700">{hnd.date} - {hnd.startTime}</td>
                         <td className="whitespace-nowrap p-2.5 text-center font-bold text-indigo-600 font-mono">{hnd.items.length} نوع</td>
                         <td className="whitespace-nowrap p-2.5 text-center">
-                          <button
-                            onClick={() => setPrintableHandover(hnd)}
-                            className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-bold text-[11px] flex items-center gap-1 mx-auto"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>چاپ برگه زونکن</span>
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => setPrintableHandover(hnd)}
+                              className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-bold text-[11px] flex items-center gap-1"
+                              title="چاپ برگه زونکن"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>چاپ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`آیا از حذف برگه تحویل "${hnd.docNumber}" اطمینان دارید؟`)) {
+                                  deleteMaterialHandover(hnd.id);
+                                }
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="حذف برگه تحویل"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -813,6 +829,84 @@ export const OperatorLoggerView: React.FC = () => {
                 })()}
               </div>
             </div>
+          </div>
+
+          {/* Past Production Logs History Table */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3">
+            <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
+              <FileCheck className="w-4 h-4 text-emerald-600" />
+              سوابق رسیدهای ثبت تولید و تحویل کالا به انبار:
+            </h4>
+
+            {productionLogs.length === 0 ? (
+              <div className="p-6 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                هیچ گزارش تولیدی ثبت نشده است.
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="whitespace-nowrap p-2.5">شماره رسید</th>
+                      <th className="whitespace-nowrap p-2.5">اپراتور</th>
+                      <th className="whitespace-nowrap p-2.5">پروژه و دستگاه</th>
+                      <th className="whitespace-nowrap p-2.5">محصول نهایی/نیمه‌ساخته</th>
+                      <th className="whitespace-nowrap p-2.5 text-center">تعداد سالم</th>
+                      <th className="whitespace-nowrap p-2.5 text-center">ضایعات</th>
+                      <th className="whitespace-nowrap p-2.5 text-center">تاریخ و ساعت</th>
+                      <th className="whitespace-nowrap p-2.5 text-center">عملیات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {productionLogs.map(log => {
+                      const proj = projects.find(p => p.id === log.projectId);
+                      const item = items.find(i => i.id === log.finishedItemId);
+                      return (
+                        <tr key={log.id} className="hover:bg-slate-50">
+                          <td className="whitespace-nowrap p-2.5 font-mono text-emerald-700 font-bold">{log.receiptNumber}</td>
+                          <td className="whitespace-nowrap p-2.5 font-bold text-slate-800">{log.operatorName}</td>
+                          <td className="whitespace-nowrap p-2.5 text-slate-600">
+                            {proj?.name} ({log.machineCode})
+                          </td>
+                          <td className="whitespace-nowrap p-2.5 text-slate-900 font-bold">{item?.name}</td>
+                          <td className="whitespace-nowrap p-2.5 text-center font-bold text-emerald-600 font-mono">
+                            {log.quantityProduced.toLocaleString('fa-IR')}
+                          </td>
+                          <td className="whitespace-nowrap p-2.5 text-center font-bold text-rose-600 font-mono">
+                            {log.quantityScrapped.toLocaleString('fa-IR')}
+                          </td>
+                          <td className="whitespace-nowrap p-2.5 text-center font-mono text-slate-500">{log.date} - {log.time}</td>
+                          <td className="whitespace-nowrap p-2.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => setPrintableProdLog(log)}
+                                className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg font-bold text-[11px] flex items-center gap-1"
+                                title="چاپ رسید تحویل کالا"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>چاپ</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`آیا از حذف لاگ تولید "${log.receiptNumber}" اطمینان دارید؟`)) {
+                                    deleteProductionLog(log.id);
+                                  }
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                title="حذف گزارش تولید"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

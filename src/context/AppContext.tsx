@@ -66,26 +66,52 @@ interface AppContextType {
 
   addContractor: (cont: Omit<Contractor, 'id'>) => void;
   updateContractor: (id: string, updated: Partial<Contractor>) => void;
+  deleteContractor: (id: string) => void;
   
   addBOM: (bom: Omit<BOM, 'id' | 'createdAt'>) => void;
   updateBOM: (id: string, updated: Partial<BOM>) => void;
+  deleteBOM: (id: string) => void;
   
   addProject: (proj: Omit<Project, 'id'>) => void;
+  updateProject: (id: string, updated: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
   updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
+  updateProjectStepDetails: (projectId: string, stepId: string, updated: Partial<ProjectStep>) => void;
   addProjectSubStep: (projectId: string, parentStepId: string, step: Omit<ProjectStep, 'id'>) => void;
+  deleteProjectStep: (projectId: string, stepId: string) => void;
 
   // Stock Counting / Inventory Audit
   createStockCountingSession: (session: Omit<StockCountingSession, 'id' | 'createdAt'>) => void;
   updateStockCountItem: (sessionId: string, itemId: string, physicalQty: number, notes?: string, firstCount?: number, secondCount?: number, finalCount?: number) => void;
+  updateStockCountingSession: (sessionId: string, updated: Partial<StockCountingSession>) => void;
+  deleteStockCountingSession: (sessionId: string) => void;
   applyStockCountingAdjustments: (sessionId: string) => void;
   
   // Core Inventory & Production Operations
   createStockInDoc: (doc: Omit<StockInDoc, 'id' | 'createdAt'>) => void;
+  updateStockInDoc: (id: string, updated: Partial<StockInDoc>) => void;
+  deleteStockInDoc: (id: string) => void;
+
   createStockOutDoc: (doc: Omit<StockOutDoc, 'id' | 'createdAt'>) => void;
+  updateStockOutDoc: (id: string, updated: Partial<StockOutDoc>) => void;
+  deleteStockOutDoc: (id: string) => void;
+
   createTransfer: (transfer: Omit<WarehouseTransfer, 'id' | 'createdAt'>) => void;
-  updateTransferStatus: (id: string, status: 'InTransit' | 'Completed' | 'Rejected') => void;
+  updateTransfer: (id: string, updated: Partial<WarehouseTransfer>) => void;
+  updateTransferStatus: (id: string, status: 'Pending' | 'InTransit' | 'Completed' | 'Rejected') => void;
+  deleteTransfer: (id: string) => void;
+
   createPurchaseRequest: (req: Omit<PurchaseRequest, 'id' | 'createdAt'>) => void;
+  updatePurchaseRequest: (id: string, updated: Partial<PurchaseRequest>) => void;
   updatePurchaseRequestStatus: (id: string, status: PurchaseRequest['status']) => void;
+  deletePurchaseRequest: (id: string) => void;
+
+  // Production Logs & Operators
+  updateProductionLog: (id: string, updated: Partial<ProductionLog>) => void;
+  deleteProductionLog: (id: string) => void;
+  addOperator: (op: Omit<Operator, 'id'>) => void;
+  updateOperator: (id: string, updated: Partial<Operator>) => void;
+  deleteOperator: (id: string) => void;
   
   // Core Auto-BOM Production Engine
   registerProduction: (data: {
@@ -620,6 +646,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('ویرایش پیمانکار', 'Contractor', id, 'تغییر مشخصات پیمانکار');
   };
 
+  const deleteContractor = (id: string) => {
+    const target = contractors.find(c => c.id === id);
+    setContractors(prev => prev.filter(c => c.id !== id));
+    addAudit('حذف پیمانکار', 'Contractor', id, `حذف پیمانکار ${target?.name || id}`);
+  };
+
   // BOM Management
   const addBOM = (bomData: Omit<BOM, 'id' | 'createdAt'>) => {
     const newBom: BOM = {
@@ -636,6 +668,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('ویرایش فرمول ساخت', 'BOM', id, 'تغییر اقلام یا نسخه فرمول ساخت');
   };
 
+  const deleteBOM = (id: string) => {
+    const target = boms.find(b => b.id === id);
+    setBoms(prev => prev.filter(b => b.id !== id));
+    addAudit('حذف فرمول ساخت', 'BOM', id, `حذف فرمول ${target?.name || id}`);
+  };
+
   // Project Management
   const addProject = (projData: Omit<Project, 'id'>) => {
     const newProj: Project = {
@@ -644,6 +682,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setProjects(prev => [newProj, ...prev]);
     addAudit('ایجاد پروژه جدید', 'Project', newProj.code, `تعریف پروژه ${newProj.name}`);
+  };
+
+  const updateProject = (id: string, updated: Partial<Project>) => {
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
+    addAudit('ویرایش پروژه', 'Project', id, 'به‌روزرسانی مشخصات پروژه');
+  };
+
+  const deleteProject = (id: string) => {
+    const target = projects.find(p => p.id === id);
+    setProjects(prev => prev.filter(p => p.id !== id));
+    addAudit('حذف پروژه', 'Project', id, `حذف پروژه ${target?.name || id}`);
+  };
+
+  const updateProjectStepDetails = (projectId: string, stepId: string, updated: Partial<ProjectStep>) => {
+    const updateStepRec = (steps: ProjectStep[]): ProjectStep[] => {
+      return steps.map(s => {
+        if (s.id === stepId) {
+          return { ...s, ...updated };
+        }
+        if (s.subSteps && s.subSteps.length > 0) {
+          return { ...s, subSteps: updateStepRec(s.subSteps) };
+        }
+        return s;
+      });
+    };
+
+    setProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      return { ...p, steps: updateStepRec(p.steps) };
+    }));
+    addAudit('ویرایش جزئیات مرحله پروژه', 'ProjectStep', stepId, 'تغییر مشخصات مرحله');
+  };
+
+  const deleteProjectStep = (projectId: string, stepId: string) => {
+    const deleteStepRec = (steps: ProjectStep[]): ProjectStep[] => {
+      return steps
+        .filter(s => s.id !== stepId)
+        .map(s => {
+          if (s.subSteps && s.subSteps.length > 0) {
+            return { ...s, subSteps: deleteStepRec(s.subSteps) };
+          }
+          return s;
+        });
+    };
+
+    setProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      return { ...p, steps: deleteStepRec(p.steps) };
+    }));
+    addAudit('حذف مرحله پروژه', 'ProjectStep', stepId, 'حذف مرحله از پروژه');
   };
 
   const updateProjectStep = (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => {
@@ -790,6 +878,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('اعمال مغایرت‌های انبارگردانی', 'StockCounting', targetSession.sessionNumber, `اعمال اصلاحات موجودی انبار ${targetSession.warehouseId}`);
   };
 
+  const updateStockCountingSession = (sessionId: string, updated: Partial<StockCountingSession>) => {
+    setStockCountings(prev => prev.map(s => s.id === sessionId ? { ...s, ...updated } : s));
+    addAudit('ویرایش دوره انبارگردانی', 'StockCounting', sessionId, 'به‌روزرسانی مشخصات دوره انبارگردانی');
+  };
+
+  const deleteStockCountingSession = (sessionId: string) => {
+    const target = stockCountings.find(s => s.id === sessionId);
+    setStockCountings(prev => prev.filter(s => s.id !== sessionId));
+    addAudit('حذف دوره انبارگردانی', 'StockCounting', sessionId, `حذف دوره ${target?.sessionNumber || sessionId}`);
+  };
+
   // Stock In Document
   const createStockInDoc = (docData: Omit<StockInDoc, 'id' | 'createdAt'>) => {
     const newDoc: StockInDoc = {
@@ -820,6 +919,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('ثبت رسید ورود به انبار', 'StockInDoc', newDoc.docNumber, `ورودی به انبار ${docData.warehouseId}`);
   };
 
+  const updateStockInDoc = (id: string, updated: Partial<StockInDoc>) => {
+    setStockInDocs(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
+    addAudit('ویرایش رسید ورود', 'StockInDoc', id, 'به‌روزرسانی رسید ورود به انبار');
+  };
+
+  const deleteStockInDoc = (id: string) => {
+    const target = stockInDocs.find(d => d.id === id);
+    setStockInDocs(prev => prev.filter(d => d.id !== id));
+    addAudit('حذف رسید ورود', 'StockInDoc', id, `حذف رسید ${target?.docNumber || id}`);
+  };
+
   // Stock Out Document
   const createStockOutDoc = (docData: Omit<StockOutDoc, 'id' | 'createdAt'>) => {
     const newDoc: StockOutDoc = {
@@ -848,6 +958,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     addAudit('ثبت حواله خروج از انبار', 'StockOutDoc', newDoc.docNumber, `خروج از انبار ${docData.warehouseId}`);
+  };
+
+  const updateStockOutDoc = (id: string, updated: Partial<StockOutDoc>) => {
+    setStockOutDocs(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
+    addAudit('ویرایش حواله خروج', 'StockOutDoc', id, 'به‌روزرسانی حواله خروج از انبار');
+  };
+
+  const deleteStockOutDoc = (id: string) => {
+    const target = stockOutDocs.find(d => d.id === id);
+    setStockOutDocs(prev => prev.filter(d => d.id !== id));
+    addAudit('حذف حواله خروج', 'StockOutDoc', id, `حذف حواله ${target?.docNumber || id}`);
   };
 
   // Warehouse Transfer
@@ -885,7 +1006,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('ثبت انتقال بین انبارها', 'WarehouseTransfer', newTransfer.docNumber, `انتقال از ${transferData.sourceWarehouseId} به ${transferData.targetWarehouseId}`);
   };
 
-  const updateTransferStatus = (id: string, status: 'InTransit' | 'Completed' | 'Rejected') => {
+  const updateTransfer = (id: string, updated: Partial<WarehouseTransfer>) => {
+    setTransfers(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
+    addAudit('ویرایش حواله انتقال', 'WarehouseTransfer', id, 'تغییر مشخصات حواله انتقال');
+  };
+
+  const updateTransferStatus = (id: string, status: 'Pending' | 'InTransit' | 'Completed' | 'Rejected') => {
     const target = transfers.find(t => t.id === id);
     if (!target) return;
 
@@ -897,6 +1023,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setTransfers(prev => prev.map(t => t.id === id ? { ...t, status } : t));
     addAudit('تغییر وضعیت حواله انتقال', 'WarehouseTransfer', id, `وضعیت به ${status} تغییر یافت`);
+  };
+
+  const deleteTransfer = (id: string) => {
+    const target = transfers.find(t => t.id === id);
+    setTransfers(prev => prev.filter(t => t.id !== id));
+    addAudit('حذف حواله انتقال', 'WarehouseTransfer', id, `حذف حواله ${target?.docNumber || id}`);
   };
 
   // Purchase Requests
@@ -923,9 +1055,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('ثبت درخواست کالا', 'PurchaseRequest', newReq.requestNumber, `واحد درخواست‌کننده: ${newReq.requestingUnit}`);
   };
 
+  const updatePurchaseRequest = (id: string, updated: Partial<PurchaseRequest>) => {
+    setPurchaseRequests(prev => prev.map(r => r.id === id ? { ...r, ...updated } : r));
+    addAudit('ویرایش درخواست خرید', 'PurchaseRequest', id, 'به‌روزرسانی اقلام یا اولویت درخواست');
+  };
+
   const updatePurchaseRequestStatus = (id: string, status: PurchaseRequest['status']) => {
     setPurchaseRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
     addAudit('بررسی درخواست کالا', 'PurchaseRequest', id, `وضعیت به ${status} به‌روزرسانی شد`);
+  };
+
+  const deletePurchaseRequest = (id: string) => {
+    const target = purchaseRequests.find(r => r.id === id);
+    setPurchaseRequests(prev => prev.filter(r => r.id !== id));
+    addAudit('حذف درخواست خرید', 'PurchaseRequest', id, `حذف درخواست ${target?.requestNumber || id}`);
+  };
+
+  // Production Logs & Operators
+  const updateProductionLog = (id: string, updated: Partial<ProductionLog>) => {
+    setProductionLogs(prev => prev.map(l => l.id === id ? { ...l, ...updated } : l));
+    addAudit('ویرایش لاگ تولید', 'ProductionLog', id, 'به‌روزرسانی لاگ تولید');
+  };
+
+  const deleteProductionLog = (id: string) => {
+    const target = productionLogs.find(l => l.id === id);
+    setProductionLogs(prev => prev.filter(l => l.id !== id));
+    addAudit('حذف لاگ تولید', 'ProductionLog', id, `حذف رکورد تولید ${id}`);
+  };
+
+  const addOperator = (opData: Omit<Operator, 'id'>) => {
+    const newOp: Operator = {
+      ...opData,
+      id: `op-${Date.now()}`,
+    };
+    setOperators(prev => [...prev, newOp]);
+    addAudit('تعریف اپراتور جدید', 'Operator', newOp.code, `تعریف اپراتور ${newOp.name}`);
+  };
+
+  const updateOperator = (id: string, updated: Partial<Operator>) => {
+    setOperators(prev => prev.map(op => op.id === id ? { ...op, ...updated } : op));
+    addAudit('ویرایش مشخصات اپراتور', 'Operator', id, 'به‌روزرسانی مشخصات اپراتور');
+  };
+
+  const deleteOperator = (id: string) => {
+    const target = operators.find(op => op.id === id);
+    setOperators(prev => prev.filter(op => op.id !== id));
+    addAudit('حذف اپراتور', 'Operator', id, `حذف اپراتور ${target?.name || id}`);
   };
 
   // CORE AUTOMATIC BOM PRODUCTION ENGINE
@@ -1306,12 +1481,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addItem, updateItem, deleteItem,
       addItemGroup, updateItemGroup, deleteItemGroup,
       addWarehouse, updateWarehouse, deleteWarehouse,
-      addContractor, updateContractor,
-      addBOM, updateBOM,
-      addProject, updateProjectStep, addProjectSubStep,
-      createStockCountingSession, updateStockCountItem, applyStockCountingAdjustments,
-      createStockInDoc, createStockOutDoc, createTransfer, updateTransferStatus,
-      createPurchaseRequest, updatePurchaseRequestStatus,
+      addContractor, updateContractor, deleteContractor,
+      addBOM, updateBOM, deleteBOM,
+      addProject, updateProject, deleteProject, updateProjectStep, updateProjectStepDetails, addProjectSubStep, deleteProjectStep,
+      createStockCountingSession, updateStockCountItem, updateStockCountingSession, deleteStockCountingSession, applyStockCountingAdjustments,
+      createStockInDoc, updateStockInDoc, deleteStockInDoc,
+      createStockOutDoc, updateStockOutDoc, deleteStockOutDoc,
+      createTransfer, updateTransfer, updateTransferStatus, deleteTransfer,
+      createPurchaseRequest, updatePurchaseRequest, updatePurchaseRequestStatus, deletePurchaseRequest,
+      updateProductionLog, deleteProductionLog,
+      addOperator, updateOperator, deleteOperator,
       registerProduction,
       getItemQuantityInWarehouse, getTotalItemQuantity,
       markNotificationAsRead, markAllNotificationsAsRead,

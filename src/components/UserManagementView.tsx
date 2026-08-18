@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { User, UserRole } from '../types';
+import { User, UserRole, Operator } from '../types';
 import { 
   Users, UserPlus, Shield, ShieldCheck, Key, Edit, Trash2, 
-  CheckCircle2, XCircle, Lock, Building, Mail, Check, Layers, AlertTriangle
+  CheckCircle2, XCircle, Lock, Building, Mail, Check, Layers, AlertTriangle,
+  UserCheck, Plus, Pencil, Clock, Factory
 } from 'lucide-react';
 
 interface TabDefinition {
@@ -29,18 +30,27 @@ const ALL_SYSTEM_TABS: TabDefinition[] = [
   { id: 'operator_perf', nameFa: 'عملکرد و کارکرد اپراتورها', nameEn: 'Operator Performance', category: 'production' },
   { id: 'traceability', nameFa: 'رهگیری و گردش ۳۶۰ کالا', nameEn: '360 Traceability', category: 'production' },
   
-  { id: 'backup', nameFa: 'پشتیبان‌گیری و سرور لینوکس', nameEn: 'Backup & Linux Server', category: 'settings' },
+  { id: 'backup', nameFa: 'تنظیمات و پشتیبان‌گیری', nameEn: 'Backup & Settings', category: 'settings' },
   { id: 'audit_backup', nameFa: 'لاگ‌های امنیتی سیستم', nameEn: 'System Audit Logs', category: 'settings' },
 ];
 
 export const UserManagementView: React.FC = () => {
-  const { users, addUser, updateUser, deleteUser, currentUser, language, t } = useApp();
+  const { 
+    users, addUser, updateUser, deleteUser, 
+    operators, addOperator, updateOperator, deleteOperator,
+    currentUser, language, t, hasActionPermission 
+  } = useApp();
+  
   const isFa = language === 'fa';
+  const canAdd = hasActionPermission('add');
+  const canEdit = hasActionPermission('edit');
+  const canDelete = hasActionPermission('delete');
 
+  const [activeSubView, setActiveSubView] = useState<'users' | 'operators'>('users');
+
+  // --- USER MODAL STATE ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-
-  // Form State
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -49,12 +59,20 @@ export const UserManagementView: React.FC = () => {
   const [email, setEmail] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [selectedTabs, setSelectedTabs] = useState<string[]>(['dashboard']);
+  const [userCanAdd, setUserCanAdd] = useState(true);
+  const [userCanEdit, setUserCanEdit] = useState(true);
+  const [userCanDelete, setUserCanDelete] = useState(false);
+  const [userCanExport, setUserCanExport] = useState(true);
 
-  // Granular Action Permissions
-  const [canAdd, setCanAdd] = useState(true);
-  const [canEdit, setCanEdit] = useState(true);
-  const [canDelete, setCanDelete] = useState(false);
-  const [canExport, setCanExport] = useState(true);
+  // --- OPERATOR MODAL STATE ---
+  const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
+  const [editingOperatorId, setEditingOperatorId] = useState<string | null>(null);
+  const [opName, setOpName] = useState('');
+  const [opCode, setOpCode] = useState('');
+  const [opShift, setOpShift] = useState<'Morning' | 'Evening' | 'Night'>('Morning');
+  const [opRole, setOpRole] = useState('اپراتور خط مونتاژ و تست قطعات');
+  const [opStatus, setOpStatus] = useState<'Active' | 'Off' | 'OnLeave'>('Active');
+  const [opProjects, setOpProjects] = useState<string[]>(['PRJ-01']);
 
   const roleOptions: { value: UserRole; labelFa: string }[] = [
     { value: 'SystemAdmin', labelFa: 'مدیر کل سیستم (Super Admin)' },
@@ -68,6 +86,7 @@ export const UserManagementView: React.FC = () => {
     { value: 'ProjectManager', labelFa: 'مدیر پروژه' },
   ];
 
+  // User Handlers
   const handleOpenAddModal = () => {
     setEditingUserId(null);
     setFullName('');
@@ -77,10 +96,10 @@ export const UserManagementView: React.FC = () => {
     setDepartment('انبارداری');
     setEmail('');
     setIsActive(true);
-    setCanAdd(true);
-    setCanEdit(true);
-    setCanDelete(false);
-    setCanExport(true);
+    setUserCanAdd(true);
+    setUserCanEdit(true);
+    setUserCanDelete(false);
+    setUserCanExport(true);
     setSelectedTabs(['dashboard', 'items', 'warehouses', 'stock_movement', 'transfers']);
     setIsModalOpen(true);
   };
@@ -94,10 +113,10 @@ export const UserManagementView: React.FC = () => {
     setDepartment(u.department);
     setEmail(u.email);
     setIsActive(u.isActive ?? true);
-    setCanAdd(u.canAdd ?? true);
-    setCanEdit(u.canEdit ?? true);
-    setCanDelete(u.canDelete ?? false);
-    setCanExport(u.canExport ?? true);
+    setUserCanAdd(u.canAdd ?? true);
+    setUserCanEdit(u.canEdit ?? true);
+    setUserCanDelete(u.canDelete ?? false);
+    setUserCanExport(u.canExport ?? true);
     setSelectedTabs(u.allowedTabs?.includes('*') ? ALL_SYSTEM_TABS.map(t => t.id) : u.allowedTabs || ['dashboard']);
     setIsModalOpen(true);
   };
@@ -122,35 +141,35 @@ export const UserManagementView: React.FC = () => {
     if (presetType === 'admin') {
       setSelectedTabs(ALL_SYSTEM_TABS.map(t => t.id));
       setRole('SystemAdmin');
-      setCanAdd(true);
-      setCanEdit(true);
-      setCanDelete(true);
-      setCanExport(true);
+      setUserCanAdd(true);
+      setUserCanEdit(true);
+      setUserCanDelete(true);
+      setUserCanExport(true);
     } else if (presetType === 'warehouse') {
       setSelectedTabs(['dashboard', 'items', 'warehouses', 'stock_movement', 'transfers', 'requests', 'reports']);
       setRole('WarehouseManager');
-      setCanAdd(true);
-      setCanEdit(true);
-      setCanDelete(false);
-      setCanExport(true);
+      setUserCanAdd(true);
+      setUserCanEdit(true);
+      setUserCanDelete(false);
+      setUserCanExport(true);
     } else if (presetType === 'production') {
       setSelectedTabs(['dashboard', 'projects', 'bom', 'operator_logger', 'operator_perf', 'traceability', 'reports']);
       setRole('PlantManager');
-      setCanAdd(true);
-      setCanEdit(true);
-      setCanDelete(false);
-      setCanExport(true);
+      setUserCanAdd(true);
+      setUserCanEdit(true);
+      setUserCanDelete(false);
+      setUserCanExport(true);
     } else if (presetType === 'operator') {
       setSelectedTabs(['operator_logger', 'projects']);
       setRole('Operator');
-      setCanAdd(true);
-      setCanEdit(false);
-      setCanDelete(false);
-      setCanExport(false);
+      setUserCanAdd(true);
+      setUserCanEdit(false);
+      setUserCanDelete(false);
+      setUserCanExport(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmitUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim() || !username.trim()) return;
 
@@ -168,10 +187,10 @@ export const UserManagementView: React.FC = () => {
         email,
         isActive,
         allowedTabs: allowed,
-        canAdd,
-        canEdit,
-        canDelete,
-        canExport
+        canAdd: userCanAdd,
+        canEdit: userCanEdit,
+        canDelete: userCanDelete,
+        canExport: userCanExport
       });
     } else {
       addUser({
@@ -183,13 +202,64 @@ export const UserManagementView: React.FC = () => {
         email,
         isActive,
         allowedTabs: allowed,
-        canAdd,
-        canEdit,
-        canDelete,
-        canExport
+        canAdd: userCanAdd,
+        canEdit: userCanEdit,
+        canDelete: userCanDelete,
+        canExport: userCanExport
       });
     }
     setIsModalOpen(false);
+  };
+
+  // Operator Handlers
+  const handleOpenAddOperator = () => {
+    setEditingOperatorId(null);
+    setOpName('');
+    setOpCode(`OP-${100 + operators.length + 1}`);
+    setOpShift('Morning');
+    setOpRole('اپراتور خط مونتاژ برد SMD و دیپ');
+    setOpStatus('Active');
+    setOpProjects(['PRJ-01']);
+    setIsOperatorModalOpen(true);
+  };
+
+  const handleOpenEditOperator = (op: Operator) => {
+    setEditingOperatorId(op.id);
+    setOpName(op.name);
+    setOpCode(op.code);
+    setOpShift(op.shift);
+    setOpRole(op.role);
+    setOpStatus(op.status);
+    setOpProjects(op.activeProjects || ['PRJ-01']);
+    setIsOperatorModalOpen(true);
+  };
+
+  const handleSubmitOperator = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!opName.trim()) return;
+
+    if (editingOperatorId) {
+      updateOperator(editingOperatorId, {
+        name: opName.trim(),
+        code: opCode.trim() || `OP-${Date.now().toString().slice(-3)}`,
+        shift: opShift,
+        role: opRole.trim(),
+        status: opStatus,
+        activeProjects: opProjects
+      });
+    } else {
+      addOperator({
+        name: opName.trim(),
+        code: opCode.trim() || `OP-${100 + operators.length + 1}`,
+        shift: opShift,
+        role: opRole.trim() || 'اپراتور خط تولید',
+        activeProjects: opProjects,
+        totalProducedPieces: 0,
+        totalWorkingHours: 0,
+        status: opStatus
+      });
+    }
+    setIsOperatorModalOpen(false);
   };
 
   return (
@@ -199,157 +269,316 @@ export const UserManagementView: React.FC = () => {
         <div>
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Users className="w-5 h-5 text-indigo-600" />
-            {isFa ? 'مدیریت کاربران و سطح دسترسی‌ها (RBAC)' : 'User Accounts & Access Control (RBAC)'}
+            {isFa ? 'مدیریت کاربران، اپراتورها و سطوح دسترسی' : 'User Accounts, Operators & Access Control'}
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            {isFa ? 'تعریف حساب‌های کاربری، تنظیم رمز عبور و اعطای دسترسی‌های تخصصی به تب‌های سیستم' : 'Manage system users, assign role permissions, set passwords and feature restrictions'}
+            {isFa ? 'تعریف کاربران ورود به سیستم، تنظیم اپراتورهای خط تولید (صرفاً برای گزارش‌ها بدون نیاز به رمز)، و کنترل مجوزها' : 'Manage system login accounts, line operators (name-only for reporting), and granular permissions'}
           </p>
         </div>
 
-        {currentUser.role === 'SystemAdmin' && (
-          <button
-            onClick={handleOpenAddModal}
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all shadow-md shadow-indigo-600/20 shrink-0"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>{isFa ? 'تعریف کاربر جدید' : 'Add New User'}</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {activeSubView === 'users' && canAdd && currentUser.role === 'SystemAdmin' && (
+            <button
+              onClick={handleOpenAddModal}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all shadow-md shadow-indigo-600/20 shrink-0"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>{isFa ? 'تعریف کاربر جدید (با ورود)' : 'Add Login User'}</span>
+            </button>
+          )}
+
+          {activeSubView === 'operators' && canAdd && (
+            <button
+              onClick={handleOpenAddOperator}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-600/20 shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isFa ? 'تعریف اپراتور جدید (بدون رمز)' : 'Add Operator (Name Only)'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Users Grid Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {users.map((u) => {
-          const isSuperAdmin = u.role === 'SystemAdmin';
-          const permittedCount = u.allowedTabs?.includes('*') || isSuperAdmin 
-            ? ALL_SYSTEM_TABS.length 
-            : (u.allowedTabs?.length || 0);
+      {/* Sub Navigation Tabs */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setActiveSubView('users')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeSubView === 'users'
+              ? 'bg-indigo-600 text-white shadow-2xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>{isFa ? 'کاربران ورود به سیستم (دارای نام کاربری و رمز)' : 'System Login Users'}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeSubView === 'users' ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-700'}`}>
+            {users.length}
+          </span>
+        </button>
 
-          return (
-            <div 
-              key={u.id}
-              className={`bg-white rounded-2xl border p-5 shadow-2xs transition-all relative overflow-hidden flex flex-col justify-between ${
-                u.isActive === false 
-                  ? 'border-slate-200 opacity-60 bg-slate-50' 
-                  : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'
-              }`}
-            >
-              {/* Card Header */}
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-bold flex items-center justify-center text-base shadow-2xs">
-                      {u.fullName.charAt(0)}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-sm leading-tight flex items-center gap-1.5">
-                        {u.fullName}
-                        {u.id === currentUser.id && (
-                          <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded-full font-bold">
-                            {isFa ? 'شما' : 'YOU'}
-                          </span>
-                        )}
-                      </h3>
-                      <div className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
-                        <Key className="w-3 h-3 text-slate-400" />
-                        <span>@{u.username}</span>
+        <button
+          onClick={() => setActiveSubView('operators')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeSubView === 'operators'
+              ? 'bg-emerald-600 text-white shadow-2xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>{isFa ? 'اپراتورها و پرسنل خط (صرفاً نام برای گزارش‌ها - بدون رمز/ورود)' : 'Line Operators (Report Names Only)'}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeSubView === 'operators' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-700'}`}>
+            {operators.length}
+          </span>
+        </button>
+      </div>
+
+      {/* SUB-VIEW 1: LOGIN USERS */}
+      {activeSubView === 'users' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {users.map((u) => {
+            const isSuperAdmin = u.role === 'SystemAdmin';
+            const permittedCount = u.allowedTabs?.includes('*') || isSuperAdmin 
+              ? ALL_SYSTEM_TABS.length 
+              : (u.allowedTabs?.length || 0);
+
+            return (
+              <div 
+                key={u.id}
+                className={`bg-white rounded-2xl border p-5 shadow-2xs transition-all relative overflow-hidden flex flex-col justify-between ${
+                  u.isActive === false 
+                    ? 'border-slate-200 opacity-60 bg-slate-50' 
+                    : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'
+                }`}
+              >
+                {/* Card Header */}
+                <div>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-bold flex items-center justify-center text-base shadow-2xs">
+                        {u.fullName.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm leading-tight flex items-center gap-1.5">
+                          {u.fullName}
+                          {u.id === currentUser.id && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded-full font-bold">
+                              {isFa ? 'شما' : 'YOU'}
+                            </span>
+                          )}
+                        </h3>
+                        <div className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
+                          <Key className="w-3 h-3 text-slate-400" />
+                          <span>@{u.username}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <span className={`px-2 py-0.5 text-[10px] rounded-lg border font-bold ${
-                    u.isActive !== false ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
-                  }`}>
-                    {u.isActive !== false ? (isFa ? 'فعال' : 'Active') : (isFa ? 'غیرفعال' : 'Inactive')}
-                  </span>
-                </div>
-
-                {/* Role & Department */}
-                <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 space-y-1.5 text-xs text-slate-600 mb-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">{isFa ? 'نقش سازمانی:' : 'Role:'}</span>
-                    <span className="font-bold text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/60 text-[11px]">
-                      {u.role}
+                    <span className={`px-2 py-0.5 text-[10px] rounded-lg border font-bold ${
+                      u.isActive !== false ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                    }`}>
+                      {u.isActive !== false ? (isFa ? 'فعال' : 'Active') : (isFa ? 'غیرفعال' : 'Inactive')}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">{isFa ? 'واحد/دپارتمان:' : 'Department:'}</span>
-                    <span className="font-medium text-slate-800">{u.department || 'نامشخص'}</span>
+
+                  {/* Role & Department */}
+                  <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 space-y-1.5 text-xs text-slate-600 mb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[11px]">{isFa ? 'نقش سازمانی:' : 'Role:'}</span>
+                      <span className="font-bold text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/60 text-[11px]">
+                        {u.role}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[11px]">{isFa ? 'واحد/دپارتمان:' : 'Department:'}</span>
+                      <span className="font-medium text-slate-800">{u.department || 'نامشخص'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[11px]">{isFa ? 'رمز عبور:' : 'Password:'}</span>
+                      <span className="font-mono text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">
+                        {u.password || '••••••'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">{isFa ? 'رمز عبور:' : 'Password:'}</span>
-                    <span className="font-mono text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">
-                      {u.password || '••••••'}
+
+                  {/* Access Level Badge */}
+                  <div className="flex items-center justify-between text-xs py-1 border-t border-slate-100">
+                    <span className="text-slate-500 text-[11px] flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                      {isFa ? 'دسترسی‌های فعال:' : 'Permissions:'}
+                    </span>
+                    <span className="font-bold text-slate-800 text-[11px]">
+                      {isSuperAdmin ? (
+                        <span className="text-indigo-600 font-bold">{isFa ? 'کامل (مدیر ارشد)' : 'FULL ACCESS'}</span>
+                      ) : (
+                        <span>{permittedCount} {isFa ? 'از' : 'of'} {ALL_SYSTEM_TABS.length} {isFa ? 'بخش' : 'tabs'}</span>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Granular Action Tags */}
+                  <div className="flex flex-wrap gap-1 pt-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canAdd ?? true ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
+                      ثبت
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canEdit ?? true ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
+                      ویرایش
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canDelete ?? false ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
+                      حذف
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canExport ?? true ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
+                      خروجی
                     </span>
                   </div>
                 </div>
 
-                {/* Access Level Badge */}
-                <div className="flex items-center justify-between text-xs py-1 border-t border-slate-100">
-                  <span className="text-slate-500 text-[11px] flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                    {isFa ? 'دسترسی‌های فعال:' : 'Permissions:'}
-                  </span>
-                  <span className="font-bold text-slate-800 text-[11px]">
-                    {isSuperAdmin ? (
-                      <span className="text-indigo-600 font-bold">{isFa ? 'کامل (مدیر ارشد)' : 'FULL ACCESS'}</span>
-                    ) : (
-                      <span>{permittedCount} {isFa ? 'از' : 'of'} {ALL_SYSTEM_TABS.length} {isFa ? 'بخش' : 'tabs'}</span>
-                    )}
-                  </span>
-                </div>
+                {/* Card Action Buttons */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 mt-3">
+                  {canEdit && (
+                    <button
+                      onClick={() => handleOpenEditModal(u)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                    >
+                      <Edit className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>{isFa ? 'ویرایش دسترسی‌ها' : 'Edit Permissions'}</span>
+                    </button>
+                  )}
 
-                {/* Granular Action Tags */}
-                <div className="flex flex-wrap gap-1 pt-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canAdd ?? true ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
-                    ثبت
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canEdit ?? true ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
-                    ویرایش
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canDelete ?? false ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
-                    حذف
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canExport ?? true ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
-                    خروجی
-                  </span>
+                  {canDelete && currentUser.role === 'SystemAdmin' && u.id !== 'usr-1' && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(isFa ? `آیا از حذف کاربر ${u.fullName} اطمینان دارید؟` : `Delete user ${u.fullName}?`)) {
+                          deleteUser(u.id);
+                        }
+                      }}
+                      className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all"
+                      title={isFa ? 'حذف کاربر' : 'Delete User'}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {/* Card Action Buttons */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 mt-3">
-                <button
-                  onClick={() => handleOpenEditModal(u)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
-                >
-                  <Edit className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>{isFa ? 'ویرایش دسترسی‌ها' : 'Edit Permissions'}</span>
-                </button>
-
-                {currentUser.role === 'SystemAdmin' && u.id !== 'usr-1' && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm(isFa ? `آیا از حذف کاربر ${u.fullName} اطمینان دارید؟` : `Delete user ${u.fullName}?`)) {
-                        deleteUser(u.id);
-                      }
-                    }}
-                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all"
-                    title={isFa ? 'حذف کاربر' : 'Delete User'}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+      {/* SUB-VIEW 2: OPERATORS (NAME ONLY, NO LOGIN/PASSWORD NEEDED) */}
+      {activeSubView === 'operators' && (
+        <div className="space-y-4">
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-900 leading-relaxed flex items-start gap-3">
+            <UserCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-bold">راهنمای اپراتورهای خط تولید:</strong>
+              <p className="mt-1 text-emerald-800">
+                این افراد نیازی به نام کاربری، رمز عبور یا ورود به سیستم ندارند. نام آن‌ها در منوهای کشویی ثبت شیفت، تحویل قطعات توسط سرشیفت، ثبت خروجی مونتاژ و گزارشات کارکرد نمایش داده می‌شود.
+              </p>
             </div>
-          );
-        })}
-      </div>
+          </div>
 
-      {/* User Add / Edit Modal */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {operators.map(op => (
+              <div 
+                key={op.id}
+                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs hover:border-emerald-300 transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold flex items-center justify-center text-base shadow-2xs">
+                        {op.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm leading-tight">
+                          {op.name}
+                        </h3>
+                        <div className="text-xs text-emerald-700 font-mono font-bold mt-0.5">
+                          کد: {op.code}
+                        </div>
+                      </div>
+                    </div>
+
+                    <span className={`px-2 py-0.5 text-[10px] rounded-lg border font-bold ${
+                      op.status === 'Active' 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                        : op.status === 'OnLeave'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {op.status === 'Active' ? 'فعال' : op.status === 'OnLeave' ? 'مرخصی' : 'تعطیل'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1.5 text-xs text-slate-600 mb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">شیفت کاری:</span>
+                      <span className="font-bold text-slate-800">
+                        {op.shift === 'Morning' ? 'شیفت صبح' : op.shift === 'Evening' ? 'شیفت عصر' : 'شیفت شب'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">تخصص / ایستگاه:</span>
+                      <span className="font-medium text-slate-800 truncate max-w-[180px]">{op.role}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">پروژه‌های تخصیصی:</span>
+                      <span className="font-mono text-indigo-600 font-bold">{op.activeProjects?.join(', ') || '-'}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-emerald-50/50 p-2 rounded-xl border border-emerald-100 text-center">
+                      <span className="text-[10px] text-slate-500 block">تیراژ کل تولید</span>
+                      <strong className="text-emerald-700 font-mono font-bold text-sm">
+                        {op.totalProducedPieces.toLocaleString('fa-IR')}
+                      </strong>
+                    </div>
+                    <div className="bg-indigo-50/50 p-2 rounded-xl border border-indigo-100 text-center">
+                      <span className="text-[10px] text-slate-500 block">ساعت کارکرد</span>
+                      <strong className="text-indigo-700 font-mono font-bold text-sm">
+                        {op.totalWorkingHours.toLocaleString('fa-IR')} ساعت
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Operator Actions */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 mt-4">
+                  {canEdit && (
+                    <button
+                      onClick={() => handleOpenEditOperator(op)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>ویرایش اپراتور</span>
+                    </button>
+                  )}
+
+                  {canDelete && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`آیا از حذف اپراتور "${op.name}" اطمینان دارید؟`)) {
+                          deleteOperator(op.id);
+                        }
+                      }}
+                      className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all"
+                      title="حذف اپراتور"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* USER MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 shadow-2xl p-6 space-y-6 custom-scrollbar">
-            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-600">
@@ -373,12 +602,12 @@ export const UserManagementView: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmitUser} className="space-y-5">
               {/* Preset Quick Selection Buttons */}
               <div className="bg-indigo-50/60 border border-indigo-100 p-3 rounded-2xl space-y-2">
                 <div className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>{isFa ? 'قالب‌های آمادۀ سطح دسترسی (مجموعه مجوزها):' : 'Quick Permission Presets:'}</span>
+                  <span>{isFa ? 'قالب‌های آمادۀ سطح دسترسی:' : 'Quick Permission Presets:'}</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -386,28 +615,28 @@ export const UserManagementView: React.FC = () => {
                     onClick={() => handleApplyPreset('admin')}
                     className="px-2.5 py-1 bg-white hover:bg-indigo-600 hover:text-white border border-indigo-200 text-indigo-700 rounded-lg text-xs font-medium transition-all shadow-2xs"
                   >
-                    {isFa ? '⚡ دسترسی کامل مدیریتی' : 'Full Admin Access'}
+                    ⚡ دسترسی کامل مدیریتی
                   </button>
                   <button
                     type="button"
                     onClick={() => handleApplyPreset('warehouse')}
                     className="px-2.5 py-1 bg-white hover:bg-amber-600 hover:text-white border border-amber-200 text-amber-700 rounded-lg text-xs font-medium transition-all shadow-2xs"
                   >
-                    {isFa ? '📦 تخصصی انبارداری' : 'Warehouse Specialist'}
+                    📦 تخصصی انبارداری
                   </button>
                   <button
                     type="button"
                     onClick={() => handleApplyPreset('production')}
                     className="px-2.5 py-1 bg-white hover:bg-emerald-600 hover:text-white border border-emerald-200 text-emerald-700 rounded-lg text-xs font-medium transition-all shadow-2xs"
                   >
-                    {isFa ? '⚙️ تخصصی مدیر تولید/کارخانه' : 'Production Manager'}
+                    ⚙️ تخصصی مدیر تولید/کارخانه
                   </button>
                   <button
                     type="button"
                     onClick={() => handleApplyPreset('operator')}
                     className="px-2.5 py-1 bg-white hover:bg-rose-600 hover:text-white border border-rose-200 text-rose-700 rounded-lg text-xs font-medium transition-all shadow-2xs"
                   >
-                    {isFa ? '🛠️ اپراتور خط ثبت تولید' : 'Line Operator'}
+                    🛠️ اپراتور خط ثبت تولید
                   </button>
                 </div>
               </div>
@@ -515,7 +744,7 @@ export const UserManagementView: React.FC = () => {
                 </label>
               </div>
 
-              {/* Action Operations Permissions Checklist (Add, Edit, Delete, Export) */}
+              {/* Action Operations Permissions Checklist */}
               <div className="space-y-2.5 pt-3 border-t border-slate-200 bg-slate-50/80 p-3.5 rounded-2xl">
                 <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-indigo-600" />
@@ -525,41 +754,41 @@ export const UserManagementView: React.FC = () => {
                   <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer hover:border-indigo-300">
                     <input
                       type="checkbox"
-                      checked={canAdd}
-                      onChange={(e) => setCanAdd(e.target.checked)}
+                      checked={userCanAdd}
+                      onChange={(e) => setUserCanAdd(e.target.checked)}
                       className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
                     />
-                    <span>{isFa ? '🟢 امکان ثبت/ایجاد' : 'Allow Create'}</span>
+                    <span>🟢 امکان ثبت/ایجاد</span>
                   </label>
 
                   <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer hover:border-indigo-300">
                     <input
                       type="checkbox"
-                      checked={canEdit}
-                      onChange={(e) => setCanEdit(e.target.checked)}
+                      checked={userCanEdit}
+                      onChange={(e) => setUserCanEdit(e.target.checked)}
                       className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                     />
-                    <span>{isFa ? '🔵 امکان ویرایش' : 'Allow Edit'}</span>
+                    <span>🔵 امکان ویرایش</span>
                   </label>
 
                   <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer hover:border-indigo-300">
                     <input
                       type="checkbox"
-                      checked={canDelete}
-                      onChange={(e) => setCanDelete(e.target.checked)}
+                      checked={userCanDelete}
+                      onChange={(e) => setUserCanDelete(e.target.checked)}
                       className="w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
                     />
-                    <span>{isFa ? '🔴 امکان حذف' : 'Allow Delete'}</span>
+                    <span>🔴 امکان حذف</span>
                   </label>
 
                   <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer hover:border-indigo-300">
                     <input
                       type="checkbox"
-                      checked={canExport}
-                      onChange={(e) => setCanExport(e.target.checked)}
+                      checked={userCanExport}
+                      onChange={(e) => setUserCanExport(e.target.checked)}
                       className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
                     />
-                    <span>{isFa ? '🟡 خروجی اکسل/بکاپ' : 'Allow Export'}</span>
+                    <span>🟡 خروجی اکسل/بکاپ</span>
                   </label>
                 </div>
               </div>
@@ -630,6 +859,127 @@ export const UserManagementView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* OPERATOR MODAL (NO USERNAME / PASSWORD REQUIRED) */}
+      {isOperatorModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-600">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">
+                    {editingOperatorId ? 'ویرایش اطلاعات اپراتور خط' : 'تعریف اپراتور / پرسنل خط تولید'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    صرفاً برای ثبت در فرم‌ها، تحویل مواد و شیفت‌های کاری (بدون نیاز به نام کاربری و رمز)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsOperatorModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitOperator} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  نام و نام خانوادگی اپراتور: *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={opName}
+                  onChange={(e) => setOpName(e.target.value)}
+                  placeholder="مثال: علی احمدی"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    کد پرسنلی / اپراتور:
+                  </label>
+                  <input
+                    type="text"
+                    value={opCode}
+                    onChange={(e) => setOpCode(e.target.value)}
+                    placeholder="OP-105"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    شیفت کاری:
+                  </label>
+                  <select
+                    value={opShift}
+                    onChange={(e) => setOpShift(e.target.value as 'Morning' | 'Evening' | 'Night')}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                  >
+                    <option value="Morning">شیفت صبح</option>
+                    <option value="Evening">شیفت عصر</option>
+                    <option value="Night">شیفت شب</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  عنوان شغلی / ایستگاه کاری:
+                </label>
+                <input
+                  type="text"
+                  value={opRole}
+                  onChange={(e) => setOpRole(e.target.value)}
+                  placeholder="مثال: اپراتور مونتاژ برد SMD، تست و کالیبراسیون"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  وضعیت فعالیت:
+                </label>
+                <select
+                  value={opStatus}
+                  onChange={(e) => setOpStatus(e.target.value as 'Active' | 'Off' | 'OnLeave')}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                >
+                  <option value="Active">🟢 فعال و حاضر در خط</option>
+                  <option value="OnLeave">🟡 مرخصی</option>
+                  <option value="Off">⚪ شیفت تعطیل / غیرفعال</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsOperatorModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
+                >
+                  {editingOperatorId ? 'ذخیره تغییرات اپراتور' : 'افزودن به لیست اپراتورها'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
