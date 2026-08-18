@@ -56,6 +56,72 @@ check_node() {
     return 0
 }
 
+# Run NPM command with real-time progress, duration and directory size tracking
+run_npm_with_progress() {
+    local cmd="$1"
+    local desc="$2"
+    
+    echo -e "${YELLOW}⚙️ $desc...${NC}"
+    
+    # Run the npm command in the background
+    eval "$cmd" > /dev/null 2>&1 &
+    local PID=$!
+    
+    local SECONDS=0
+    # Keep printing progress while npm is running
+    while kill -0 $PID 2>/dev/null; do
+        local size="0B"
+        if [ -d "node_modules" ]; then
+            size=$(du -sh node_modules 2>/dev/null | awk '{print $1}')
+            if [ -z "$size" ]; then
+                size="0B"
+            fi
+        fi
+        
+        # Format elapsed time
+        local mins=$((SECONDS / 60))
+        local secs=$((SECONDS % 60))
+        local time_str=""
+        if [ $mins -gt 0 ]; then
+            time_str="${mins}m ${secs}s"
+        else
+            time_str="${secs}s"
+        fi
+        
+        echo -ne "   ${CYAN}⏳ [Time: $time_str] [Installed Size: $size] Installing packages...${NC}\r"
+        sleep 1
+        ((SECONDS++))
+    done
+    
+    # Wait for the process to finish and get exit code
+    wait $PID
+    local exit_code=$?
+    
+    # Print final status
+    local size="0B"
+    if [ -d "node_modules" ]; then
+        size=$(du -sh node_modules 2>/dev/null | awk '{print $1}')
+    fi
+    local mins=$((SECONDS / 60))
+    local secs=$((SECONDS % 60))
+    local time_str=""
+    if [ $mins -gt 0 ]; then
+        time_str="${mins}m ${secs}s"
+    else
+        time_str="${secs}s"
+    fi
+    
+    # Clear line and print completion
+    echo -ne "\r\033[K"
+    if [ $exit_code -eq 0 ]; then
+        echo -e "   ${GREEN}✅ Done in $time_str! Final installed size: $size${NC}"
+        return 0
+    else
+        echo -e "   ${RED}❌ Failed after $time_str. Please check npm logs.${NC}"
+        return $exit_code
+    fi
+}
+
 # Fresh installation process
 install_anbarpro() {
     echo -e "\n${YELLOW}🔄 Starting AnbarPro installation process...${NC}"
@@ -141,21 +207,17 @@ install_anbarpro() {
     fi
     
     # 4. Install NPM Dependencies
-    echo -e "\n${YELLOW}⚙️ Installing NPM packages...${NC}"
-    npm install --production=false --legacy-peer-deps
+    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing main NPM dependencies"
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
     ARCH=$(uname -m)
     echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
     if [ "$ARCH" = "x86_64" ]; then
-        echo -e "${YELLOW}⚙️ Installing native Linux x64 bindings for @tailwindcss/oxide...${NC}"
-        npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64
+        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-x64-musl" "Installing native Linux x64 bindings for @tailwindcss/oxide"
     elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        echo -e "${YELLOW}⚙️ Installing native Linux ARM64 bindings for @tailwindcss/oxide...${NC}"
-        npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-arm64
+        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-arm64-gnu @tailwindcss/oxide-linux-arm64-musl" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
     else
-        echo -e "${YELLOW}⚠️ Unrecognized architecture. Installing optional packages by default...${NC}"
-        npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64 @tailwindcss/oxide-linux-arm64
+        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-arm64-gnu" "Installing optional packages by default"
     fi
     
     # 5. Build
@@ -369,18 +431,18 @@ update_anbarpro() {
         rm -f package-lock.json
     fi
     
-    echo -e "${YELLOW}⚙️ Updating dependencies and rebuilding the application...${NC}"
-    npm install --production=false --legacy-peer-deps
+    # 4. Install NPM Dependencies
+    run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing/Updating main NPM dependencies"
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
     ARCH=$(uname -m)
     echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
     if [ "$ARCH" = "x86_64" ]; then
-        echo -e "${YELLOW}⚙️ Installing native Linux x64 bindings for @tailwindcss/oxide...${NC}"
-        npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64
+        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-x64-musl" "Installing native Linux x64 bindings for @tailwindcss/oxide"
     elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        echo -e "${YELLOW}⚙️ Installing native Linux ARM64 bindings for @tailwindcss/oxide...${NC}"
-        npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-arm64
+        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-arm64-gnu @tailwindcss/oxide-linux-arm64-musl" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
+    else
+        run_npm_with_progress "npm install --save-optional --legacy-peer-deps @tailwindcss/oxide-linux-x64-gnu @tailwindcss/oxide-linux-arm64-gnu" "Installing optional packages by default"
     fi
     
     npm run build
