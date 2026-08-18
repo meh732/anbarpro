@@ -136,7 +136,7 @@ install_anbarpro() {
     
     # 4. Install NPM Dependencies
     echo -e "\n${YELLOW}⚙️ در حال نصب پکیج‌های NPM...${NC}"
-    npm install --production=false
+    npm install --production=false --legacy-peer-deps
     
     # 5. Build
     echo -e "\n${YELLOW}📦 در حال کامپایل پروژه و ساخت خروجی...${NC}"
@@ -338,7 +338,7 @@ update_anbarpro() {
     git reset --hard origin/main
     
     echo -e "${YELLOW}⚙️ بروزرسانی کتابخانه‌ها و کامپایل مجدد...${NC}"
-    npm install --production=false
+    npm install --production=false --legacy-peer-deps
     npm run build
     
     echo -e "${YELLOW}🛡️ راه‌اندازی مجدد وب‌سرویس...${NC}"
