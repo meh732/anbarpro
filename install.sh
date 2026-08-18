@@ -134,6 +134,12 @@ install_anbarpro() {
     
     cd "$INSTALL_DIR"
     
+    # Remove package-lock.json if it exists to prevent Tailwind v4 native binary compilation bugs
+    if [ -f "package-lock.json" ]; then
+        echo -e "${YELLOW}🗑️ حذف فایل package-lock.json برای بارگیری مجدد ابزارهای بومی (Native Bindings) سیستم‌عامل شما...${NC}"
+        rm -f package-lock.json
+    fi
+    
     # 4. Install NPM Dependencies
     echo -e "\n${YELLOW}⚙️ در حال نصب پکیج‌های NPM...${NC}"
     npm install --production=false --legacy-peer-deps
@@ -141,6 +147,12 @@ install_anbarpro() {
     # 5. Build
     echo -e "\n${YELLOW}📦 در حال کامپایل پروژه و ساخت خروجی...${NC}"
     npm run build
+    
+    if [ ! -f "dist/server.cjs" ]; then
+        echo -e "\n${RED}❌ خطای بحرانی: فایل خروجی نهایی (dist/server.cjs) ساخته نشد! کامپایل با شکست مواجه شد.${NC}"
+        echo -e "${YELLOW}💡 راهنمایی: احتمالاً تداخلی در پکیج‌های بومی لینوکس رخ داده است. دستور 'npm run build' را دستی بررسی کنید.${NC}"
+        return 1
+    fi
     
     # 6. Setup Systemd Service
     echo -e "\n${YELLOW}🛡️ در حال ثبت سرویس در سیستم‌عامل برای اجرای خودکار در پس‌زمینه...${NC}"
@@ -337,9 +349,20 @@ update_anbarpro() {
     git fetch --all
     git reset --hard origin/main
     
+    # Remove package-lock.json if it exists to prevent Tailwind v4 native binary compilation bugs
+    if [ -f "package-lock.json" ]; then
+        echo -e "${YELLOW}🗑️ حذف فایل package-lock.json برای بارگیری مجدد ابزارهای بومی (Native Bindings)...${NC}"
+        rm -f package-lock.json
+    fi
+    
     echo -e "${YELLOW}⚙️ بروزرسانی کتابخانه‌ها و کامپایل مجدد...${NC}"
     npm install --production=false --legacy-peer-deps
     npm run build
+    
+    if [ ! -f "dist/server.cjs" ]; then
+        echo -e "\n${RED}❌ خطای بحرانی: کامپایل آپدیت با شکست مواجه شد و فایل سرور نهایی ساخته نشد!${NC}"
+        return 1
+    fi
     
     echo -e "${YELLOW}🛡️ راه‌اندازی مجدد وب‌سرویس...${NC}"
     systemctl restart anbarpro
