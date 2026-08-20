@@ -531,8 +531,8 @@ export const StockMovementView: React.FC = () => {
                   {docItems.map((line, idx) => {
                     const itm = items.find(i => i.id === line.itemId);
                     return (
-                      <div key={idx} className="grid grid-cols-12 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 items-center">
-                        <div className="col-span-5">
+                      <div key={idx} className="flex flex-col sm:grid sm:grid-cols-12 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 items-start sm:items-center">
+                        <div className="w-full sm:col-span-5">
                           <label className="block text-[10px] text-slate-500 mb-0.5">انتخاب کالا / قطعه</label>
                           <select
                             value={line.itemId}
@@ -553,7 +553,7 @@ export const StockMovementView: React.FC = () => {
                           </select>
                         </div>
 
-                        <div className="col-span-2">
+                        <div className="w-full sm:col-span-2">
                           <label className="block text-[10px] text-slate-500 mb-0.5">تعداد ({itm?.unit || 'عدد'})</label>
                           <input
                             type="number"
@@ -568,7 +568,7 @@ export const StockMovementView: React.FC = () => {
                           />
                         </div>
 
-                        <div className="col-span-3">
+                        <div className="w-full sm:col-span-3">
                           <label className="block text-[10px] text-slate-500 mb-0.5">قیمت واحد (تومان)</label>
                           <input
                             type="number"
@@ -582,14 +582,15 @@ export const StockMovementView: React.FC = () => {
                           />
                         </div>
 
-                        <div className="col-span-2 text-center pt-3">
+                        <div className="w-full sm:col-span-2 text-center pt-2 sm:pt-3">
                           {docItems.length > 1 && (
                             <button
                               type="button"
                               onClick={() => handleRemoveItemLine(idx)}
-                              className="text-rose-600 hover:text-rose-700 p-1"
+                              className="text-rose-600 hover:text-rose-700 p-1 flex items-center justify-center gap-1 w-full sm:w-auto"
                             >
                               <Trash2 className="w-4 h-4 mx-auto" />
+                              <span className="inline sm:hidden text-[10px] font-bold">حذف این ردیف</span>
                             </button>
                           )}
                         </div>

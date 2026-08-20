@@ -90,12 +90,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           </button>
 
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+            <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-slate-400">
               <span>{companyName || 'انبار هوشمند'}</span>
               <span>/</span>
               <span className="text-indigo-600 font-extrabold">{currentTabInfo.category}</span>
             </div>
-            <h1 className="text-lg md:text-xl font-black text-slate-900 tracking-tight">
+            <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-black text-slate-900 tracking-tight line-clamp-1 max-w-[130px] sm:max-w-none">
               {currentTabInfo.title}
             </h1>
           </div>

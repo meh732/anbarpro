@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
+import { BottomNavigation } from './components/BottomNavigation';
 import { BarcodeModal } from './components/BarcodeModal';
 import { LoginView } from './components/LoginView';
 import { SetupView } from './components/SetupView';
@@ -139,6 +140,9 @@ const MainContent: React.FC = () => {
           </div>
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <BottomNavigation />
 
       {/* Barcode Scanner Modal */}
       {isScannerOpen && (
