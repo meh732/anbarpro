@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Bell, ChevronDown, LogOut, QrCode, AlertTriangle, Clock, CheckCircle, 
-  Menu, Search, Server, Wifi, RefreshCw, Database, HardDrive, Cpu, CheckCircle2, ShieldCheck, X
+  Menu, Search, Server, Wifi, RefreshCw, Database, HardDrive, Cpu, CheckCircle2, ShieldCheck, X, Zap
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -18,7 +18,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
     currentUser, setCurrentUser, logout,
     setIsScannerOpen,
     companyName,
-    serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer
+    serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer,
+    liteMode, setLiteMode
   } = useApp();
 
   const [showNotifs, setShowNotifs] = useState(false);
@@ -137,6 +138,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           >
             <QrCode className="w-3.5 h-3.5" />
             <span>اسکن بارکد</span>
+          </button>
+
+          {/* Lite Mode Toggle */}
+          <button
+            onClick={() => setLiteMode(!liteMode)}
+            className={`flex items-center gap-1 bg-white/70 hover:bg-white border text-slate-700 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-black text-[10px] sm:text-xs transition-all cursor-pointer active:scale-95 shadow-xs ${
+              liteMode 
+                ? 'bg-amber-100/80 text-amber-700 border-amber-300' 
+                : 'border-slate-200/60'
+            }`}
+            title={liteMode ? "سوییچ به حالت کامل گرافیکی" : "سوییچ به حالت ساده و پرسرعت"}
+          >
+            <Zap className={`w-3.5 h-3.5 ${liteMode ? 'text-amber-600 fill-amber-500 animate-bounce' : 'text-slate-400'}`} />
+            <span>{liteMode ? 'حالت ساده' : 'حالت کامل'}</span>
           </button>
 
           {/* Notifications Dropdown */}

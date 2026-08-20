@@ -186,6 +186,10 @@ interface AppContextType {
   serverInfo: any;
   forceSyncWithServer: () => Promise<boolean>;
   resetServerDatabase: () => Promise<boolean>;
+
+  // Lite Mode / Performance Toggle for Low-End Devices
+  liteMode: boolean;
+  setLiteMode: (lite: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -288,6 +292,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [searchQuery, setSearchQuery] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Lite Mode State for Low-Performance Devices
+  const [liteMode, setLiteModeState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(`${STORAGE_KEY}_lite_mode`) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const setLiteMode = (lite: boolean) => {
+    setLiteModeState(lite);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_lite_mode`, String(lite));
+    } catch {}
+  };
 
   // Language State
   const [language, setLanguageState] = useState<Language>(() => {
@@ -2187,7 +2207,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isMobileMenuOpen, setIsMobileMenuOpen,
       isInstalled, setIsInstalled, companyName, setCompanyName,
       completeInstallation,
-      serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer, resetServerDatabase
+      serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer, resetServerDatabase,
+      liteMode, setLiteMode
     }}>
       {children}
     </AppContext.Provider>

@@ -7,7 +7,7 @@ import {
   Trash2, ArrowUp, ArrowDown, Cpu, ArrowRightLeft, AlertTriangle, Layers,
   Boxes, Warehouse, Check, FileCheck, ShieldAlert, Sparkles,
   PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3,
-  Pencil, Edit, Eye, Calculator
+  Pencil, Edit, Eye, Calculator, Zap
 } from 'lucide-react';
 import { SmartStageScalingModal } from './SmartStageScalingModal';
 
@@ -473,7 +473,7 @@ export const ProjectsView: React.FC = () => {
     projects, items, boms, warehouses, inventory, contractors, 
     addProject, updateProject, deleteProject, updateProjectStep, 
     updateProjectStepDetails, addProjectSubStep, deleteProjectStep, 
-    createTransfer, language, hasActionPermission
+    createTransfer, language, hasActionPermission, liteMode
   } = useApp();
 
   const isFa = language === 'fa';
@@ -2463,62 +2463,104 @@ export const ProjectsView: React.FC = () => {
                       </div>
 
                       {/* Canvas Area with dotted engineering background */}
-                      <div className="overflow-x-auto overflow-y-auto p-8 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:20px_20px] bg-slate-50/80 rounded-2xl border border-slate-200 min-h-[450px]">
-                        <div 
-                          className="flex flex-col items-center min-w-[700px] transition-transform duration-200 origin-top"
-                          style={{ transform: `scale(${treeZoom})` }}
-                        >
-                          {/* ROOT NODE CARD */}
-                          <div className="w-80 p-4 rounded-2xl bg-gradient-to-r from-indigo-900 to-slate-900 text-white shadow-xl border-2 border-indigo-500 text-center relative z-10 space-y-1.5">
-                            <div className="inline-flex p-2 bg-indigo-600 rounded-xl mb-1">
-                              <Cpu className="w-5 h-5 text-white" />
+                      <div className="overflow-x-auto overflow-y-auto p-4 sm:p-8 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:20px_20px] bg-slate-50/80 rounded-2xl border border-slate-200 min-h-[350px]">
+                        {liteMode ? (
+                          <div className="max-w-2xl mx-auto bg-white/95 border border-amber-200 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+                            <div className="flex items-center gap-3 text-amber-800 border-b pb-3 border-amber-100">
+                              <Zap className="w-5 h-5 text-amber-500 fill-amber-500 shrink-0" />
+                              <div className="text-right">
+                                <h5 className="font-extrabold text-xs sm:text-sm">حالت فوق‌العاده سبک فعال است</h5>
+                                <p className="text-[10px] text-slate-500 mt-0.5">در این حالت برای جلوگیری از قفل شدن یا هنگ گوشی، ترسیم گرافیکی دو بعدی غیرفعال شده است.</p>
+                              </div>
                             </div>
-                            <h4 className="font-extrabold text-sm text-white">
-                              {finishedTargetItem?.name || treeReportProject.targetFinishedItemId}
-                            </h4>
-                            <div className="text-[11px] text-indigo-200 flex items-center justify-center gap-3 pt-1 border-t border-indigo-800/80">
-                              <span>تیراژ هدف: <strong className="text-amber-300">{treeReportProject.targetQuantity}</strong></span>
-                              <span>کد پروژه: <strong className="font-mono text-indigo-300">{treeReportProject.code}</strong></span>
+                            <div className="space-y-2.5">
+                              <span className="text-xs font-black text-slate-800 block">ساختار شکست کار و درخت مراحل پروژه:</span>
+                              <div className="space-y-1.5 max-h-[350px] overflow-y-auto custom-scrollbar pr-1 divide-y divide-slate-100/60">
+                                {kpis.flattened.map(({ step, code, depth }) => {
+                                  return (
+                                    <div 
+                                      key={step.id} 
+                                      className="flex items-center justify-between text-xs py-2 transition-colors hover:bg-slate-50"
+                                      style={{ paddingRight: `${depth * 16}px` }}
+                                    >
+                                      <div className="flex items-center gap-2 truncate">
+                                        <span className="font-mono font-bold text-indigo-700 text-[10px] bg-indigo-50/55 px-1.5 py-0.5 rounded border border-indigo-100">
+                                          {depth > 0 && "└─ "}{code}
+                                        </span>
+                                        <span className="font-bold text-slate-900 truncate">{step.name || step.title}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        {step.status === 'Completed' ? (
+                                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold text-[9px]">تکمیل شد</span>
+                                        ) : step.status === 'InProgress' ? (
+                                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-bold text-[9px]">در حال اجرا</span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 rounded-full font-bold text-[9px]">در انتظار</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
-
-                          {/* ROOT TRUNK LINE */}
-                          {(treeReportProject.steps || []).length > 0 && (
-                            <div className="w-1 h-8 bg-indigo-600 z-0"></div>
-                          )}
-
-                          {/* LEVEL 1 CHILDREN BRANCH ROW */}
-                          {(treeReportProject.steps || []).length > 0 && (
-                            <div className="relative flex justify-center pt-8 gap-8">
-                              {/* Horizontal Branch Bar Across Main Steps */}
-                              {(treeReportProject.steps || []).length > 1 && (
-                                <div className="absolute top-0 left-36 right-36 h-1 bg-indigo-500 z-0"></div>
-                              )}
-
-                              {(treeReportProject.steps || []).map((step, idx) => (
-                                <div key={step.id || idx} className="flex flex-col items-center relative">
-                                  {/* Vertical Branch Connector Line Down to Step Card */}
-                                  <div className="absolute -top-8 w-0.5 h-8 bg-indigo-500 z-0"></div>
-
-                                  <GraphicalOrgTreeNode
-                                    step={step}
-                                    projectId={treeReportProject.id}
-                                    codePrefix={`${idx + 1}`}
-                                    items={items}
-                                    boms={boms}
-                                    contractors={contractors}
-                                    statusFilter={treeStatusFilter}
-                                    typeFilter={treeTypeFilter}
-                                    updateProjectStep={updateProjectStep}
-                                    setAddingSubStepTo={setAddingSubStepTo}
-                                    onEditStep={handleOpenEditStep}
-                                    onDeleteStep={handleDeleteStep}
-                                  />
-                                </div>
-                              ))}
+                        ) : (
+                          <div 
+                            className="flex flex-col items-center min-w-[700px] transition-transform duration-200 origin-top"
+                            style={{ transform: `scale(${treeZoom})` }}
+                          >
+                            {/* ROOT NODE CARD */}
+                            <div className="w-80 p-4 rounded-2xl bg-gradient-to-r from-indigo-900 to-slate-900 text-white shadow-xl border-2 border-indigo-500 text-center relative z-10 space-y-1.5">
+                              <div className="inline-flex p-2 bg-indigo-600 rounded-xl mb-1">
+                                <Cpu className="w-5 h-5 text-white" />
+                              </div>
+                              <h4 className="font-extrabold text-sm text-white">
+                                {finishedTargetItem?.name || treeReportProject.targetFinishedItemId}
+                              </h4>
+                              <div className="text-[11px] text-indigo-200 flex items-center justify-center gap-3 pt-1 border-t border-indigo-800/80">
+                                <span>تیراژ هدف: <strong className="text-amber-300">{treeReportProject.targetQuantity}</strong></span>
+                                <span>کد پروژه: <strong className="font-mono text-indigo-300">{treeReportProject.code}</strong></span>
+                              </div>
                             </div>
-                          )}
-                        </div>
+
+                            {/* ROOT TRUNK LINE */}
+                            {(treeReportProject.steps || []).length > 0 && (
+                              <div className="w-1 h-8 bg-indigo-600 z-0"></div>
+                            )}
+
+                            {/* LEVEL 1 CHILDREN BRANCH ROW */}
+                            {(treeReportProject.steps || []).length > 0 && (
+                              <div className="relative flex justify-center pt-8 gap-8">
+                                {/* Horizontal Branch Bar Across Main Steps */}
+                                {(treeReportProject.steps || []).length > 1 && (
+                                  <div className="absolute top-0 left-36 right-36 h-1 bg-indigo-500 z-0"></div>
+                                )}
+
+                                {(treeReportProject.steps || []).map((step, idx) => (
+                                  <div key={step.id || idx} className="flex flex-col items-center relative">
+                                    {/* Vertical Branch Connector Line Down to Step Card */}
+                                    <div className="absolute -top-8 w-0.5 h-8 bg-indigo-500 z-0"></div>
+
+                                    <GraphicalOrgTreeNode
+                                      step={step}
+                                      projectId={treeReportProject.id}
+                                      codePrefix={`${idx + 1}`}
+                                      items={items}
+                                      boms={boms}
+                                      contractors={contractors}
+                                      statusFilter={treeStatusFilter}
+                                      typeFilter={treeTypeFilter}
+                                      updateProjectStep={updateProjectStep}
+                                      setAddingSubStepTo={setAddingSubStepTo}
+                                      onEditStep={handleOpenEditStep}
+                                      onDeleteStep={handleDeleteStep}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
