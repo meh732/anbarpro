@@ -179,7 +179,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {companyName || 'انبار هوشمند'}
                 </span>
                 <span className="text-[11px] font-bold text-indigo-600 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" /> سیستم یکپارچه ERP
+                  <Cpu className="w-3 h-3 text-indigo-500" /> سیستم یکپارچه ERP
                 </span>
               </div>
             )}

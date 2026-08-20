@@ -407,7 +407,7 @@ export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) =>
             {printItem && (
               <div className="p-4 bg-white text-slate-900 rounded-2xl border-2 border-dashed border-slate-300 space-y-3.5 shadow-2xs relative overflow-hidden animate-fadeIn">
                 <div className="absolute -top-3 -left-3 w-8 h-8 bg-indigo-50 border border-indigo-100 rounded-full flex items-center justify-center rotate-45">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <Box className="w-3.5 h-3.5 text-indigo-600" />
                 </div>
                 
                 <div className="flex items-center justify-between border-b pb-2 border-slate-100">

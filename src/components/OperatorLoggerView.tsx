@@ -291,7 +291,7 @@ export const OperatorLoggerView: React.FC = () => {
                 onClick={handleLoadBOMChecklist}
                 className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
               >
-                <Sparkles className="w-4 h-4" />
+                <ClipboardList className="w-4 h-4" />
                 <span>فراخوانی خودکار قطعات طبق BOM پروژه</span>
               </button>
             </div>
@@ -412,9 +412,9 @@ export const OperatorLoggerView: React.FC = () => {
             <div className="space-y-2 pt-2">
               <div className="p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs text-indigo-900 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <FileCheck className="w-4 h-4 text-indigo-600 shrink-0" />
                   <span>
-                    <strong>محاسبه هوشمند BOM:</strong> لیست زیر بر اساس فرمول ساخت برای تیراژ <strong>{handoverBatchQty} عدد</strong> فرموله شده است. امکان ویرایش دستی مقادیر، افزودن قطعه جدید یا حذف ردیف‌ها کاملاً فعال است.
+                    <strong>محاسبه فرمول ساخت BOM:</strong> لیست زیر بر اساس فرمول ساخت برای تیراژ <strong>{handoverBatchQty} عدد</strong> فرموله شده است. امکان ویرایش دستی مقادیر، افزودن قطعه جدید یا حذف ردیف‌ها کاملاً فعال است.
                   </span>
                 </div>
               </div>

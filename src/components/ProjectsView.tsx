@@ -1118,8 +1118,8 @@ export const ProjectsView: React.FC = () => {
                         className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
                         title="محاسبه و تنظیم خودکار اهداف مراحل و قطعات نیمه‌ساخته بر اساس درخت فرمول ساخت BOM"
                       >
-                        <Sparkles className="w-4 h-4 text-amber-100" />
-                        <span>محاسبه هوشمند اهداف مراحل (BOM)</span>
+                        <Calculator className="w-4 h-4 text-amber-100" />
+                        <span>محاسبه فرمول ساخت اهداف مراحل (BOM)</span>
                       </button>
 
                       <button
@@ -2022,7 +2022,7 @@ export const ProjectsView: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
-                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <Layers3 className="w-4 h-4 text-indigo-500" />
                     جدول قطعات لازم با احتساب ضایعات (Multi-Level BOM Explosion):
                   </h4>
                   <span className="text-[10px] text-slate-500">فرمول: (تعداد در BOM × تیراژ پروژه) + % ضایعات</span>
