@@ -29,11 +29,19 @@ const MainContent: React.FC = () => {
   const { 
     activeTab, setActiveTab, isScannerOpen, setIsScannerOpen, 
     language, isAuthenticated, hasTabPermission, currentUser,
-    isInstalled
+    isInstalled, liteMode
   } = useApp();
 
   const [isOpenMobile, setIsOpenMobile] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  React.useEffect(() => {
+    if (liteMode) {
+      document.body.classList.add('lite-mode-active');
+    } else {
+      document.body.classList.remove('lite-mode-active');
+    }
+  }, [liteMode]);
 
   if (!isInstalled) {
     return <SetupView />;
@@ -99,18 +107,20 @@ const MainContent: React.FC = () => {
     <div className={`flex h-screen bg-transparent text-slate-900 overflow-hidden font-vazir ${isRtl ? 'text-right' : 'text-left'} relative`} dir={isRtl ? 'rtl' : 'ltr'}>
       
       {/* Background Ambient Fluid Blobs for Glass Refraction & Water Droplets */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[5%] left-[2%] w-[480px] h-[480px] bg-gradient-to-tr from-indigo-500/45 via-purple-500/40 to-pink-500/40 blur-[35px] liquid-blob-1"></div>
-        <div className="absolute bottom-[8%] right-[2%] w-[550px] h-[550px] bg-gradient-to-br from-pink-500/40 via-rose-500/35 to-indigo-500/40 blur-[40px] liquid-blob-2"></div>
-        <div className="absolute top-[35%] right-[20%] w-[440px] h-[440px] bg-gradient-to-r from-teal-400/40 via-cyan-400/35 to-blue-500/40 blur-[30px] liquid-blob-3"></div>
-        
-        {/* Glass Water Droplets */}
-        <div className="glass-droplet droplet-anim-1 top-[15%] left-[25%] w-16 h-16 rounded-[45%_55%_50%_50%_/_50%_50%_50%_50%]"></div>
-        <div className="glass-droplet droplet-anim-2 bottom-[20%] left-[10%] w-20 h-20 rounded-[50%_50%_40%_60%_/_45%_55%_45%_55%]"></div>
-        <div className="glass-droplet droplet-anim-3 top-[45%] right-[8%] w-12 h-12 rounded-[55%_45%_55%_45%_/_50%_50%_50%_50%]"></div>
-        <div className="glass-droplet droplet-anim-1 bottom-[40%] right-[30%] w-24 h-24 rounded-[40%_60%_50%_50%_/_50%_40%_60%_50%]"></div>
-        <div className="glass-droplet droplet-anim-2 top-[8%] right-[40%] w-14 h-14 rounded-[50%_50%_50%_50%]"></div>
-      </div>
+      {!liteMode && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          <div className="absolute top-[5%] left-[2%] w-[480px] h-[480px] bg-gradient-to-tr from-indigo-500/45 via-purple-500/40 to-pink-500/40 blur-[35px] liquid-blob-1"></div>
+          <div className="absolute bottom-[8%] right-[2%] w-[550px] h-[550px] bg-gradient-to-br from-pink-500/40 via-rose-500/35 to-indigo-500/40 blur-[40px] liquid-blob-2"></div>
+          <div className="absolute top-[35%] right-[20%] w-[440px] h-[440px] bg-gradient-to-r from-teal-400/40 via-cyan-400/35 to-blue-500/40 blur-[30px] liquid-blob-3"></div>
+          
+          {/* Glass Water Droplets */}
+          <div className="glass-droplet droplet-anim-1 top-[15%] left-[25%] w-16 h-16 rounded-[45%_55%_50%_50%_/_50%_50%_50%_50%]"></div>
+          <div className="glass-droplet droplet-anim-2 bottom-[20%] left-[10%] w-20 h-20 rounded-[50%_50%_40%_60%_/_45%_55%_45%_55%]"></div>
+          <div className="glass-droplet droplet-anim-3 top-[45%] right-[8%] w-12 h-12 rounded-[55%_45%_55%_45%_/_50%_50%_50%_50%]"></div>
+          <div className="glass-droplet droplet-anim-1 bottom-[40%] right-[30%] w-24 h-24 rounded-[40%_60%_50%_50%_/_50%_40%_60%_50%]"></div>
+          <div className="glass-droplet droplet-anim-2 top-[8%] right-[40%] w-14 h-14 rounded-[50%_50%_50%_50%]"></div>
+        </div>
+      )}
 
       {/* Sidebar Navigation */}
       <Sidebar 

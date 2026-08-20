@@ -288,3 +288,66 @@
   body { background: white !important; color: black !important; }
   .no-print { display: none !important; }
 }
+
+/* ==========================================
+   LITE MODE OVERRIDES FOR MAXIMUM PERFORMANCE
+   ========================================== */
+body.lite-mode-active {
+  background-color: #f8fafc !important; /* Pure flat solid light slate/white background */
+  background-image: none !important; /* Strip away any radial gradient backgrounds */
+}
+
+/* Convert all semi-transparent glassy components into opaque white cards with flat borders */
+body.lite-mode-active .glass-card,
+body.lite-mode-active .glass-card-dense {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04) !important;
+  border-radius: 16px !important; /* Slightly more conservative border-radius for simple mode */
+}
+
+body.lite-mode-active .glass-card:hover {
+  transform: none !important; /* Turn off hover lifts to prevent constant GPU repaint triggers */
+  background: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04) !important;
+}
+
+body.lite-mode-active .glass-card::before,
+body.lite-mode-active .glass-btn-active::before {
+  display: none !important; /* Disable hover shimmer glint sweep */
+}
+
+body.lite-mode-active .glass-input {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1.5px solid #cbd5e1 !important;
+  box-shadow: none !important;
+}
+
+body.lite-mode-active .glass-dropdown {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Strip transparency from other utility classes in Simple Mode */
+body.lite-mode-active .bg-white\/70,
+body.lite-mode-active .bg-white\/80,
+body.lite-mode-active .bg-white\/90,
+body.lite-mode-active .bg-white\/95 {
+  background-color: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.lite-mode-active .backdrop-blur-md,
+body.lite-mode-active .backdrop-blur-lg,
+body.lite-mode-active .backdrop-blur-xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

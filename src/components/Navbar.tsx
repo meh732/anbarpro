@@ -143,15 +143,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           {/* Lite Mode Toggle */}
           <button
             onClick={() => setLiteMode(!liteMode)}
-            className={`flex items-center gap-1 bg-white/70 hover:bg-white border text-slate-700 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-black text-[10px] sm:text-xs transition-all cursor-pointer active:scale-95 shadow-xs ${
+            className={`flex items-center gap-1 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-black text-[10px] sm:text-xs transition-all cursor-pointer active:scale-95 shadow-xs ${
               liteMode 
-                ? 'bg-amber-100/80 text-amber-700 border-amber-300' 
-                : 'border-slate-200/60'
+                ? 'bg-amber-50 text-amber-700 border-amber-300' 
+                : 'bg-white/70 hover:bg-white text-indigo-700 border-indigo-200/60'
             }`}
-            title={liteMode ? "سوییچ به حالت کامل گرافیکی" : "سوییچ به حالت ساده و پرسرعت"}
+            title={liteMode ? "سوییچ به حالت پوسته شیشه‌ای" : "سوییچ به حالت ساده و پرسرعت"}
           >
-            <Zap className={`w-3.5 h-3.5 ${liteMode ? 'text-amber-600 fill-amber-500 animate-bounce' : 'text-slate-400'}`} />
-            <span>{liteMode ? 'حالت ساده' : 'حالت کامل'}</span>
+            <Zap className={`w-3.5 h-3.5 ${liteMode ? 'text-amber-600 fill-amber-500 animate-bounce' : 'text-indigo-500'}`} />
+            <span>{liteMode ? 'حالت ساده' : 'حالت شیشه‌ای'}</span>
           </button>
 
           {/* Notifications Dropdown */}
