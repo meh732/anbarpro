@@ -1,131 +1,117 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Item, TraceabilityEvent, Warehouse } from '../types';
+import { Item, TraceabilityEvent, Warehouse, ItemGroup } from '../types';
 import { 
   ClipboardList, Search, Filter, Calendar, Building2, Download, Printer, 
   ArrowUpRight, ArrowDownLeft, AlertTriangle, CheckCircle2, TrendingUp, 
   Clock, Package, ChevronDown, RefreshCw, Layers, FileSpreadsheet, Eye, 
-  HelpCircle, User, Info, DollarSign, ArrowLeftRight
+  HelpCircle, User, Info, DollarSign, ArrowLeftRight, CheckSquare,
+  ShieldCheck, ArrowRight, Tag, Hash, FileText, ChevronRight
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 
 export const KardexView: React.FC = () => {
   const { 
-    items, warehouses, traceabilityEvents, inventory, language, setActiveTab 
+    items, itemGroups, warehouses, traceabilityEvents, inventory, language, companyName 
   } = useApp();
 
-  const isFa = language === 'fa';
-
-  // State
+  // State: SKU & Group Exploration
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('ALL');
   const [selectedItemId, setSelectedItemId] = useState<string>(items[0]?.id || '');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
-  const [dateFilter, setDateFilter] = useState<string>('ALL'); // ALL, TODAY, LAST_3_DAYS, LAST_7_DAYS, LAST_30_DAYS, LAST_90_DAYS, CUSTOM
+  const [itemSearchQuery, setItemSearchQuery] = useState<string>('');
+
+  // State: Filters
+  const [dateFilter, setDateFilter] = useState<string>('ALL'); // ALL, TODAY, LAST_7_DAYS, LAST_30_DAYS, LAST_90_DAYS, CUSTOM
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [selectedWhId, setSelectedWhId] = useState<string>('ALL');
   const [selectedEventType, setSelectedEventType] = useState<string>('ALL');
-  const [selectedOperator, setSelectedOperator] = useState<string>('ALL');
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
-  
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Selected item details
   const selectedItem = useMemo(() => {
-    return items.find(it => it.id === selectedItemId);
+    return items.find(it => it.id === selectedItemId) || items[0];
   }, [items, selectedItemId]);
 
-  // Filtered item list for the custom searchable combobox
-  const filteredSearchItems = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return items;
-    return items.filter(it => 
-      it.name.toLowerCase().includes(q) || 
-      it.code.toLowerCase().includes(q) || 
-      (it.barcode && it.barcode.toLowerCase().includes(q))
-    );
-  }, [items, searchQuery]);
+  // Filtered Item List (SKU list)
+  const filteredSKUs = useMemo(() => {
+    return items.filter(it => {
+      // Group filter
+      if (selectedGroupId !== 'ALL') {
+        const grp = itemGroups.find(g => g.id === selectedGroupId);
+        if (grp && it.group !== grp.name && it.group !== grp.id) {
+          return false;
+        }
+      }
 
-  // Unique list of operators/performers in events for filtering
-  const allOperators = useMemo(() => {
-    const ops = new Set<string>();
-    traceabilityEvents.forEach(e => {
-      if (e.performedBy) ops.add(e.performedBy);
-      if (e.operatorName) ops.add(e.operatorName);
+      // Search query
+      if (itemSearchQuery.trim()) {
+        const q = itemSearchQuery.toLowerCase().trim();
+        const nameMatch = it.name.toLowerCase().includes(q);
+        const codeMatch = it.code.toLowerCase().includes(q);
+        const barcodeMatch = it.barcode?.toLowerCase().includes(q) || false;
+        const subGroupMatch = it.subGroup?.toLowerCase().includes(q) || false;
+        if (!nameMatch && !codeMatch && !barcodeMatch && !subGroupMatch) return false;
+      }
+
+      return true;
     });
-    return Array.from(ops);
-  }, [traceabilityEvents]);
+  }, [items, itemGroups, selectedGroupId, itemSearchQuery]);
 
-  // Detailed Ledger Calculation (Calculates proper running balance chronologically)
-  const ledgerData = useMemo(() => {
-    if (!selectedItemId) return { initialBalance: 0, lines: [], finalBalance: 0, totalIn: 0, totalOut: 0 };
+  // Detailed Standard Accounting Ledger Calculation
+  const accountingLedger = useMemo(() => {
+    if (!selectedItem) {
+      return {
+        initialQty: 0,
+        initialValue: 0,
+        lines: [],
+        finalQty: 0,
+        finalValue: 0,
+        totalInQty: 0,
+        totalInValue: 0,
+        totalOutQty: 0,
+        totalOutValue: 0,
+        avgUnitRate: selectedItem?.unitPrice || 0
+      };
+    }
 
-    // 1. Fetch & sort ALL events for the selected item chronologically ascending
-    const sortedAllEvents = [...traceabilityEvents]
-      .filter(e => e.itemId === selectedItemId)
+    const currentBasePrice = selectedItem.unitPrice || 10000;
+
+    // 1. Fetch & sort ALL events for this item chronologically ascending
+    const sortedEvents = [...traceabilityEvents]
+      .filter(e => e.itemId === selectedItem.id)
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-    // 2. Define helper function to determine if event matches warehouse filter
-    const matchesWarehouse = (ev: TraceabilityEvent, whId: string) => {
-      if (whId === 'ALL') return true;
-      return ev.sourceWarehouseId === whId || ev.targetWarehouseId === whId;
-    };
-
-    // 3. Define helper to check date filter match
+    // 2. Helper for date filter
     const isWithinDateRange = (timestamp: string) => {
       if (dateFilter === 'ALL') return true;
-      
-      const evDate = new Date(timestamp);
+      const evTime = new Date(timestamp).getTime();
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
-      const evTime = evDate.getTime();
-      
+
       switch (dateFilter) {
-        case 'TODAY': {
-          const limit = new Date(today);
-          return evTime >= limit.getTime();
-        }
-        case 'LAST_3_DAYS': {
-          const limit = new Date(today);
-          limit.setDate(limit.getDate() - 3);
-          return evTime >= limit.getTime();
-        }
+        case 'TODAY':
+          return evTime >= today.getTime();
         case 'LAST_7_DAYS': {
-          const limit = new Date(today);
-          limit.setDate(limit.getDate() - 7);
-          return evTime >= limit.getTime();
+          const l7 = new Date(today);
+          l7.setDate(l7.getDate() - 7);
+          return evTime >= l7.getTime();
         }
         case 'LAST_30_DAYS': {
-          const limit = new Date(today);
-          limit.setDate(limit.getDate() - 30);
-          return evTime >= limit.getTime();
+          const l30 = new Date(today);
+          l30.setDate(l30.getDate() - 30);
+          return evTime >= l30.getTime();
         }
         case 'LAST_90_DAYS': {
-          const limit = new Date(today);
-          limit.setDate(limit.getDate() - 90);
-          return evTime >= limit.getTime();
+          const l90 = new Date(today);
+          l90.setDate(l90.getDate() - 90);
+          return evTime >= l90.getTime();
         }
         case 'CUSTOM': {
-          if (startDate) {
-            const startLimit = new Date(startDate);
-            if (evTime < startLimit.getTime()) return false;
-          }
+          if (startDate && evTime < new Date(startDate).getTime()) return false;
           if (endDate) {
-            const endLimit = new Date(endDate);
-            endLimit.setHours(23, 59, 59, 999);
-            if (evTime > endLimit.getTime()) return false;
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            if (evTime > end.getTime()) return false;
           }
           return true;
         }
@@ -134,173 +120,191 @@ export const KardexView: React.FC = () => {
       }
     };
 
-    // 4. Calculate initial balance before the filtered period
-    let currentBalance = 0;
-    let initialBalance = 0;
-    let totalIn = 0;
-    let totalOut = 0;
+    // 3. Process Ledger Line by Line
+    let runningQty = 0;
+    let runningValue = 0;
 
-    const computedLines: Array<{
-      event: TraceabilityEvent;
-      inQty: number;
-      outQty: number;
-      balance: number;
-      docNumber: string;
-      whName: string;
+    let initialQty = 0;
+    let initialValue = 0;
+
+    let totalInQty = 0;
+    let totalInValue = 0;
+    let totalOutQty = 0;
+    let totalOutValue = 0;
+
+    interface CardexLine {
+      id: string;
       dateStr: string;
-    }> = [];
+      docNumber: string;
+      docType: string;
+      description: string;
+      referenceParty: string; // انبار مبدا/مقصد یا تامین کننده یا پروژه
+      inQty: number;
+      inRate: number;
+      inTotal: number;
+      outQty: number;
+      outRate: number;
+      outTotal: number;
+      balanceQty: number;
+      avgRate: number;
+      balanceValue: number;
+      user: string;
+    }
 
-    sortedAllEvents.forEach(ev => {
-      // Determine quantity change relative to company or the specific warehouse
+    const lines: CardexLine[] = [];
+
+    sortedEvents.forEach(ev => {
+      // Warehouse match
       let inQty = 0;
       let outQty = 0;
 
       if (selectedWhId === 'ALL') {
-        // Company-wide transaction interpretation
         if (ev.eventType === 'StockIn' || ev.eventType === 'ProductionOutput') {
           inQty = ev.quantity;
         } else if (ev.eventType === 'StockOut' || ev.eventType === 'Scrap' || ev.eventType === 'ProjectConsumption') {
           outQty = ev.quantity;
         } else if (ev.eventType === 'Adjustment') {
-          if (ev.details.includes('+') || ev.quantity > 0) {
-            inQty = ev.quantity;
-          } else {
-            outQty = Math.abs(ev.quantity);
-          }
+          if (ev.details.includes('+') || ev.quantity > 0) inQty = Math.abs(ev.quantity);
+          else outQty = Math.abs(ev.quantity);
         }
-        // Transfers system-wide have net 0 impact on company balance, but we display them
       } else {
-        // Specific warehouse transaction interpretation
         if (ev.targetWarehouseId === selectedWhId) {
           inQty = ev.quantity;
         } else if (ev.sourceWarehouseId === selectedWhId) {
           outQty = ev.quantity;
         } else if (ev.eventType === 'Adjustment') {
-          if (ev.details.includes('+')) {
-            inQty = ev.quantity;
-          } else {
-            outQty = Math.abs(ev.quantity);
-          }
+          if (ev.details.includes('+') || ev.quantity > 0) inQty = Math.abs(ev.quantity);
+          else outQty = Math.abs(ev.quantity);
         }
       }
 
-      const balanceBefore = currentBalance;
-      currentBalance = currentBalance + inQty - outQty;
+      // Rates
+      const effectiveRate = currentBasePrice;
+      const inTotal = inQty * effectiveRate;
+      const outTotal = outQty * effectiveRate;
 
-      // Check if event occurred BEFORE our date filter range (it belongs to Initial Balance)
-      const matchesWarehouseFilter = matchesWarehouse(ev, selectedWhId);
-      const matchesDateFilter = isWithinDateRange(ev.timestamp);
+      runningQty = runningQty + inQty - outQty;
+      runningValue = Math.max(0, runningQty * effectiveRate);
 
-      if (matchesWarehouseFilter) {
-        if (!matchesDateFilter) {
-          // If before date range, accumulate to initial balance
-          initialBalance = currentBalance;
+      const inDateRange = isWithinDateRange(ev.timestamp);
+      const matchesWh = selectedWhId === 'ALL' || ev.sourceWarehouseId === selectedWhId || ev.targetWarehouseId === selectedWhId;
+
+      if (matchesWh) {
+        if (!inDateRange) {
+          initialQty = runningQty;
+          initialValue = runningValue;
         } else {
-          // Check other filters (Type, Performer)
-          const matchesType = selectedEventType === 'ALL' || ev.eventType === selectedEventType;
-          const matchesPerformer = selectedOperator === 'ALL' || 
-            ev.performedBy === selectedOperator || 
-            ev.operatorName === selectedOperator;
+          // Check event type filter
+          if (selectedEventType === 'ALL' || ev.eventType === selectedEventType) {
+            totalInQty += inQty;
+            totalInValue += inTotal;
+            totalOutQty += outQty;
+            totalOutValue += outTotal;
 
-          if (matchesType && matchesPerformer) {
-            totalIn += inQty;
-            totalOut += outQty;
-
-            // Resolve Warehouse Text
-            let whText = '';
-            const srcWh = warehouses.find(w => w.id === ev.sourceWarehouseId)?.name || ev.sourceWarehouseId;
-            const dstWh = warehouses.find(w => w.id === ev.targetWarehouseId)?.name || ev.targetWarehouseId;
-            
-            if (ev.eventType === 'Transfer') {
-              whText = `${srcWh || 'نامشخص'} ➔ ${dstWh || 'نامشخص'}`;
-            } else if (ev.targetWarehouseId) {
-              whText = dstWh || '';
-            } else if (ev.sourceWarehouseId) {
-              whText = srcWh || '';
+            // Resolve Document Type Label
+            let docTypeLabel = 'سند انبار';
+            switch (ev.eventType) {
+              case 'StockIn': docTypeLabel = 'رسید خرید / ورود به انبار'; break;
+              case 'StockOut': docTypeLabel = 'حواله خروج از انبار'; break;
+              case 'Transfer': docTypeLabel = 'حواله انتقال بین انبار'; break;
+              case 'ProjectConsumption': docTypeLabel = 'حواله مصرف در پروژه'; break;
+              case 'ProductionOutput': docTypeLabel = 'رسید تولید محصول نهایی'; break;
+              case 'Scrap': docTypeLabel = 'حواله ضایعات و اسکراپ'; break;
+              case 'Adjustment': docTypeLabel = 'سند تعدیل انبارگردانی'; break;
             }
 
-            computedLines.push({
-              event: ev,
-              inQty,
-              outQty,
-              balance: currentBalance,
+            const srcWh = warehouses.find(w => w.id === ev.sourceWarehouseId)?.name;
+            const tgtWh = warehouses.find(w => w.id === ev.targetWarehouseId)?.name;
+            let refParty = '';
+            if (ev.eventType === 'Transfer') {
+              refParty = `انتقال از ${srcWh || 'مبدا'} به ${tgtWh || 'مقصد'}`;
+            } else if (tgtWh) {
+              refParty = tgtWh;
+            } else if (srcWh) {
+              refParty = srcWh;
+            }
+
+            lines.push({
+              id: ev.id,
+              dateStr: ev.timestamp,
               docNumber: ev.docNumber || 'سند خودکار',
-              whName: whText,
-              dateStr: ev.timestamp
+              docType: docTypeLabel,
+              description: ev.details || '-',
+              referenceParty: refParty || 'انبار مرکزی',
+              inQty,
+              inRate: inQty > 0 ? effectiveRate : 0,
+              inTotal,
+              outQty,
+              outRate: outQty > 0 ? effectiveRate : 0,
+              outTotal,
+              balanceQty: runningQty,
+              avgRate: effectiveRate,
+              balanceValue: runningValue,
+              user: ev.performedBy || ev.operatorName || 'سیستم'
             });
           }
         }
       }
     });
 
-    // We keep computed lines in chronologically reversed order (newest at top) for display
     return {
-      initialBalance,
-      lines: [...computedLines].reverse(),
-      finalBalance: currentBalance,
-      totalIn,
-      totalOut
+      initialQty,
+      initialValue,
+      lines,
+      finalQty: runningQty,
+      finalValue: runningValue,
+      totalInQty,
+      totalInValue,
+      totalOutQty,
+      totalOutValue,
+      avgUnitRate: currentBasePrice
     };
-  }, [selectedItemId, traceabilityEvents, selectedWhId, dateFilter, startDate, endDate, selectedEventType, selectedOperator, warehouses]);
+  }, [selectedItem, traceabilityEvents, selectedWhId, dateFilter, startDate, endDate, selectedEventType, warehouses]);
 
-  // Recharts Chart Data (Chronological accumulation for a flawless chart)
+  // Chart Data
   const chartPoints = useMemo(() => {
-    // Take lines in chronological order
-    const chronLines = [...ledgerData.lines].reverse();
-    
-    // Create plotting points
-    const points = chronLines.map(line => ({
-      date: line.event.timestamp.substring(5, 16), // Month-Day Hour:Min
-      'مقدار موجودی': line.balance,
-      'وارده': line.inQty,
-      'صادره': line.outQty,
-    }));
-
-    if (points.length === 0 && selectedItem) {
-      // If no events in period, draw a straight line from current balance
-      const currentVal = inventory
-        .filter(i => i.itemId === selectedItemId && (selectedWhId === 'ALL' || i.warehouseId === selectedWhId))
-        .reduce((s, c) => s + c.quantity, 0);
-      return [{ date: 'بدون تراکنش', 'مقدار موجودی': currentVal, 'وارده': 0, 'صادره': 0 }];
+    if (accountingLedger.lines.length === 0) {
+      return [{
+        date: 'ابتدای دوره',
+        'موجودی مقداری': accountingLedger.initialQty,
+        'گردش وارده': 0,
+        'گردش صادره': 0
+      }, {
+        date: 'پایان دوره',
+        'موجودی مقداری': accountingLedger.finalQty,
+        'گردش وارده': accountingLedger.totalInQty,
+        'گردش صادره': accountingLedger.totalOutQty
+      }];
     }
 
-    return points;
-  }, [ledgerData, selectedItem, inventory, selectedItemId, selectedWhId]);
+    return accountingLedger.lines.map(line => ({
+      date: line.dateStr.substring(5, 16),
+      'موجودی مقداری': line.balanceQty,
+      'گردش وارده': line.inQty,
+      'گردش صادره': line.outQty,
+    }));
+  }, [accountingLedger]);
 
-  // Export to Excel / CSV
-  const handleExportCSV = () => {
+  // Export to Standard Accounting CSV
+  const handleExportAccountingCSV = () => {
     if (!selectedItem) return;
 
-    let csvContent = '\uFEFF'; // UTF-8 BOM for Excel to open Persian correctly
-    csvContent += 'ردیف,تاریخ ثبت,نوع تراکنش,شماره سند,موقعیت انبار,وارده (+),صادره (-),مانده نهایی,کاربر ثبت کننده,جزئیات تراکنش\n';
+    let csvContent = '\uFEFF'; // UTF-8 BOM
+    csvContent += `گزارش کاردکس مقداری و ریالی کالا - ${companyName || 'سیستم انبارداری'}\n`;
+    csvContent += `کد کالا: ${selectedItem.code},نام کالا: ${selectedItem.name},واحد: ${selectedItem.unit},گروه: ${selectedItem.group}\n`;
+    csvContent += `موجودی اول دوره: ${accountingLedger.initialQty} (${accountingLedger.initialValue.toLocaleString('fa-IR')} تومان)\n\n`;
+    
+    csvContent += 'ردیف,تاریخ و زمان,شماره سند,نوع سند,شرح تراکنش و طرف حساب,مقدار وارده,نرخ وارده (تومان),مبلغ کل وارده,مقدار صادره,نرخ صادره (تومان),مبلغ کل صادره,مانده مقداری,نرخ میانگین,ارزش ریالی مانده,ثبت کننده\n';
 
-    ledgerData.lines.forEach((line, index) => {
-      const ev = line.event;
-      let typeLabel = ev.eventType;
-      switch (ev.eventType) {
-        case 'StockIn': typeLabel = 'ورود کالا'; break;
-        case 'StockOut': typeLabel = 'خروج کالا'; break;
-        case 'Transfer': typeLabel = 'انتقال بین انبار'; break;
-        case 'ProjectConsumption': typeLabel = 'مصرف پروژه'; break;
-        case 'ProductionOutput': typeLabel = 'تولید محصول'; break;
-        case 'Scrap': typeLabel = 'ضایعات/اسکراپ'; break;
-        case 'Adjustment': typeLabel = 'اصلاح فیزیکی'; break;
-      }
+    // Initial Row
+    csvContent += `-,ابتدای دوره,-,-,نقل از دوره قبل / موجودی اولیه,-,-,-,-,-,-,${accountingLedger.initialQty},${accountingLedger.avgUnitRate},${accountingLedger.initialValue},-\n`;
 
-      const row = [
-        ledgerData.lines.length - index,
-        `"${line.dateStr}"`,
-        `"${typeLabel}"`,
-        `"${line.docNumber}"`,
-        `"${line.whName}"`,
-        line.inQty || 0,
-        line.outQty || 0,
-        line.balance,
-        `"${ev.performedBy || ev.operatorName || '-'}"`,
-        `"${ev.details?.replace(/"/g, '""') || '-'}"`
-      ];
-      csvContent += row.join(',') + '\n';
+    accountingLedger.lines.forEach((l, idx) => {
+      csvContent += `${idx + 1},"${l.dateStr}","${l.docNumber}","${l.docType}","${l.description} - ${l.referenceParty}",${l.inQty || 0},${l.inRate || 0},${l.inTotal || 0},${l.outQty || 0},${l.outRate || 0},${l.outTotal || 0},${l.balanceQty},${l.avgRate},${l.balanceValue},"${l.user}"\n`;
     });
+
+    // Summary Rows
+    csvContent += `\n-,جمع گردش طی دوره,-,-,-,${accountingLedger.totalInQty},-,${accountingLedger.totalInValue},${accountingLedger.totalOutQty},-,${accountingLedger.totalOutValue},${accountingLedger.finalQty},${accountingLedger.avgUnitRate},${accountingLedger.finalValue},-\n`;
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -312,735 +316,588 @@ export const KardexView: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // Print Report View Trigger
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const getEventBadgeClass = (type: string) => {
-    switch (type) {
-      case 'StockIn': return 'bg-blue-50 text-blue-700 border border-blue-200';
-      case 'StockOut': return 'bg-amber-50 text-amber-700 border border-amber-200';
-      case 'Transfer': return 'bg-purple-50 text-purple-700 border border-purple-200';
-      case 'ProjectConsumption': return 'bg-orange-50 text-orange-700 border border-orange-200';
-      case 'ProductionOutput': return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-      case 'Scrap': return 'bg-rose-50 text-rose-700 border border-rose-200';
-      case 'Adjustment': return 'bg-slate-100 text-slate-700 border border-slate-200';
-      default: return 'bg-slate-50 text-slate-600 border border-slate-100';
-    }
-  };
-
-  const getEventLabel = (type: string) => {
-    switch (type) {
-      case 'StockIn': return 'ورود کالا (رسید)';
-      case 'StockOut': return 'خروج کالا (حواله)';
-      case 'Transfer': return 'انتقال بین انبار';
-      case 'ProjectConsumption': return 'مصرف پروژه تولید';
-      case 'ProductionOutput': return 'تولید محصول نهایی';
-      case 'Scrap': return 'ضایعات و اسکراپ';
-      case 'Adjustment': return 'اصلاح موجودی (سند)';
-      default: return type;
-    }
-  };
-
-  // Stock health indicators
-  const isBelowMin = selectedItem ? ledgerData.finalBalance < selectedItem.minStock : false;
-  const isAboveMax = selectedItem ? ledgerData.finalBalance > selectedItem.maxStock : false;
-
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-6 rounded-[2rem] print:hidden">
-        <div>
-          <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-            <ClipboardList className="w-6 h-6 text-indigo-600" />
-            <span>مدیریت کاردکس پیشرفته کالاها</span>
-          </h2>
-          <p className="text-xs text-slate-400 font-semibold mt-1">
-            لاگ یکپارچه تراکنش‌ها، ردیابی زنجیره تامین، تحلیل فیزیکی موجودی‌ها و ارزش ریالی کالا
-          </p>
+    <div className="space-y-6 animate-fadeIn pb-12">
+      {/* Top Banner */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl shadow-md border border-indigo-900/30 print:hidden">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-indigo-500/20 border border-indigo-400/30 rounded-2xl">
+            <ClipboardList className="w-6 h-6 text-indigo-300" />
+          </div>
+          <div>
+            <h2 className="text-xl font-black tracking-tight flex items-center gap-2">
+              کاردکس مقداری و ریالی کالا (استاندارد حسابداری انبار)
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 font-mono">
+                GAAP Stock Ledger
+              </span>
+            </h2>
+            <p className="text-xs text-slate-300 mt-1">
+              طبقه‌بندی سلسله‌مراتبی گروه‌ها و اسکوها با محاسبه لحظه‌ای گردش مقداری، ریالی، بهای تمام شده و مانده دوبل حسابداری
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={handlePrint}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+            onClick={handleExportAccountingCSV}
+            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold rounded-2xl text-xs flex items-center gap-2 transition-all shadow-xs"
           >
-            <Printer className="w-4 h-4" />
-            <span>چاپ گزارش (A4)</span>
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            خروجی اکسل کاردکس
           </button>
           <button
-            onClick={handleExportCSV}
-            disabled={!selectedItemId}
-            className={`px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-600/20 transition-all ${!selectedItemId ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={() => window.print()}
+            className="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-2xl text-xs flex items-center gap-2 transition-all shadow-md active:scale-95"
           >
-            <Download className="w-4 h-4" />
-            <span>خروجی اکسل (CSV)</span>
+            <Printer className="w-4 h-4" />
+            چاپ رسمی سند کاردکس (A4)
           </button>
         </div>
       </div>
 
-      {/* Audit Log Print Template (Only visible when printing) */}
-      <div className="hidden print:block font-vazir text-xs text-slate-900 bg-white p-8 leading-relaxed">
-        {/* Print Stylesheet Injection */}
-        <style dangerouslySetInnerHTML={{ __html: `
-          @media print {
-            body {
-              background: #fff !important;
-              color: #000 !important;
-            }
-            @page {
-              size: A4 portrait;
-              margin: 15mm;
-            }
-            .print-no-break {
-              page-break-inside: avoid;
-            }
-          }
-        `}} />
-
-        {/* Header Block */}
-        <div className="flex justify-between items-center border-b-2 border-slate-800 pb-4 mb-6">
-          <div className="text-right space-y-1">
-            <h1 className="text-base font-black text-slate-900">شرکت مهندسی الکترو اطلس</h1>
-            <p className="text-[10px] text-slate-500 font-bold">سامانه مدیریت هوشمند زنجیره تامین و انبارداری دنا</p>
-          </div>
-          <div className="text-center">
-            <h2 className="text-sm font-black border border-slate-800 px-4 py-1.5 rounded-lg bg-slate-50">گزارش رسمی گردش تفصیلی کالا (کاردکس تفصیلی)</h2>
-          </div>
-          <div className="text-left text-[9px] text-slate-500 font-semibold space-y-1">
-            <div>تاریخ گزارش: <span className="font-mono">{new Date().toLocaleDateString('fa-IR')}</span></div>
-            <div>ساعت گزارش: <span className="font-mono">{new Date().toLocaleTimeString('fa-IR')}</span></div>
-            <div>شناسه انبار: <span className="font-mono">{selectedWhId === 'ALL' ? 'کل انبارها (ادغام شده)' : selectedWhId}</span></div>
-          </div>
-        </div>
-
-        {selectedItem && (
-          <>
-            {/* Product Metadata Table */}
-            <div className="grid grid-cols-4 gap-x-4 gap-y-3 border border-slate-300 p-4 rounded-xl mb-6 bg-slate-50/50 text-[10px]">
-              <div><strong>کد کالا:</strong> <span className="font-mono">{selectedItem.code}</span></div>
-              <div><strong>نام فنی کالا:</strong> <span className="font-bold">{selectedItem.name}</span></div>
-              <div><strong>گروه تخصصی:</strong> <span>{selectedItem.group}</span></div>
-              <div><strong>زیرگروه تخصصی:</strong> <span>{selectedItem.subGroup}</span></div>
-              <div><strong>واحد شمارش (بسته بندی):</strong> <span>{selectedItem.unit}</span></div>
-              <div><strong>قیمت واحد تامین (ریال):</strong> <span className="font-mono">{selectedItem.unitPrice.toLocaleString('fa-IR')} تومان</span></div>
-              <div><strong>موقعیت پیش‌فرض فیزیکی:</strong> <span className="font-bold text-slate-700">{selectedItem.locationInRack || 'قفسه عمومی'}</span></div>
-              <div><strong>وضعیت فیلتر زمانی:</strong> <span>{dateFilter === 'ALL' ? 'کل بازه زمانی (کامل)' : dateFilter}</span></div>
-            </div>
-
-            {/* Financial & Physical Summary */}
-            <div className="grid grid-cols-5 gap-4 border border-slate-300 p-4 rounded-xl mb-6 bg-slate-50/30 text-center text-[10px]">
-              <div>
-                <span className="text-slate-500 block mb-1">موجودی اول دوره:</span>
-                <strong className="text-slate-800 font-mono text-xs">{ledgerData.initialBalance.toLocaleString('fa-IR')} {selectedItem.unit}</strong>
-              </div>
-              <div className="border-r border-slate-200">
-                <span className="text-blue-600 block mb-1">مجموع وارده (+):</span>
-                <strong className="text-blue-700 font-mono text-xs">+{ledgerData.totalIn.toLocaleString('fa-IR')} {selectedItem.unit}</strong>
-              </div>
-              <div className="border-r border-slate-200">
-                <span className="text-amber-600 block mb-1">مجموع صادره (-):</span>
-                <strong className="text-amber-700 font-mono text-xs">-{ledgerData.totalOut.toLocaleString('fa-IR')} {selectedItem.unit}</strong>
-              </div>
-              <div className="border-r border-slate-200">
-                <span className="text-emerald-600 block mb-1">موجودی نهایی دوره:</span>
-                <strong className="text-emerald-700 font-mono text-xs">{ledgerData.finalBalance.toLocaleString('fa-IR')} {selectedItem.unit}</strong>
-              </div>
-              <div className="border-r border-slate-200">
-                <span className="text-indigo-600 block mb-1">ارزش ریالی موجودی:</span>
-                <strong className="text-indigo-700 font-mono text-xs">{(ledgerData.finalBalance * selectedItem.unitPrice).toLocaleString('fa-IR')} تومان</strong>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Chronological Table */}
-        <table className="w-full border-collapse border border-slate-300 text-[9px] text-right">
-          <thead>
-            <tr className="bg-slate-100/80 text-slate-800">
-              <th className="border border-slate-300 p-2 text-center w-8">ردیف</th>
-              <th className="border border-slate-300 p-2 text-center w-28">تاریخ ثبت تراکنش</th>
-              <th className="border border-slate-300 p-2">نوع تراکنش انبار</th>
-              <th className="border border-slate-300 p-2 font-mono text-center w-20">شماره سند سیستمی</th>
-              <th className="border border-slate-300 p-2">موقعیت قفسه / انبار مبدا-مقصد</th>
-              <th className="border border-slate-300 p-2 text-left w-16">وارده (+)</th>
-              <th className="border border-slate-300 p-2 text-left w-16">صادره (-)</th>
-              <th className="border border-slate-300 p-2 text-left w-16">مانده نهایی</th>
-              <th className="border border-slate-300 p-2 w-24">کاربر ثبت کننده</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ledgerData.lines.map((line, idx) => (
-              <tr key={idx} className="border-b border-slate-200 hover:bg-slate-50/50">
-                <td className="border border-slate-300 p-2 text-center">{ledgerData.lines.length - idx}</td>
-                <td className="border border-slate-300 p-2 text-center font-mono">{line.dateStr}</td>
-                <td className="border border-slate-300 p-2 font-bold">{getEventLabel(line.event.eventType)}</td>
-                <td className="border border-slate-300 p-2 text-center font-mono">{line.docNumber}</td>
-                <td className="border border-slate-300 p-2">{line.whName || 'انبار مرکزی'}</td>
-                <td className="border border-slate-300 p-2 font-mono text-left font-bold text-blue-700">{line.inQty > 0 ? `+${line.inQty.toLocaleString('fa-IR')}` : '-'}</td>
-                <td className="border border-slate-300 p-2 font-mono text-left font-bold text-amber-700">{line.outQty > 0 ? `-${line.outQty.toLocaleString('fa-IR')}` : '-'}</td>
-                <td className="border border-slate-300 p-2 font-mono text-left font-black bg-slate-50/50">{line.balance.toLocaleString('fa-IR')}</td>
-                <td className="border border-slate-300 p-2">{line.event.performedBy || line.event.operatorName || '-'}</td>
-              </tr>
-            ))}
-            {ledgerData.lines.length === 0 && (
-              <tr>
-                <td colSpan={9} className="border border-slate-300 p-8 text-center text-slate-400 italic">
-                  هیچ سابقه گردش فیزیکی یا ورود و خروجی در بازه زمانی انتخابی یافت نشد.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-
-        {/* Signature Box Block */}
-        <div className="mt-12 grid grid-cols-3 gap-8 text-center text-[10px] text-slate-700 print-no-break">
-          <div className="border border-slate-200 rounded-xl p-4 space-y-10 bg-slate-50/20">
-            <strong>تنظیم کننده (مسئول انبار فیزیکی)</strong>
-            <div className="text-slate-400 text-[8px]">نام، امضا و تاریخ تحویل کالا</div>
-          </div>
-          <div className="border border-slate-200 rounded-xl p-4 space-y-10 bg-slate-50/20">
-            <strong>تایید کننده حسابداری انبار و اموال</strong>
-            <div className="text-slate-400 text-[8px]">نام، امضا و تاریخ ثبت دفاتر قانونی</div>
-          </div>
-          <div className="border border-slate-200 rounded-xl p-4 space-y-10 bg-slate-50/20">
-            <strong>مدیریت کارخانه یا مدیر ارشد تولید</strong>
-            <div className="text-slate-400 text-[8px]">مهر، امضا و تایید نهایی موجودی</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Dashboard Filters Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 print:hidden">
+      {/* Main 2-Column Layout: Left (SKU/Group Explorer) & Right (Standard Accounting Cardex) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Hand: Search & Select Item Combobox */}
-        <div className="glass-card p-5 rounded-[2rem] space-y-4">
-          <label className="text-xs font-extrabold text-slate-700 block flex items-center gap-1.5">
-            <Package className="w-4 h-4 text-indigo-500" />
-            <span>انتخاب کالا جهت بررسی کاردکس</span>
-          </label>
-          
-          {/* Custom Autocomplete Combobox */}
-          <div className="relative" ref={dropdownRef}>
+        {/* ========================================================================= */}
+        {/* Column 1: SKU Explorer & Group Browser (4 Cols) */}
+        {/* ========================================================================= */}
+        <div className="lg:col-span-4 space-y-4 print:hidden">
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-600" />
+                انتخاب و جستجوی اسکو کالا (SKU)
+              </h3>
+              <span className="text-xs font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                {filteredSKUs.length} قلم کالا
+              </span>
+            </div>
+
+            {/* Live SKU Search */}
             <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
               <input
                 type="text"
-                placeholder="جستجو با نام، کد یا بارکد کالا..."
-                value={searchQuery}
-                onFocus={() => setIsDropdownOpen(true)}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setIsDropdownOpen(true);
-                }}
-                className="w-full px-4 py-3 glass-input rounded-xl font-bold text-xs focus:bg-white/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-right"
+                placeholder="جستجو در کد، نام، بارکد، زیرگروه..."
+                value={itemSearchQuery}
+                onChange={(e) => setItemSearchQuery(e.target.value)}
+                className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none transition-all shadow-2xs"
               />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
             </div>
 
-            {isDropdownOpen && (
-              <div className="absolute z-30 mt-2 w-full max-h-60 overflow-y-auto bg-white/90 backdrop-blur-md border border-white/60 rounded-2xl shadow-xl p-1.5 space-y-0.5 custom-scrollbar">
-                {filteredSearchItems.map(it => (
+            {/* Category Filter Pills */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-500 block">فیلتر بر اساس گروه کالا:</label>
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-slate-50 rounded-2xl border border-slate-100">
+                <button
+                  onClick={() => setSelectedGroupId('ALL')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all ${
+                    selectedGroupId === 'ALL'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  همه گروه‌ها
+                </button>
+                {itemGroups.map(g => (
                   <button
-                    key={it.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedItemId(it.id);
-                      setSearchQuery(it.name);
-                      setIsDropdownOpen(false);
-                    }}
-                    className={`w-full text-right p-3 rounded-xl font-bold text-xs flex items-center justify-between cursor-pointer transition-colors ${selectedItemId === it.id ? 'bg-indigo-500/10 text-indigo-800' : 'hover:bg-white/50 text-slate-700'}`}
+                    key={g.id}
+                    onClick={() => setSelectedGroupId(g.id)}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all ${
+                      selectedGroupId === g.id
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                    }`}
                   >
-                    <div className="truncate max-w-[180px] text-right">
-                      <div>{it.name}</div>
-                      <span className="text-[10px] text-slate-400 font-mono">کد: {it.code}</span>
-                    </div>
-                    <span className="text-[10px] bg-slate-100/50 px-2 py-0.5 rounded-md font-mono shrink-0">*{it.barcode || it.code}*</span>
+                    {g.name}
                   </button>
                 ))}
-                {filteredSearchItems.length === 0 && (
-                  <div className="p-4 text-center text-slate-400 italic text-xs">کالایی یافت نشد.</div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Detailed Selected Product Specs Box */}
-          {selectedItem && (
-            <div className="bg-white/30 border border-white/50 p-4 rounded-2xl space-y-3.5 text-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-100/60 border border-indigo-200/50 text-indigo-600 flex items-center justify-center shrink-0">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div className="truncate text-right">
-                  <h4 className="font-extrabold text-slate-800 text-xs truncate">{selectedItem.name}</h4>
-                  <span className="text-[10px] text-slate-400 font-mono font-semibold">شناسه: {selectedItem.code}</span>
-                </div>
-              </div>
-
-              <div className="h-px bg-slate-200/50"></div>
-
-              <div className="space-y-2 text-slate-600 font-semibold">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-bold">دسته‌بندی:</span>
-                  <span>{selectedItem.group}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-bold">زیرگروه کالا:</span>
-                  <span>{selectedItem.subGroup}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-bold">واحد شمارش:</span>
-                  <span className="bg-white/60 border border-white/80 px-2 py-0.5 rounded-md font-bold">{selectedItem.unit}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-bold">موقعیت قفسه:</span>
-                  <span className="font-mono text-amber-800 font-bold">{selectedItem.locationInRack || 'نامشخص'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-bold">حداقل سفارش:</span>
-                  <span className="font-mono">{selectedItem.minStock.toLocaleString('fa-IR')} {selectedItem.unit}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-bold">حداکثر سفارش:</span>
-                  <span className="font-mono">{selectedItem.maxStock.toLocaleString('fa-IR')} {selectedItem.unit}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-bold">قیمت واحد تامین:</span>
-                  <span className="font-mono text-indigo-600 font-extrabold">{selectedItem.unitPrice.toLocaleString('fa-IR')} تومان</span>
-                </div>
               </div>
             </div>
-          )}
+
+            {/* SKU Item Cards List */}
+            <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
+              {filteredSKUs.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  کالایی با این مشخصات یافت نشد.
+                </div>
+              ) : (
+                filteredSKUs.map(it => {
+                  const isSelected = it.id === selectedItemId;
+                  const totalStock = inventory
+                    .filter(i => i.itemId === it.id)
+                    .reduce((sum, c) => sum + c.quantity, 0);
+
+                  const isLowStock = totalStock <= (it.minStock || 10);
+                  const isZeroStock = totalStock === 0;
+
+                  return (
+                    <div
+                      key={it.id}
+                      onClick={() => setSelectedItemId(it.id)}
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer text-right flex flex-col gap-2 relative ${
+                        isSelected
+                          ? 'bg-indigo-50/90 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-slate-50/80'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-indigo-700 text-xs bg-indigo-100/70 px-2 py-0.5 rounded-md">
+                              {it.code}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium">{it.group}</span>
+                          </div>
+                          <h4 className="font-bold text-xs text-slate-900 mt-1 line-clamp-1">
+                            {it.name}
+                          </h4>
+                        </div>
+
+                        {/* Stock Badge */}
+                        <div className="text-left shrink-0">
+                          <span
+                            className={`px-2.5 py-1 rounded-xl text-[10px] font-bold font-mono border block ${
+                              isZeroStock
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : isLowStock
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}
+                          >
+                            {totalStock.toLocaleString('fa-IR')} {it.unit}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                        <span>نرخ پایه: <strong className="text-slate-700 font-mono">{(it.unitPrice || 0).toLocaleString('fa-IR')}</strong> ت</span>
+                        <span>قفسه: <strong className="font-mono">{it.locationInRack || '-'}</strong></span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Right Hand: Interactive Ledger Filters Panel (3 Columns Wide) */}
-        <div className="lg:col-span-3 glass-card p-5 rounded-[2rem] space-y-5">
-          <div className="flex items-center gap-1 text-slate-800 border-b border-slate-200/40 pb-3">
-            <Filter className="w-5 h-5 text-indigo-500" />
-            <span className="font-extrabold text-sm">فیلترهای پیشرفته گردش حساب انبار</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            {/* Filter: Date Presets */}
-            <div className="space-y-1.5">
-              <label className="font-bold text-slate-500 block">بازه زمانی تراکنش‌ها:</label>
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full p-3 glass-input rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white"
-              >
-                <option value="ALL">کل زمان‌ها (کل تاریخچه کالا)</option>
-                <option value="TODAY">امروز (۲۴ ساعت گذشته)</option>
-                <option value="LAST_3_DAYS">۳ روز اخیر</option>
-                <option value="LAST_7_DAYS">۷ روز اخیر (یک هفته)</option>
-                <option value="LAST_30_DAYS">۳0 روز اخیر (یک ماه)</option>
-                <option value="LAST_90_DAYS">۹0 روز اخیر (سه ماه)</option>
-                <option value="CUSTOM">بازه زمانی سفارشی (تاریخ دستی)</option>
-              </select>
-            </div>
-
-            {/* Filter: Warehouse Specific */}
-            <div className="space-y-1.5">
-              <label className="font-bold text-slate-500 block">فیلتر انبار فیزیکی مربوطه:</label>
-              <select
-                value={selectedWhId}
-                onChange={(e) => setSelectedWhId(e.target.value)}
-                className="w-full p-3 glass-input rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white"
-              >
-                <option value="ALL">همه انبارها و فضاها (مجموع کل شرکت)</option>
-                {warehouses.map(wh => (
-                  <option key={wh.id} value={wh.id}>{wh.name} ({wh.code})</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filter: Transaction Type */}
-            <div className="space-y-1.5">
-              <label className="font-bold text-slate-500 block">نوع سند فیزیکی:</label>
-              <select
-                value={selectedEventType}
-                onChange={(e) => setSelectedEventType(e.target.value)}
-                className="w-full p-3 glass-input rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white"
-              >
-                <option value="ALL">همه اسناد و تراکنش‌ها</option>
-                <option value="StockIn">ورود کالا (سند رسید خرید / برگشتی)</option>
-                <option value="StockOut">خروج کالا (سند حواله فروش)</option>
-                <option value="Transfer">انتقال مابین انبارها</option>
-                <option value="ProjectConsumption">مصرف کالا در پروژه تولید</option>
-                <option value="ProductionOutput">تولید نهایی محصول</option>
-                <option value="Scrap">اسکراپ / ضایعات انبار</option>
-                <option value="Adjustment">سند اصلاح مغایرت انبارگردانی</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Conditional Sub-filters: Custom Dates & Operators */}
-          {(dateFilter === 'CUSTOM' || allOperators.length > 0) && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-200/40 pt-4 text-xs animate-fadeIn">
-              {dateFilter === 'CUSTOM' && (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-500 block">از تاریخ مبدا (میلادی):</label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full p-2.5 glass-input rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-500 block">تا تاریخ مقصد (میلادی):</label>
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full p-2.5 glass-input rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-500 block">کاربر ثبت‌کننده سند:</label>
+        {/* ========================================================================= */}
+        {/* Column 2: Standard Accounting Cardex Report (8 Cols) */}
+        {/* ========================================================================= */}
+        <div className="lg:col-span-8 space-y-6">
+          
+          {/* Controls Bar (Filter by Warehouse & Date) */}
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Warehouse Filter */}
+              <div className="flex items-center gap-1.5">
+                <Building2 className="w-4 h-4 text-slate-400" />
                 <select
-                  value={selectedOperator}
-                  onChange={(e) => setSelectedOperator(e.target.value)}
-                  className="w-full p-3 glass-input rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  value={selectedWhId}
+                  onChange={(e) => setSelectedWhId(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-bold focus:outline-none"
                 >
-                  <option value="ALL">همه ثبت‌کنندگان</option>
-                  {allOperators.map(op => (
-                    <option key={op} value={op}>{op}</option>
+                  <option value="ALL">🏢 کل انبارها (تجمیعی کارخانه)</option>
+                  {warehouses.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
                 </select>
               </div>
+
+              {/* Date Quick Filter */}
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-bold focus:outline-none"
+                >
+                  <option value="ALL">کل دوره مالی</option>
+                  <option value="TODAY">امروز</option>
+                  <option value="LAST_7_DAYS">۷ روز گذشته</option>
+                  <option value="LAST_30_DAYS">۳۰ روز گذشته (ماه جاری)</option>
+                  <option value="LAST_90_DAYS">۹۰ روز گذشته (فصل)</option>
+                  <option value="CUSTOM">بازه تاریخی دلخواه...</option>
+                </select>
+              </div>
+
+              {dateFilter === 'CUSTOM' && (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                  />
+                  <span className="text-slate-400 text-xs">تا</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                  />
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Event Type Filter */}
+            <select
+              value={selectedEventType}
+              onChange={(e) => setSelectedEventType(e.target.value)}
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none"
+            >
+              <option value="ALL">همه انواع تراکنش‌ها</option>
+              <option value="StockIn">رسیدهای خرید و ورودی</option>
+              <option value="StockOut">حواله‌های خروج و مصرف</option>
+              <option value="Transfer">انتقالات بین انبارها</option>
+              <option value="Adjustment">تعدیلات انبارگردانی</option>
+            </select>
+          </div>
+
+          {/* Standard Accounting Document Sheet */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-6 print:border-none print:shadow-none print:p-0">
+            
+            {/* Standard Official Header */}
+            <div className="border-b-2 border-slate-900 pb-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-500">{companyName || 'شرکت الکترو استوک - سیستم مدیریت انبار و تولید'}</h3>
+                  <h1 className="text-xl font-black text-slate-900 mt-0.5">
+                    کاردکس مقداری و ریالی کالا (Stock Ledger Card)
+                  </h1>
+                </div>
+
+                <div className="text-left font-mono text-xs text-slate-600 space-y-0.5">
+                  <div>انبار: <strong className="text-slate-900">{selectedWhId === 'ALL' ? 'کل انبارها (تجمیعی)' : warehouses.find(w => w.id === selectedWhId)?.name}</strong></div>
+                  <div>تاریخ گزارش: <strong className="text-slate-900">{new Date().toLocaleDateString('fa-IR')}</strong></div>
+                  <div>روش ارزش‌گذاری: <strong className="text-indigo-700">میانگین موزون (Weighted Average)</strong></div>
+                </div>
+              </div>
+
+              {/* Item Passport Info Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 mt-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">کد کالا (SKU):</span>
+                  <strong className="font-mono text-indigo-700 text-sm font-black">{selectedItem?.code}</strong>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-[10px] text-slate-400 block font-medium">نام کالا:</span>
+                  <strong className="text-slate-900 font-bold">{selectedItem?.name}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">واحد سنجش:</span>
+                  <strong className="text-slate-900 font-bold">{selectedItem?.unit}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">گروه / دسته:</span>
+                  <strong className="text-slate-800">{selectedItem?.group}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">محل در قفسه:</span>
+                  <strong className="font-mono text-slate-800">{selectedItem?.locationInRack || '-'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">حداقل (نقطه سفارش):</span>
+                  <strong className="font-mono text-amber-700">{selectedItem?.minStock || 10} {selectedItem?.unit}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">حداکثر موجودی:</span>
+                  <strong className="font-mono text-slate-700">{selectedItem?.maxStock || 1000} {selectedItem?.unit}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">کد بارکد:</span>
+                  <strong className="font-mono text-slate-700">{selectedItem?.barcode || '-'}</strong>
+                </div>
+                <div className="sm:col-span-3">
+                  <span className="text-[10px] text-slate-400 block font-medium">مشخصات فنی و توضیحات:</span>
+                  <span className="text-slate-600 text-[11px] line-clamp-1">{selectedItem?.description || 'بدون توضیحات تکمیلی'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Financial & Stock KPI Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 print:grid-cols-4">
+              {/* Initial Balance */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                <span className="text-[10px] text-slate-500 font-bold block">موجودی اول دوره</span>
+                <div className="text-lg font-black text-slate-900 font-mono mt-1">
+                  {accountingLedger.initialQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">{selectedItem?.unit}</span>
+                </div>
+                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                  ارزش: {accountingLedger.initialValue.toLocaleString('fa-IR')} ت
+                </div>
+              </div>
+
+              {/* Total Inflow */}
+              <div className="bg-emerald-50/80 p-4 rounded-2xl border border-emerald-200">
+                <span className="text-[10px] text-emerald-800 font-bold flex items-center gap-1">
+                  <ArrowDownLeft className="w-3 h-3 text-emerald-600" />
+                  جمع وارده طی دوره (+)
+                </span>
+                <div className="text-lg font-black text-emerald-950 font-mono mt-1">
+                  {accountingLedger.totalInQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-emerald-700">{selectedItem?.unit}</span>
+                </div>
+                <div className="text-[11px] text-emerald-700 font-mono mt-0.5">
+                  ارزش: {accountingLedger.totalInValue.toLocaleString('fa-IR')} ت
+                </div>
+              </div>
+
+              {/* Total Outflow */}
+              <div className="bg-rose-50/80 p-4 rounded-2xl border border-rose-200">
+                <span className="text-[10px] text-rose-800 font-bold flex items-center gap-1">
+                  <ArrowUpRight className="w-3 h-3 text-rose-600" />
+                  جمع صادره طی دوره (-)
+                </span>
+                <div className="text-lg font-black text-rose-950 font-mono mt-1">
+                  {accountingLedger.totalOutQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-rose-700">{selectedItem?.unit}</span>
+                </div>
+                <div className="text-[11px] text-rose-700 font-mono mt-0.5">
+                  ارزش: {accountingLedger.totalOutValue.toLocaleString('fa-IR')} ت
+                </div>
+              </div>
+
+              {/* Final Balance */}
+              <div className="bg-indigo-50/80 p-4 rounded-2xl border border-indigo-200">
+                <span className="text-[10px] text-indigo-900 font-bold block">مانده پایان دوره (موجودی قطعی)</span>
+                <div className="text-lg font-black text-indigo-950 font-mono mt-1">
+                  {accountingLedger.finalQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-indigo-700">{selectedItem?.unit}</span>
+                </div>
+                <div className="text-[11px] text-indigo-800 font-mono font-bold mt-0.5">
+                  ارزش: {accountingLedger.finalValue.toLocaleString('fa-IR')} تومان
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Movement Area Chart */}
+            <div className="bg-slate-50/60 p-4 rounded-2xl border border-slate-200 print:hidden space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <span className="flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-indigo-600" />
+                  روند تغییرات موجودی و نوسان مقداری در بازه انتخابی:
+                </span>
+                <span className="font-mono text-slate-500">واحد: {selectedItem?.unit}</span>
+              </div>
+
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartPoints}>
+                    <defs>
+                      <linearGradient id="colorBal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip contentStyle={{ fontSize: 11, direction: 'rtl', borderRadius: 12 }} />
+                    <Area type="monotone" dataKey="موجودی مقداری" stroke="#4f46e5" strokeWidth={2} fillOpacity={1} fill="url(#colorBal)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Standard Accounting Ledger Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs border border-slate-300">
+                <thead>
+                  {/* Super-Header Row */}
+                  <tr className="bg-slate-100 text-slate-800 font-black border-b border-slate-300 text-center">
+                    <th colSpan={5} className="p-2 border-l border-slate-300">مشخصات سند و تراکنش</th>
+                    <th colSpan={3} className="p-2 border-l border-slate-300 bg-emerald-100/70 text-emerald-950">وارده (Inflow / Receipts)</th>
+                    <th colSpan={3} className="p-2 border-l border-slate-300 bg-rose-100/70 text-rose-950">صادره (Outflow / Issues)</th>
+                    <th colSpan={3} className="p-2 border-l border-slate-300 bg-indigo-100/70 text-indigo-950">مانده لحظه‌ای (Running Balance)</th>
+                    <th colSpan={1} className="p-2">اقدام</th>
+                  </tr>
+
+                  {/* Sub-Header Row */}
+                  <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-300 text-[11px]">
+                    <th className="p-2 border-l border-slate-300 text-center w-8">ردیف</th>
+                    <th className="p-2 border-l border-slate-300 text-center w-24">تاریخ و زمان</th>
+                    <th className="p-2 border-l border-slate-300 w-24">شماره سند</th>
+                    <th className="p-2 border-l border-slate-300 w-28">نوع سند</th>
+                    <th className="p-2 border-l border-slate-300 min-w-[140px]">شرح و طرف حساب</th>
+
+                    {/* Inflow Columns */}
+                    <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-16">مقدار</th>
+                    <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-20">نرخ (تومان)</th>
+                    <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-24">مبلغ کل</th>
+
+                    {/* Outflow Columns */}
+                    <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-16">مقدار</th>
+                    <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-20">نرخ (تومان)</th>
+                    <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-24">مبلغ کل</th>
+
+                    {/* Balance Columns */}
+                    <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-16">مقدار</th>
+                    <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-20">بهای میانگین</th>
+                    <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-24">ارزش ریالی</th>
+
+                    <th className="p-2 text-center w-20">ثبت‌کننده</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-200">
+                  {/* Row 1: Initial Balance / نقل از قبل */}
+                  <tr className="bg-slate-100/60 font-bold h-9">
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono text-[10px]">ابتدای دوره</td>
+                    <td className="p-2 border-l border-slate-300 font-mono text-[10px]">-</td>
+                    <td className="p-2 border-l border-slate-300 text-slate-700">موجودی اول دوره</td>
+                    <td className="p-2 border-l border-slate-300 text-slate-600">نقل از دوره مالی قبل</td>
+
+                    {/* Inflow */}
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+
+                    {/* Outflow */}
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+
+                    {/* Balance */}
+                    <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-slate-900 bg-indigo-50/40">
+                      {accountingLedger.initialQty.toLocaleString('fa-IR')}
+                    </td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-700 bg-indigo-50/40">
+                      {accountingLedger.avgUnitRate.toLocaleString('fa-IR')}
+                    </td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-slate-900 bg-indigo-50/40">
+                      {accountingLedger.initialValue.toLocaleString('fa-IR')}
+                    </td>
+
+                    <td className="p-2 text-center text-[10px] text-slate-400">سیستم مالی</td>
+                  </tr>
+
+                  {/* Transaction Rows */}
+                  {accountingLedger.lines.map((row, idx) => (
+                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors h-9 text-[11px]">
+                      <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
+                      <td className="p-2 border-l border-slate-300 text-center font-mono text-[10px] text-slate-500">{row.dateStr}</td>
+                      <td className="p-2 border-l border-slate-300 font-mono font-bold text-indigo-700">{row.docNumber}</td>
+                      <td className="p-2 border-l border-slate-300 font-semibold text-slate-800">{row.docType}</td>
+                      <td className="p-2 border-l border-slate-300 text-slate-600">
+                        <div className="font-medium text-slate-800">{row.referenceParty}</div>
+                        <div className="text-[10px] text-slate-400 line-clamp-1">{row.description}</div>
+                      </td>
+
+                      {/* Inflow */}
+                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-emerald-700 bg-emerald-50/20">
+                        {row.inQty > 0 ? row.inQty.toLocaleString('fa-IR') : '-'}
+                      </td>
+                      <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-emerald-50/20">
+                        {row.inQty > 0 ? row.inRate.toLocaleString('fa-IR') : '-'}
+                      </td>
+                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-emerald-800 bg-emerald-50/20">
+                        {row.inTotal > 0 ? row.inTotal.toLocaleString('fa-IR') : '-'}
+                      </td>
+
+                      {/* Outflow */}
+                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-rose-700 bg-rose-50/20">
+                        {row.outQty > 0 ? row.outQty.toLocaleString('fa-IR') : '-'}
+                      </td>
+                      <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-rose-50/20">
+                        {row.outQty > 0 ? row.outRate.toLocaleString('fa-IR') : '-'}
+                      </td>
+                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-rose-800 bg-rose-50/20">
+                        {row.outTotal > 0 ? row.outTotal.toLocaleString('fa-IR') : '-'}
+                      </td>
+
+                      {/* Running Balance */}
+                      <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-slate-900 bg-indigo-50/30">
+                        {row.balanceQty.toLocaleString('fa-IR')}
+                      </td>
+                      <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-indigo-50/30">
+                        {row.avgRate.toLocaleString('fa-IR')}
+                      </td>
+                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-indigo-900 bg-indigo-50/30">
+                        {row.balanceValue.toLocaleString('fa-IR')}
+                      </td>
+
+                      <td className="p-2 text-center text-[10px] text-slate-500">{row.user}</td>
+                    </tr>
+                  ))}
+
+                  {/* Summary Row 1: Total Turnover / جمع گردش طی دوره */}
+                  <tr className="bg-slate-100 font-black h-10 border-t-2 border-slate-400">
+                    <td colSpan={5} className="p-2 border-l border-slate-300 text-center text-slate-900">
+                      جمع کل گردش طی دوره
+                    </td>
+
+                    {/* Total In */}
+                    <td className="p-2 border-l border-slate-300 text-center font-mono text-emerald-800 text-sm">
+                      {accountingLedger.totalInQty.toLocaleString('fa-IR')}
+                    </td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono text-emerald-900 font-black text-xs">
+                      {accountingLedger.totalInValue.toLocaleString('fa-IR')}
+                    </td>
+
+                    {/* Total Out */}
+                    <td className="p-2 border-l border-slate-300 text-center font-mono text-rose-800 text-sm">
+                      {accountingLedger.totalOutQty.toLocaleString('fa-IR')}
+                    </td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono text-rose-900 font-black text-xs">
+                      {accountingLedger.totalOutValue.toLocaleString('fa-IR')}
+                    </td>
+
+                    {/* Total Balance */}
+                    <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-indigo-950 text-sm bg-indigo-100/50">
+                      {accountingLedger.finalQty.toLocaleString('fa-IR')}
+                    </td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono text-indigo-900 bg-indigo-100/50">
+                      {accountingLedger.avgUnitRate.toLocaleString('fa-IR')}
+                    </td>
+                    <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-indigo-950 bg-indigo-100/50">
+                      {accountingLedger.finalValue.toLocaleString('fa-IR')}
+                    </td>
+
+                    <td className="p-2 text-center text-[10px] text-slate-500">-</td>
+                  </tr>
+
+                  {/* Summary Row 2: Final Balance / مانده پایان دوره */}
+                  <tr className="bg-indigo-900 text-white font-black h-11">
+                    <td colSpan={5} className="p-2 border-l border-indigo-800 text-center text-sm">
+                      مانده قطعی پایان دوره (موجودی پایان اسناد)
+                    </td>
+                    <td colSpan={3} className="p-2 border-l border-indigo-800 text-center text-emerald-300 font-mono">
+                      + {accountingLedger.totalInQty} {selectedItem?.unit}
+                    </td>
+                    <td colSpan={3} className="p-2 border-l border-indigo-800 text-center text-rose-300 font-mono">
+                      - {accountingLedger.totalOutQty} {selectedItem?.unit}
+                    </td>
+                    <td colSpan={3} className="p-2 border-l border-indigo-800 text-center text-amber-300 font-mono text-base">
+                      {accountingLedger.finalQty.toLocaleString('fa-IR')} {selectedItem?.unit} ({accountingLedger.finalValue.toLocaleString('fa-IR')} تومان)
+                    </td>
+                    <td className="p-2 text-center text-[10px] text-indigo-200">نهایی</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Official Signatures Section for Cardex */}
+            <div className="grid grid-cols-3 gap-6 pt-12 border-t border-slate-300 text-xs text-center">
+              <div className="space-y-8">
+                <div className="font-bold text-slate-800">انباردار / متصدی انبار</div>
+                <div className="text-slate-400 font-mono text-[11px]">امضا و تاریخ</div>
+              </div>
+              <div className="space-y-8">
+                <div className="font-bold text-slate-800">کارشناس حسابداری صنعتی و انبار</div>
+                <div className="text-slate-400 font-mono text-[11px]">امضا و تاریخ</div>
+              </div>
+              <div className="space-y-8">
+                <div className="font-bold text-slate-800">مدیر مالی و رئیس حسابداری</div>
+                <div className="text-slate-400 font-mono text-[11px]">امضا و مهر امور مالی</div>
+              </div>
+            </div>
+
+          </div>
         </div>
 
       </div>
-
-      {/* Advanced Ledger Valuation & Analytics Bento-Box Stats */}
-      {selectedItem && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          
-          {/* Card 1: Opening Balance */}
-          <div className="glass-card p-4 rounded-[1.5rem] flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-12 h-12 bg-white/30 rounded-br-2xl flex items-center justify-center border-b border-r border-white/20">
-              <Clock className="w-5 h-5 text-slate-400" />
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold block mb-1">موجودی اول دوره:</span>
-              <strong className="text-xl font-black font-mono text-slate-700">
-                {ledgerData.initialBalance.toLocaleString('fa-IR')}
-              </strong>
-            </div>
-            <span className="text-[10px] text-slate-400 mt-1 font-semibold block">{selectedItem.unit} (مبنای شروع دوره)</span>
-          </div>
-
-          {/* Card 2: Total Incoming */}
-          <div className="glass-card p-4 rounded-[1.5rem] flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-12 h-12 bg-indigo-50 rounded-br-2xl flex items-center justify-center border-b border-r border-white/20">
-              <ArrowUpRight className="w-5 h-5 text-indigo-500" />
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold block mb-1">جمع ورود کالا (وارده):</span>
-              <strong className="text-xl font-black font-mono text-indigo-600">
-                +{ledgerData.totalIn.toLocaleString('fa-IR')}
-              </strong>
-            </div>
-            <span className="text-[10px] text-indigo-500/80 mt-1 font-bold block">اضافه شده به موجودی</span>
-          </div>
-
-          {/* Card 3: Total Outgoing */}
-          <div className="glass-card p-4 rounded-[1.5rem] flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-12 h-12 bg-amber-50 rounded-br-2xl flex items-center justify-center border-b border-r border-white/20">
-              <ArrowDownLeft className="w-5 h-5 text-amber-500" />
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold block mb-1">جمع خروج کالا (صادره):</span>
-              <strong className="text-xl font-black font-mono text-amber-600">
-                -{ledgerData.totalOut.toLocaleString('fa-IR')}
-              </strong>
-            </div>
-            <span className="text-[10px] text-amber-600/80 mt-1 font-bold block">کاسته شده از موجودی</span>
-          </div>
-
-          {/* Card 4: Closing Balance (Health status included) */}
-          <div className={`p-4 rounded-[1.5rem] border shadow-xs flex flex-col justify-between transition-all duration-300 relative overflow-hidden ${isBelowMin ? 'bg-rose-500/10 border-rose-500/30 text-rose-900' : 'glass-card'}`}>
-            <div className={`absolute top-0 left-0 w-12 h-12 rounded-br-2xl flex items-center justify-center border-b border-r border-white/10 ${isBelowMin ? 'bg-rose-100/50' : 'bg-emerald-50'}`}>
-              {isBelowMin ? <AlertTriangle className="w-5 h-5 text-rose-500 animate-bounce" /> : <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold block mb-1">موجودی نهایی لحظه‌ای:</span>
-              <strong className={`text-xl font-black font-mono ${isBelowMin ? 'text-rose-700' : 'text-emerald-600'}`}>
-                {ledgerData.finalBalance.toLocaleString('fa-IR')}
-              </strong>
-            </div>
-            <span className="text-[10px] font-extrabold mt-1 block">
-              {isBelowMin ? (
-                <span className="text-rose-600">⚠️ بحران: کسر نقطه سفارش!</span>
-              ) : isAboveMax ? (
-                <span className="text-blue-600">⚠️ هشدار: بیش از حداکثر سقف!</span>
-              ) : (
-                <span className="text-emerald-600">✓ موجودی کاملاً متعادل</span>
-              )}
-            </span>
-          </div>
-
-          {/* Card 5: Inventory Valuation (Value on Book) */}
-          <div className="glass-card p-4 rounded-[1.5rem] flex flex-col justify-between relative overflow-hidden col-span-2 sm:col-span-1">
-            <div className="absolute top-0 left-0 w-12 h-12 bg-indigo-50 rounded-br-2xl flex items-center justify-center border-b border-r border-white/20">
-              <DollarSign className="w-5 h-5 text-indigo-500" />
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold block mb-1">ارزش کل موجودی انبار:</span>
-              <strong className="text-xl font-black font-mono text-indigo-600">
-                {(ledgerData.finalBalance * selectedItem.unitPrice).toLocaleString('fa-IR')}
-              </strong>
-            </div>
-            <span className="text-[10px] text-slate-400 mt-1 font-bold block">تومان (ارزیابی بهای تمام‌شده)</span>
-          </div>
-
-        </div>
-      )}
-
-      {/* Advanced Layout: Ledger Chart & Running Logs Grid */}
-      {selectedItem && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Main Visual Chronological Chart */}
-          <div className="lg:col-span-2 glass-card rounded-[2rem] p-6 relative overflow-hidden flex flex-col min-h-[380px] print:hidden">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-indigo-600" />
-                  <span>نمودار نوسانات موجودی فیزیکی و نقطه سفارش</span>
-                </h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">روند انباشت و مصرف فیزیکی قطعات در بازه زمانی انتخابی</p>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] font-bold">
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-indigo-500 rounded-xs"></span>موجودی</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-1 border-t-2 border-dashed border-rose-500"></span>نقطه بحرانی ({selectedItem.minStock})</span>
-              </div>
-            </div>
-
-            <div className="h-64 w-full flex-1" dir="ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartPoints} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="kardexGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} dy={8} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 9, fontWeight: 'bold' }} axisLine={false} tickLine={false} dx={-6} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '1rem', border: '1px solid rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(10px)', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', fontSize: '11px', fontFamily: 'Vazir, sans-serif' }}
-                  />
-                  {/* Min stock guide line */}
-                  <Area 
-                    type="monotone" 
-                    dataKey="مقدار موجودی" 
-                    stroke="#4f46e5" 
-                    strokeWidth={3} 
-                    fillOpacity={1} 
-                    fill="url(#kardexGrad)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Ratio of In/Out Volumes by presets */}
-          <div className="glass-card rounded-[2rem] p-6 flex flex-col justify-between print:hidden">
-            <div>
-              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 mb-1">
-                <Info className="w-4 h-4 text-emerald-600" />
-                <span>بررسی نرخ مصرف و پویایی کالا</span>
-              </h3>
-              <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
-                نرخ مصرف به شما کمک می‌کند سرعت تخلیه و تامین این کالا را با حداقل سطح انبار (نقطه ایمنی) مقایسه کنید.
-              </p>
-            </div>
-
-            <div className="py-4 space-y-4 text-xs font-semibold text-slate-700">
-              <div className="p-3 bg-white/30 border border-white/50 rounded-xl space-y-2">
-                <div className="flex justify-between">
-                  <span>میانگین ورود کالا:</span>
-                  <strong className="text-blue-600 font-mono">{(ledgerData.totalIn / Math.max(1, ledgerData.lines.length)).toFixed(1)} {selectedItem.unit}</strong>
-                </div>
-                <div className="w-full bg-slate-300/40 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-blue-500 h-full" style={{ width: `${Math.min(100, (ledgerData.totalIn / Math.max(1, ledgerData.totalIn + ledgerData.totalOut)) * 100)}%` }}></div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-white/30 border border-white/50 rounded-xl space-y-2">
-                <div className="flex justify-between">
-                  <span>میانگین خروج/مصرف:</span>
-                  <strong className="text-amber-600 font-mono">{(ledgerData.totalOut / Math.max(1, ledgerData.lines.length)).toFixed(1)} {selectedItem.unit}</strong>
-                </div>
-                <div className="w-full bg-slate-300/40 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, (ledgerData.totalOut / Math.max(1, ledgerData.totalIn + ledgerData.totalOut)) * 100)}%` }}></div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-indigo-500/10 border border-indigo-100/30 rounded-xl text-center">
-                <span className="text-[10px] text-indigo-700 font-extrabold block mb-1">تراکنش‌های ثبت شده این کالا در دوره:</span>
-                <strong className="text-indigo-800 text-lg font-mono font-black">{ledgerData.lines.length} سند</strong>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* Flawless Running Transaction Table */}
-      {selectedItem && (
-        <div className="glass-card rounded-[2rem] overflow-hidden print:hidden">
-          <div className="p-5 border-b border-slate-200/40 flex items-center justify-between bg-white/20">
-            <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
-              <ClipboardList className="w-5 h-5 text-indigo-600" />
-              <span>لاگ تراکنش‌های ثبت شده کالا (Ledger Lines)</span>
-            </h3>
-            <span className="text-[10px] bg-white/50 border border-white/60 text-slate-500 font-bold px-3 py-1 rounded-full">
-              تعداد ردیف فعال: {ledgerData.lines.length} ردیف تراکنش
-            </span>
-          </div>
-
-          <div className="overflow-x-auto max-w-full custom-scrollbar">
-            <table className="w-full text-[11px] text-right text-slate-700">
-              <thead className="bg-white/30 font-extrabold text-slate-500">
-                <tr className="border-b border-slate-200/40">
-                  <th className="p-4 whitespace-nowrap">#</th>
-                  <th className="p-4 whitespace-nowrap">تاریخ ثبت تراکنش</th>
-                  <th className="p-4 whitespace-nowrap">نوع تراکنش</th>
-                  <th className="p-4 whitespace-nowrap">شماره سند ثبتی</th>
-                  <th className="p-4 whitespace-nowrap">موقعیت / انبار مبدا-مقصد</th>
-                  <th className="p-4 whitespace-nowrap text-left">وارده (+)</th>
-                  <th className="p-4 whitespace-nowrap text-left">صادره (-)</th>
-                  <th className="p-4 whitespace-nowrap text-left">مانده لحظه‌ای</th>
-                  <th className="p-4 whitespace-nowrap">ثبت‌کننده</th>
-                  <th className="p-4 whitespace-nowrap">بیشتر</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/40 bg-transparent font-semibold">
-                {ledgerData.lines.map((line, idx) => {
-                  const ev = line.event;
-                  const isExpanded = expandedRowId === ev.id;
-
-                  return (
-                    <React.Fragment key={ev.id}>
-                      <tr className={`hover:bg-white/40 transition-colors ${isExpanded ? 'bg-indigo-500/5' : ''}`}>
-                        <td className="p-4 text-slate-400 font-mono text-[10px]">{ledgerData.lines.length - idx}</td>
-                        <td className="p-4 font-mono text-[10px] text-slate-500 whitespace-nowrap">{line.dateStr}</td>
-                        <td className="p-4 whitespace-nowrap">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold ${getEventBadgeClass(ev.eventType)}`}>
-                            {getEventLabel(ev.eventType)}
-                          </span>
-                        </td>
-                        <td className="p-4 font-mono font-bold text-slate-900">{line.docNumber}</td>
-                        <td className="p-4 text-slate-600 whitespace-nowrap">{line.whName || '-'}</td>
-                        <td className="p-4 font-mono font-bold text-left text-indigo-600">
-                          {line.inQty > 0 ? `+${line.inQty.toLocaleString('fa-IR')}` : '-'}
-                        </td>
-                        <td className="p-4 font-mono font-bold text-left text-amber-600">
-                          {line.outQty > 0 ? `-${line.outQty.toLocaleString('fa-IR')}` : '-'}
-                        </td>
-                        <td className="p-4 font-mono font-black text-left text-slate-900 bg-white/20">
-                          {line.balance.toLocaleString('fa-IR')}
-                        </td>
-                        <td className="p-4 text-slate-500 whitespace-nowrap">{ev.performedBy || ev.operatorName}</td>
-                        <td className="p-4">
-                          <button
-                            onClick={() => setExpandedRowId(isExpanded ? null : ev.id)}
-                            className="p-1.5 bg-white/50 border border-white/60 hover:bg-white/80 text-slate-500 rounded-lg cursor-pointer flex items-center justify-center transition-transform hover:scale-105"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-
-                      {/* Expandable Details Container */}
-                      {isExpanded && (
-                        <tr className="bg-indigo-500/5 border-y border-indigo-100/20 animate-fadeIn">
-                          <td colSpan={10} className="p-5 text-xs text-slate-700">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-white/40 border border-white/50 p-4 rounded-2xl">
-                              
-                              <div className="space-y-2">
-                                <h5 className="font-extrabold text-indigo-950 flex items-center gap-1.5 mb-1">
-                                  <Info className="w-4 h-4 text-indigo-500" />
-                                  <span>شرح و توضیحات سند</span>
-                                </h5>
-                                <p className="text-slate-600 font-medium leading-relaxed bg-white/40 p-3 rounded-xl border border-white/60">
-                                  {ev.details || 'هیچ توضیحی برای این سند یا تراکنش خودکار ثبت نشده است.'}
-                                </p>
-                              </div>
-
-                              <div className="space-y-2 font-semibold">
-                                <h5 className="font-extrabold text-indigo-950 flex items-center gap-1.5 mb-1">
-                                  <Layers className="w-4 h-4 text-indigo-500" />
-                                  <span>اطلاعات ردیابی سیستم</span>
-                                </h5>
-                                <div className="space-y-1.5 bg-white/40 p-3 rounded-xl border border-white/60">
-                                  <div>• شناسه سیستمی: <span className="font-mono text-[10px] text-slate-500">{ev.id}</span></div>
-                                  <div>• تاریخ میلادی ثبت: <span className="font-mono text-[10px] text-slate-500">{ev.timestamp}</span></div>
-                                  {ev.projectId && <div>• مربوط به پروژه تولید: <span className="text-slate-800 font-bold">{ev.projectId}</span></div>}
-                                </div>
-                              </div>
-
-                              <div className="space-y-2 font-semibold">
-                                <h5 className="font-extrabold text-indigo-950 flex items-center gap-1.5 mb-1">
-                                  <User className="w-4 h-4 text-indigo-500" />
-                                  <span>مسئول و مجری تراکنش</span>
-                                </h5>
-                                <div className="space-y-1.5 bg-white/40 p-3 rounded-xl border border-white/60">
-                                  <div>• ثبت کننده تراکنش: <span className="text-slate-800 font-bold">{ev.performedBy}</span></div>
-                                  {ev.operatorName && <div>• اپراتور مجری فنی: <span className="text-slate-800 font-bold">{ev.operatorName}</span></div>}
-                                  <div>• وضعیت نهایی سند: <span className="text-emerald-600 font-extrabold">تایید شده سیستم (Confirmed)</span></div>
-                                </div>
-                              </div>
-
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-
-                {ledgerData.lines.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="p-12 text-center text-slate-400 italic">
-                      <HelpCircle className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                      <span>هیچ تراکنش یا گردش انباری با فیلترهای انتخابی یافت نشد.</span>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Fallback Selection Grid if no item exists */}
-      {items.length === 0 && (
-        <div className="bg-white p-12 text-center rounded-[2rem] border border-slate-100 shadow-xs space-y-3">
-          <Package className="w-12 h-12 text-slate-300 mx-auto" />
-          <h3 className="font-black text-slate-800 text-lg">کالایی ثبت نشده است</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-            جهت بارگذاری کاردکس ابتدا باید کالا یا قطعه فیزیکی در بخش مدیریت کالاها ایجاد نمایید.
-          </p>
-          <button
-            onClick={() => setActiveTab('items')}
-            className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700"
-          >
-            ایجاد کالای جدید
-          </button>
-        </div>
-      )}
     </div>
   );
 };

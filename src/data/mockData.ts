@@ -566,7 +566,78 @@ export const INITIAL_STOCK_COUNTINGS: StockCountingSession[] = [
 
 export const INITIAL_STOCK_IN_DOCS: StockInDoc[] = [];
 export const INITIAL_STOCK_OUT_DOCS: StockOutDoc[] = [];
-export const INITIAL_TRANSFERS: WarehouseTransfer[] = [];
+export const INITIAL_TRANSFERS: WarehouseTransfer[] = [
+  {
+    id: 'tr-101',
+    docNumber: 'REQ-1404-091',
+    date: '1404/11/20',
+    sourceWarehouseId: 'wh-raw',
+    targetWarehouseId: 'wh-prod-p101',
+    projectId: 'p101',
+    projectName: 'پروژه کنتور هوشمند برق سه فاز (PRJ-101)',
+    requestedBy: 'مهندس رضایی (آنالیز پروژه و برنامه‌ریزی)',
+    requestDate: '1404/11/20',
+    handlerName: 'حسن نوری (راننده و مسئول لجستیک داخلی)',
+    driverPhone: '09123456789',
+    vehicleNumber: 'ایران ۱۱ - ۱۲۳ ب ۴۵',
+    status: 'Pending',
+    items: [
+      { itemId: 'item-pcb-101', quantity: 100, unitPrice: 35000, notes: 'برد مدار چاپی خام گرید A' },
+      { itemId: 'item-mcu-stm32', quantity: 100, unitPrice: 145000, notes: 'میکروکنترلر اصلی پکیج LQFP-48' },
+      { itemId: 'item-smd-res-10k', quantity: 1200, unitPrice: 450, notes: 'رول مقاومت 0805' },
+    ],
+    notes: 'درخواست تامین متریال بر اساس آنالیز BOM مرحله اول مونتاژ کنتور هوشمند - در انتظار تایید انبار مرکزی',
+    createdAt: '2026-02-09T10:00:00Z'
+  },
+  {
+    id: 'tr-102',
+    docNumber: 'TRF-1404-082',
+    date: '1404/11/18',
+    sourceWarehouseId: 'wh-raw',
+    targetWarehouseId: 'wh-semi',
+    projectId: 'p101',
+    projectName: 'پروژه کنتور هوشمند برق سه فاز (PRJ-101)',
+    requestedBy: 'مهندس رضایی (آنالیز پروژه)',
+    requestDate: '1404/11/17',
+    dispatchedBy: 'علی کاظمی (انباردار مرکزی)',
+    dispatchDate: '1404/11/18',
+    handlerName: 'حسین احمدی (وانت حمل قطعات)',
+    driverPhone: '09198765432',
+    vehicleNumber: 'ایران ۶۶ - ۷۸۹ ج ۱۲',
+    status: 'InTransit',
+    items: [
+      { itemId: 'item-mcu-stm32', quantity: 50, unitPrice: 145000, pickedQuantity: 50, notes: 'بسته‌بندی آنتی‌استاتیک' },
+      { itemId: 'item-pcb-101', quantity: 50, unitPrice: 35000, pickedQuantity: 50, notes: 'پالت محافظ' },
+    ],
+    notes: 'حواله خروج انبار مرکزی صادر شده و در حال حمل به انبار قطعات نیمه‌ساخته است',
+    createdAt: '2026-02-07T08:30:00Z'
+  },
+  {
+    id: 'tr-103',
+    docNumber: 'TRF-1404-075',
+    date: '1404/11/15',
+    sourceWarehouseId: 'wh-raw',
+    targetWarehouseId: 'wh-contractor',
+    projectId: 'p101',
+    projectName: 'پروژه کنتور هوشمند برق سه فاز (PRJ-101)',
+    requestedBy: 'مهندس رضایی',
+    requestDate: '1404/11/14',
+    dispatchedBy: 'علی کاظمی (انباردار مرکزی)',
+    dispatchDate: '1404/11/15',
+    receivedBy: 'پیمانکار - شرکت الکترو مونتاژ',
+    receiveDate: '1404/11/15',
+    handlerName: 'سروش اکبری (پیک ویژه قطعات)',
+    driverPhone: '09351234567',
+    vehicleNumber: 'ایران ۴۴ - ۵۵۵ د ۷۷',
+    status: 'Completed',
+    items: [
+      { itemId: 'item-smd-res-10k', quantity: 2000, unitPrice: 450, pickedQuantity: 2000, receivedQuantity: 2000, checked: true },
+      { itemId: 'item-pcb-101', quantity: 80, unitPrice: 35000, pickedQuantity: 80, receivedQuantity: 80, checked: true },
+    ],
+    notes: 'تحویل امانی به پیمانکار برونسپاری SMD - تحویل قطعی گردید',
+    createdAt: '2026-02-04T14:15:00Z'
+  }
+];
 export const INITIAL_PURCHASE_REQUESTS: PurchaseRequest[] = [];
 export const INITIAL_PRODUCTION_LOGS: ProductionLog[] = [];
 export const INITIAL_MATERIAL_HANDOVERS: MaterialHandover[] = [

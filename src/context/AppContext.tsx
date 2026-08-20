@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { translations, Language } from '../utils/translations';
 import { 
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, ProjectStep, Operator, User, UserRole,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
   TraceabilityEvent, SystemNotification, AuditLog, Contractor, StockCountingSession, StockCountingItem 
 } from '../types';
+import { InitialStockParsedRow } from '../utils/excelUtils';
+import { calculateAllProjectStageTargets, applySmartTargetsToProjectSteps } from '../utils/smartBOMCalculator';
 import { 
   INITIAL_ITEMS, INITIAL_ITEM_GROUPS, INITIAL_WAREHOUSES, INITIAL_CONTRACTORS, INITIAL_INVENTORY, INITIAL_BOMS, 
   INITIAL_PROJECTS, INITIAL_OPERATORS, INITIAL_USERS, INITIAL_STOCK_COUNTINGS, INITIAL_STOCK_IN_DOCS, 
@@ -72,6 +74,14 @@ interface AppContextType {
   updateBOM: (id: string, updated: Partial<BOM>) => void;
   deleteBOM: (id: string) => void;
   
+  // Excel Batch Import Actions
+  importItemsBatch: (newItems: Omit<Item, 'id' | 'createdAt'>[], groupsToCreate?: { name: string; subGroup: string }[]) => { count: number; updatedCount: number };
+  importInitialStockBatch: (rows: InitialStockParsedRow[]) => { count: number; docNumber: string };
+  importBOMsBatch: (newBoms: Omit<BOM, 'id' | 'createdAt'>[]) => { count: number };
+  
+  // Multi-Level Project Stage Auto-Calculation
+  applySmartStageTargetsToProject: (projectId: string, customOverrides?: { projectScrap?: number; stepScraps?: Record<string, number> }) => { success: boolean; message: string; count: number };
+  
   addProject: (proj: Omit<Project, 'id'>) => void;
   updateProject: (id: string, updated: Partial<Project>) => void;
   deleteProject: (id: string) => void;
@@ -99,6 +109,9 @@ interface AppContextType {
   createTransfer: (transfer: Omit<WarehouseTransfer, 'id' | 'createdAt'>) => void;
   updateTransfer: (id: string, updated: Partial<WarehouseTransfer>) => void;
   updateTransferStatus: (id: string, status: 'Pending' | 'InTransit' | 'Completed' | 'Rejected') => void;
+  dispatchTransfer: (id: string, details: { dispatchedBy: string; handlerName: string; driverPhone?: string; vehicleNumber?: string; notes?: string }) => void;
+  receiveTransfer: (id: string, details: { receivedBy: string; notes?: string }) => void;
+  rejectTransfer: (id: string, reason: string) => void;
   deleteTransfer: (id: string) => void;
 
   createPurchaseRequest: (req: Omit<PurchaseRequest, 'id' | 'createdAt'>) => void;
@@ -165,6 +178,14 @@ interface AppContextType {
   companyName: string;
   setCompanyName: (name: string) => void;
   completeInstallation: (companyName: string, adminUser: string, adminPass: string) => void;
+
+  // Centralized Linux Server Real-Time Sync & Status
+  serverSyncStatus: 'connected' | 'syncing' | 'offline' | 'error';
+  lastSyncTime: string | null;
+  serverVersion: number;
+  serverInfo: any;
+  forceSyncWithServer: () => Promise<boolean>;
+  resetServerDatabase: () => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -369,6 +390,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Centralized Linux Server Real-Time Sync State & Diagnostics
+  const [serverSyncStatus, setServerSyncStatus] = useState<'connected' | 'syncing' | 'offline' | 'error'>('syncing');
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [serverVersion, setServerVersion] = useState<number>(0);
+  const [serverInfo, setServerInfo] = useState<any>(null);
+
+  const serverVersionRef = useRef<number>(0);
+  const isRemoteUpdatingRef = useRef<boolean>(false);
+  const isInitialServerSyncDoneRef = useRef<boolean>(false);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   function loadStorage<T>(key: string, fallback: T): T {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_${key}`);
@@ -393,7 +425,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }
 
-  // Save changes to localStorage
+  // Save changes to localStorage (for instant offline cache)
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
   }, [users]);
@@ -426,6 +458,231 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
     productionLogs, materialHandovers, notifications, traceabilityEvents, auditLogs
+  ]);
+
+  // =========================================================================
+  //  CENTRALIZED SERVER SYNCHRONIZATION ENGINE
+  // =========================================================================
+
+  const applyServerState = useCallback((data: any, version: number) => {
+    if (!data) return;
+    isRemoteUpdatingRef.current = true;
+    if (data.items) setItems(data.items);
+    if (data.itemGroups) setItemGroups(data.itemGroups);
+    if (data.warehouses) setWarehouses(data.warehouses);
+    if (data.contractors) setContractors(data.contractors);
+    if (data.inventory) setInventory(data.inventory);
+    if (data.boms) setBoms(data.boms);
+    if (data.projects) setProjects(data.projects);
+    if (data.operators) setOperators(data.operators);
+    if (data.stockCountings) setStockCountings(data.stockCountings);
+    if (data.stockInDocs) setStockInDocs(data.stockInDocs);
+    if (data.stockOutDocs) setStockOutDocs(data.stockOutDocs);
+    if (data.transfers) setTransfers(data.transfers);
+    if (data.purchaseRequests) setPurchaseRequests(data.purchaseRequests);
+    if (data.productionLogs) setProductionLogs(data.productionLogs);
+    if (data.materialHandovers) setMaterialHandovers(data.materialHandovers);
+    if (data.notifications) setNotifications(data.notifications);
+    if (data.traceabilityEvents) setTraceabilityEvents(data.traceabilityEvents);
+    if (data.auditLogs) setAuditLogs(data.auditLogs);
+    if (data.users && data.users.length > 0) setUsers(data.users);
+    if (data.companyName) {
+      setCompanyNameState(data.companyName);
+      localStorage.setItem(`${STORAGE_KEY}_company_name`, data.companyName);
+    }
+    if (data.isInstalled !== undefined) {
+      setIsInstalled(data.isInstalled);
+      localStorage.setItem(`${STORAGE_KEY}_is_installed`, String(data.isInstalled));
+    }
+    if (data.autoBackupIntervalHours !== undefined) setAutoBackupIntervalHoursState(data.autoBackupIntervalHours);
+    if (data.lastBackupTimestamp) setLastBackupTimestamp(data.lastBackupTimestamp);
+    if (data.backupHistory) setBackupHistory(data.backupHistory);
+
+    serverVersionRef.current = version;
+    setServerVersion(version);
+    setServerSyncStatus('connected');
+    setLastSyncTime(new Date().toLocaleTimeString('fa-IR'));
+
+    setTimeout(() => {
+      isRemoteUpdatingRef.current = false;
+    }, 150);
+  }, []);
+
+  const pushStateToServer = useCallback(async (customPayload?: any) => {
+    if (!isInitialServerSyncDoneRef.current || isRemoteUpdatingRef.current) return;
+    try {
+      const payload = customPayload || {
+        items, itemGroups, warehouses, contractors, inventory, boms, projects,
+        operators, stockCountings, stockInDocs, stockOutDocs, transfers,
+        purchaseRequests, productionLogs, materialHandovers, notifications,
+        traceabilityEvents, auditLogs, users, isInstalled, companyName,
+        autoBackupIntervalHours, lastBackupTimestamp, backupHistory
+      };
+
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientVersion: serverVersionRef.current,
+          updates: payload
+        })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        if (result.serverVersion) {
+          serverVersionRef.current = result.serverVersion;
+          setServerVersion(result.serverVersion);
+        }
+        setServerSyncStatus('connected');
+        setLastSyncTime(new Date().toLocaleTimeString('fa-IR'));
+      } else {
+        setServerSyncStatus('error');
+      }
+    } catch {
+      setServerSyncStatus('offline');
+    }
+  }, [
+    items, itemGroups, warehouses, contractors, inventory, boms, projects,
+    operators, stockCountings, stockInDocs, stockOutDocs, transfers,
+    purchaseRequests, productionLogs, materialHandovers, notifications,
+    traceabilityEvents, auditLogs, users, isInstalled, companyName,
+    autoBackupIntervalHours, lastBackupTimestamp, backupHistory
+  ]);
+
+  const forceSyncWithServer = async (): Promise<boolean> => {
+    setServerSyncStatus('syncing');
+    try {
+      const res = await fetch('/api/data');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          applyServerState(json.data, json.version || Date.now());
+          isInitialServerSyncDoneRef.current = true;
+          return true;
+        }
+      }
+      setServerSyncStatus('offline');
+      return false;
+    } catch {
+      setServerSyncStatus('offline');
+      return false;
+    }
+  };
+
+  const resetServerDatabase = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/reset-data', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          applyServerState(json.data, json.version || Date.now());
+          isInitialServerSyncDoneRef.current = true;
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  // Initial connection to server and periodic real-time sync
+  useEffect(() => {
+    let isMounted = true;
+
+    const initServerConnection = async () => {
+      try {
+        // Fetch server system diagnostic info
+        fetch('/api/server-info')
+          .then(r => r.json())
+          .then(info => {
+            if (isMounted && info.success) setServerInfo(info);
+          })
+          .catch(() => {});
+
+        // Fetch central data from server
+        setServerSyncStatus('syncing');
+        const res = await fetch('/api/data');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            applyServerState(json.data, json.version || Date.now());
+          }
+        } else {
+          setServerSyncStatus('offline');
+        }
+      } catch (err) {
+        console.warn('[ServerSync] Could not reach server at startup:', err);
+        setServerSyncStatus('offline');
+      } finally {
+        if (isMounted) {
+          isInitialServerSyncDoneRef.current = true;
+        }
+      }
+    };
+
+    initServerConnection();
+
+    // Multi-client real-time synchronization interval (every 2s)
+    const pollInterval = setInterval(async () => {
+      if (!isMounted || !isInitialServerSyncDoneRef.current) return;
+      try {
+        const verRes = await fetch('/api/data/version');
+        if (verRes.ok) {
+          const verData = await verRes.json();
+          if (verData.version && verData.version > serverVersionRef.current) {
+            // New data exists on server from another user/computer!
+            const dataRes = await fetch('/api/data');
+            if (dataRes.ok) {
+              const dataJson = await dataRes.json();
+              if (dataJson.success && dataJson.data) {
+                applyServerState(dataJson.data, dataJson.version);
+              }
+            }
+          }
+          setServerSyncStatus(prev => prev === 'syncing' ? prev : 'connected');
+        } else {
+          setServerSyncStatus('offline');
+        }
+      } catch {
+        setServerSyncStatus('offline');
+      }
+    }, 2000);
+
+    const onFocus = () => {
+      if (!isInitialServerSyncDoneRef.current) return;
+      fetch('/api/data')
+        .then(r => r.json())
+        .then(json => {
+          if (json.success && json.data && json.version > serverVersionRef.current) {
+            applyServerState(json.data, json.version);
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [applyServerState]);
+
+  // Debounced auto-sync to server on any state mutation
+  useEffect(() => {
+    if (!isInitialServerSyncDoneRef.current || isRemoteUpdatingRef.current) return;
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      pushStateToServer();
+    }, 300);
+  }, [
+    items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, 
+    stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
+    productionLogs, materialHandovers, notifications, traceabilityEvents, auditLogs,
+    users, isInstalled, companyName, autoBackupIntervalHours, lastBackupTimestamp, backupHistory,
+    pushStateToServer
   ]);
 
   // Auth & User Management Logic
@@ -672,6 +929,259 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = boms.find(b => b.id === id);
     setBoms(prev => prev.filter(b => b.id !== id));
     addAudit('حذف فرمول ساخت', 'BOM', id, `حذف فرمول ${target?.name || id}`);
+  };
+
+  // =========================================================================
+  // EXCEL BATCH IMPORT & SMART CASCADE PRODUCTION CALCULATIONS
+  // =========================================================================
+
+  // 1. Batch Import Items from Excel
+  const importItemsBatch = (
+    newItemsList: Omit<Item, 'id' | 'createdAt'>[], 
+    groupsToCreate?: { name: string; subGroup: string }[]
+  ): { count: number; updatedCount: number } => {
+    const dateStr = new Date().toISOString().substring(0, 10);
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    // Create any missing groups automatically
+    if (groupsToCreate && groupsToCreate.length > 0) {
+      setItemGroups(prev => {
+        const nextGroups = [...prev];
+        groupsToCreate.forEach(g => {
+          const existing = nextGroups.find(x => x.name.trim().toLowerCase() === g.name.trim().toLowerCase());
+          if (!existing) {
+            nextGroups.push({
+              id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              name: g.name,
+              code: `GRP-${Math.floor(10 + Math.random() * 90)}`,
+              description: 'ایجاد خودکار از اکسل کالاها',
+              subGroups: g.subGroup ? [g.subGroup] : ['عمومی']
+            });
+          } else if (g.subGroup && !existing.subGroups?.includes(g.subGroup)) {
+            existing.subGroups = [...(existing.subGroups || []), g.subGroup];
+          }
+        });
+        return nextGroups;
+      });
+    }
+
+    setItems(prevItems => {
+      const itemsMap = new Map<string, Item>();
+      prevItems.forEach(it => itemsMap.set(it.code.toLowerCase().trim(), it));
+
+      newItemsList.forEach(rawItem => {
+        const key = rawItem.code.toLowerCase().trim();
+        const existing = itemsMap.get(key);
+        if (existing) {
+          // Update existing item
+          itemsMap.set(key, {
+            ...existing,
+            ...rawItem,
+          });
+          updatedCount++;
+        } else {
+          // Create new item
+          const newItem: Item = {
+            ...rawItem,
+            id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            createdAt: dateStr,
+          };
+          itemsMap.set(key, newItem);
+          addedCount++;
+        }
+      });
+
+      return Array.from(itemsMap.values());
+    });
+
+    addAudit(
+      'ورود دسته‌ای کالاها از اکسل', 
+      'Item', 
+      'EXCEL_IMPORT', 
+      `افزودن ${addedCount} کالای جدید و به‌روزرسانی ${updatedCount} کالا از طریق فایل اکسل`
+    );
+
+    return { count: addedCount, updatedCount };
+  };
+
+  // 2. Batch Import Initial Stock (موجودی ابتدای دوره) from Excel
+  const importInitialStockBatch = (rows: InitialStockParsedRow[]): { count: number; docNumber: string } => {
+    const today = new Date().toISOString().substring(0, 10);
+    const docNumber = `OPN-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(100 + Math.random() * 900)}`;
+
+    // Group rows by warehouse to create clean opening StockIn documents
+    const rowsByWarehouse = new Map<string, InitialStockParsedRow[]>();
+    rows.forEach(r => {
+      if (!rowsByWarehouse.has(r.warehouseId)) {
+        rowsByWarehouse.set(r.warehouseId, []);
+      }
+      rowsByWarehouse.get(r.warehouseId)!.push(r);
+    });
+
+    // Update inventory balance table
+    setInventory(prevInv => {
+      const invMap = new Map<string, InventoryBalance>();
+      prevInv.forEach(inv => {
+        invMap.set(`${inv.warehouseId}_${inv.itemId}`, { ...inv });
+      });
+
+      rows.forEach(r => {
+        const key = `${r.warehouseId}_${r.itemId}`;
+        invMap.set(key, {
+          warehouseId: r.warehouseId,
+          itemId: r.itemId,
+          quantity: r.quantity, // Set to opening balance
+          reservedQuantity: 0,
+          lastUpdated: today
+        });
+      });
+
+      return Array.from(invMap.values());
+    });
+
+    // Create StockInDoc for each warehouse opening
+    const newDocs: StockInDoc[] = [];
+    const newTraces: TraceabilityEvent[] = [];
+
+    rowsByWarehouse.forEach((whRows, whId) => {
+      const whDocNum = `${docNumber}-${whId.substring(0, 5)}`;
+      const newDoc: StockInDoc = {
+        id: `in-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        docNumber: whDocNum,
+        date: today,
+        supplier: 'سند افتتاحیه / موجودی ابتدای دوره',
+        registeredBy: currentUser.fullName || 'مدیر انبار',
+        warehouseId: whId,
+        entryType: 'StockAdjustment',
+        status: 'Confirmed',
+        notes: 'ثبت خودکار موجودی ابتدای دوره از طریق فایل اکسل',
+        items: whRows.map(r => ({
+          itemId: r.itemId,
+          quantity: r.quantity,
+          unitPrice: r.unitPrice,
+          notes: r.notes || 'سند افتتاحیه'
+        })),
+        createdAt: today
+      };
+      newDocs.push(newDoc);
+
+      whRows.forEach(r => {
+        newTraces.push({
+          id: `trc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          itemId: r.itemId,
+          timestamp: `${today} 08:00:00`,
+          eventType: 'StockIn',
+          targetWarehouseId: r.warehouseId,
+          docNumber: whDocNum,
+          quantity: r.quantity,
+          details: `سند افتتاحیه و موجودی اول دوره (${r.quantity} ${r.itemName || ''})`,
+          performedBy: currentUser.fullName || 'مدیر سیستم'
+        });
+      });
+    });
+
+    setStockInDocs(prev => [...newDocs, ...prev]);
+    setTraceabilityEvents(prev => [...newTraces, ...prev]);
+
+    addAudit(
+      'ثبت موجودی ابتدای دوره از اکسل', 
+      'StockInDoc', 
+      docNumber, 
+      `ثبت و تنظیم موجودی افتتاحیه برای ${rows.length} قلم کالا در ${rowsByWarehouse.size} انبار`
+    );
+
+    return { count: rows.length, docNumber };
+  };
+
+  // 3. Batch Import BOMs from Excel
+  const importBOMsBatch = (newBomsList: Omit<BOM, 'id' | 'createdAt'>[]): { count: number } => {
+    const today = new Date().toISOString().substring(0, 10);
+    let addedCount = 0;
+
+    setBoms(prevBoms => {
+      const bomsMap = new Map<string, BOM>();
+      prevBoms.forEach(b => {
+        const key = `${b.finishedItemId}_${b.name.trim().toLowerCase()}_${b.version.trim().toLowerCase()}`;
+        bomsMap.set(key, b);
+      });
+
+      newBomsList.forEach(rawBom => {
+        const key = `${rawBom.finishedItemId}_${rawBom.name.trim().toLowerCase()}_${rawBom.version.trim().toLowerCase()}`;
+        const existing = bomsMap.get(key);
+        if (existing) {
+          // Update items
+          bomsMap.set(key, {
+            ...existing,
+            ...rawBom,
+          });
+        } else {
+          const newBom: BOM = {
+            ...rawBom,
+            id: `bom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            createdAt: today
+          };
+          bomsMap.set(key, newBom);
+          addedCount++;
+        }
+      });
+
+      return Array.from(bomsMap.values());
+    });
+
+    addAudit(
+      'ورود فرمول‌های ساخت از اکسل', 
+      'BOM', 
+      'EXCEL_IMPORT', 
+      `ثبت و به‌روزرسانی ${newBomsList.length} فرمول ساخت (BOM) از طریق فایل اکسل`
+    );
+
+    return { count: newBomsList.length };
+  };
+
+  // 4. Multi-Level Stage Scaling Engine (محاسبه هوشمند اهداف مراحل تولید)
+  const applySmartStageTargetsToProject = (
+    projectId: string,
+    customOverrides?: { projectScrap?: number; stepScraps?: Record<string, number> }
+  ): { success: boolean; message: string; count: number } => {
+    const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) {
+      return { success: false, message: 'پروژه مورد نظر یافت نشد.', count: 0 };
+    }
+
+    const { calculations } = calculateAllProjectStageTargets(targetProject, boms, items, customOverrides);
+    const targetMap = new Map<string, number>();
+    const scrapMap = new Map<string, number>();
+    calculations.forEach(c => {
+      targetMap.set(c.stepId, c.calculatedSmartTargetQty);
+      if (c.scrapPercent !== undefined) {
+        scrapMap.set(c.stepId, c.scrapPercent);
+      }
+    });
+
+    const updatedSteps = applySmartTargetsToProjectSteps(targetProject.steps, targetMap, scrapMap);
+
+    setProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        scrapAllowancePercent: customOverrides?.projectScrap !== undefined ? customOverrides.projectScrap : p.scrapAllowancePercent,
+        steps: updatedSteps
+      };
+    }));
+
+    addAudit(
+      'محاسبه هوشمند اهداف مراحل تولید',
+      'Project',
+      targetProject.code,
+      `محاسبه خودکار اهداف ${calculations.length} مرحله بر اساس فرمول ساخت BOM و ضریب ضایعات (تیراژ نهایی: ${targetProject.targetQuantity})`
+    );
+
+    return {
+      success: true,
+      message: `اهداف ${calculations.length} مرحله از پروژه بر اساس درخت BOM و ضریب ضایعات با موفقیت به‌روزرسانی شد.`,
+      count: calculations.length
+    };
   };
 
   // Project Management
@@ -997,13 +1507,151 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           docNumber: transferData.docNumber,
           quantity: it.quantity,
           details: `انتقال بین انبار - مسئول: ${transferData.handlerName}`,
-          performedBy: transferData.registeredBy,
+          performedBy: transferData.requestedBy || transferData.dispatchedBy || currentUser.fullName,
         };
         setTraceabilityEvents(t => [trace, ...t]);
       });
     }
 
-    addAudit('ثبت انتقال بین انبارها', 'WarehouseTransfer', newTransfer.docNumber, `انتقال از ${transferData.sourceWarehouseId} به ${transferData.targetWarehouseId}`);
+    // Notification for Central Warehouse if it's a Pending requisition
+    if (transferData.status === 'Pending') {
+      const notif: SystemNotification = {
+        id: `notif-${Date.now()}`,
+        type: 'TransferAlert',
+        title: 'درخواست جدید کالا از انبار مرکزی',
+        message: `درخواست انتقال ${newTransfer.docNumber} توسط ${newTransfer.requestedBy} برای پروژه ${newTransfer.projectName || 'مرتبط'} در کارتابل قرار گرفت.`,
+        date: new Date().toLocaleString('fa-IR'),
+        isRead: false,
+        linkTab: 'transfers',
+      };
+      setNotifications(prev => [notif, ...prev]);
+    }
+
+    addAudit('ثبت درخواست/حواله انتقال بین انبارها', 'WarehouseTransfer', newTransfer.docNumber, `انتقال از ${transferData.sourceWarehouseId} به ${transferData.targetWarehouseId} (وضعیت: ${transferData.status})`);
+  };
+
+  const dispatchTransfer = (
+    id: string, 
+    details: { dispatchedBy: string; handlerName: string; driverPhone?: string; vehicleNumber?: string; notes?: string }
+  ) => {
+    const target = transfers.find(t => t.id === id);
+    if (!target) return;
+
+    const todayDate = new Date().toLocaleDateString('fa-IR');
+
+    // Deduct stock from source warehouse (Central Warehouse)
+    target.items.forEach(it => {
+      adjustStock(it.itemId, target.sourceWarehouseId, -it.quantity);
+      const trace: TraceabilityEvent = {
+        id: `trc-${Date.now()}-${Math.random().toString(36).substring(2,5)}`,
+        itemId: it.itemId,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        eventType: 'Transfer',
+        sourceWarehouseId: target.sourceWarehouseId,
+        targetWarehouseId: target.targetWarehouseId,
+        docNumber: target.docNumber,
+        quantity: it.quantity,
+        details: `خروج از انبار مبدا (صدور حواله ارسال به انبار پروژه) - مسئول حمل: ${details.handlerName}`,
+        performedBy: details.dispatchedBy,
+      };
+      setTraceabilityEvents(t => [trace, ...t]);
+    });
+
+    setTransfers(prev => prev.map(t => {
+      if (t.id !== id) return t;
+      return {
+        ...t,
+        status: 'InTransit',
+        dispatchedBy: details.dispatchedBy,
+        dispatchDate: todayDate,
+        handlerName: details.handlerName,
+        driverPhone: details.driverPhone || t.driverPhone,
+        vehicleNumber: details.vehicleNumber || t.vehicleNumber,
+        notes: details.notes ? `${t.notes ? t.notes + ' | ' : ''}${details.notes}` : t.notes,
+      };
+    }));
+
+    // Notification for Destination Warehouse
+    const notif: SystemNotification = {
+      id: `notif-${Date.now()}`,
+      type: 'TransferAlert',
+      title: 'محموله جدید در راه است (کارتابل مقصد)',
+      message: `حواله انتقال ${target.docNumber} توسط انبار مرکزی (${details.dispatchedBy}) ارسال شد و در کارتابل دریافت قرار گرفت.`,
+      date: new Date().toLocaleString('fa-IR'),
+      isRead: false,
+      linkTab: 'transfers',
+    };
+    setNotifications(prev => [notif, ...prev]);
+
+    addAudit('تایید ارسال و صدور حواله انتقال', 'WarehouseTransfer', target.docNumber, `خروج از انبار مرکزی و ارسال به انبار ${target.targetWarehouseId}`);
+  };
+
+  const receiveTransfer = (
+    id: string, 
+    details: { receivedBy: string; notes?: string }
+  ) => {
+    const target = transfers.find(t => t.id === id);
+    if (!target) return;
+
+    const todayDate = new Date().toLocaleDateString('fa-IR');
+
+    // Add stock to target warehouse (Project / Sub-warehouse)
+    target.items.forEach(it => {
+      adjustStock(it.itemId, target.targetWarehouseId, it.quantity);
+      const trace: TraceabilityEvent = {
+        id: `trc-${Date.now()}-${Math.random().toString(36).substring(2,5)}`,
+        itemId: it.itemId,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        eventType: 'StockIn',
+        targetWarehouseId: target.targetWarehouseId,
+        sourceWarehouseId: target.sourceWarehouseId,
+        docNumber: target.docNumber,
+        quantity: it.quantity,
+        details: `رسید ورود و تحویل در انبار مقصد - تحویل‌گیرنده: ${details.receivedBy}`,
+        performedBy: details.receivedBy,
+      };
+      setTraceabilityEvents(t => [trace, ...t]);
+    });
+
+    setTransfers(prev => prev.map(t => {
+      if (t.id !== id) return t;
+      return {
+        ...t,
+        status: 'Completed',
+        receivedBy: details.receivedBy,
+        receiveDate: todayDate,
+        notes: details.notes ? `${t.notes ? t.notes + ' | ' : ''}${details.notes}` : t.notes,
+      };
+    }));
+
+    // Notification for Requester / System
+    const notif: SystemNotification = {
+      id: `notif-${Date.now()}`,
+      type: 'TransferAlert',
+      title: 'تکمیل حواله انتقال بین انبار',
+      message: `حواله ${target.docNumber} در انبار مقصد (${details.receivedBy}) تایید و موجودی ثبت گردید.`,
+      date: new Date().toLocaleString('fa-IR'),
+      isRead: false,
+      linkTab: 'transfers',
+    };
+    setNotifications(prev => [notif, ...prev]);
+
+    addAudit('تایید دریافت و ورود به انبار مقصد', 'WarehouseTransfer', target.docNumber, `تحویل قطعی در انبار ${target.targetWarehouseId}`);
+  };
+
+  const rejectTransfer = (id: string, reason: string) => {
+    const target = transfers.find(t => t.id === id);
+    if (!target) return;
+
+    // If it was already dispatched, return stock to source
+    if (target.status === 'InTransit') {
+      target.items.forEach(it => {
+        adjustStock(it.itemId, target.sourceWarehouseId, it.quantity);
+      });
+    }
+
+    setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'Rejected', rejectReason: reason } : t));
+    addAudit('رد درخواست/حواله انتقال', 'WarehouseTransfer', target.docNumber, `علت رد: ${reason}`);
   };
 
   const updateTransfer = (id: string, updated: Partial<WarehouseTransfer>) => {
@@ -1316,6 +1964,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUsers([]);
     setIsInstalled(false);
     setIsAuthenticated(false);
+
+    // Also reset on centralized Linux server
+    fetch('/api/reset-data', { method: 'POST' }).catch(() => {});
   };
 
   const completeInstallation = (compName: string, adminUser: string, adminPass: string) => {
@@ -1381,6 +2032,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(adminUserObj);
     setIsAuthenticated(true);
     setIsInstalled(true);
+
+    // Sync newly installed state to central server immediately
+    pushStateToServer({
+      companyName: compName,
+      isInstalled: true,
+      users: [adminUserObj],
+      auditLogs: [initialLog],
+      items: [],
+      itemGroups: [],
+      warehouses: [],
+      contractors: [],
+      inventory: [],
+      boms: [],
+      projects: [],
+      operators: [],
+      stockCountings: [],
+      stockInDocs: [],
+      stockOutDocs: [],
+      transfers: [],
+      purchaseRequests: [],
+      productionLogs: [],
+      materialHandovers: [],
+      notifications: [],
+      traceabilityEvents: []
+    });
   };
 
   const exportDatabaseJSON = (type: 'Manual' | 'Auto' = 'Manual') => {
@@ -1461,6 +2137,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data.traceabilityEvents) setTraceabilityEvents(data.traceabilityEvents);
         if (data.auditLogs) setAuditLogs(data.auditLogs);
         addAudit('بازیابی داده‌ها از فایل پشتیبان', 'System', 'JSON', 'بارگذاری کامل داده‌ها از فایل پشتیبان');
+
+        // Also push imported backup to Linux server
+        fetch('/api/import-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonStr })
+        }).catch(() => {});
+
         return true;
       }
       return false;
@@ -1483,11 +2167,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addWarehouse, updateWarehouse, deleteWarehouse,
       addContractor, updateContractor, deleteContractor,
       addBOM, updateBOM, deleteBOM,
+      importItemsBatch, importInitialStockBatch, importBOMsBatch, applySmartStageTargetsToProject,
       addProject, updateProject, deleteProject, updateProjectStep, updateProjectStepDetails, addProjectSubStep, deleteProjectStep,
       createStockCountingSession, updateStockCountItem, updateStockCountingSession, deleteStockCountingSession, applyStockCountingAdjustments,
       createStockInDoc, updateStockInDoc, deleteStockInDoc,
       createStockOutDoc, updateStockOutDoc, deleteStockOutDoc,
-      createTransfer, updateTransfer, updateTransferStatus, deleteTransfer,
+      createTransfer, updateTransfer, updateTransferStatus, dispatchTransfer, receiveTransfer, rejectTransfer, deleteTransfer,
       createPurchaseRequest, updatePurchaseRequest, updatePurchaseRequestStatus, deletePurchaseRequest,
       updateProductionLog, deleteProductionLog,
       addOperator, updateOperator, deleteOperator,
@@ -1501,7 +2186,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       searchQuery, setSearchQuery, isScannerOpen, setIsScannerOpen,
       isMobileMenuOpen, setIsMobileMenuOpen,
       isInstalled, setIsInstalled, companyName, setCompanyName,
-      completeInstallation
+      completeInstallation,
+      serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer, resetServerDatabase
     }}>
       {children}
     </AppContext.Provider>

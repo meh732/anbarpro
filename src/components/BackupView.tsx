@@ -11,13 +11,16 @@ export const BackupView: React.FC = () => {
   const { 
     exportDatabaseJSON, importDatabaseJSON, 
     autoBackupIntervalHours, setAutoBackupIntervalHours, 
-    lastBackupTimestamp, backupHistory, t, language
+    lastBackupTimestamp, backupHistory, t, language,
+    serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer, resetServerDatabase
   } = useApp();
   const isFa = language === 'fa';
 
-  const [activeTab, setActiveTab] = useState<'users' | 'backup'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'backup' | 'server'>('users');
   const [networkPort, setNetworkPort] = useState('3000');
   const [portSaveMsg, setPortSaveMsg] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [serverMsg, setServerMsg] = useState<string | null>(null);
 
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({
     type: null,
@@ -105,12 +108,144 @@ export const BackupView: React.FC = () => {
           }`}
         >
           <Database className="w-4 h-4" />
-          {isFa ? 'پشتیبان‌گیری و بازیابی Cloud SQL' : 'Backup & Data Restoration'}
+          {isFa ? 'پشتیبان‌گیری و بازیابی فایل' : 'Backup & Data Restoration'}
+        </button>
+        <button
+          onClick={() => setActiveTab('server')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeTab === 'server'
+              ? 'bg-indigo-600 text-white shadow-2xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Server className="w-4 h-4" />
+          {isFa ? 'سرور لینوکس و همگام‌سازی شبکه' : 'Linux Server & Network Sync'}
         </button>
       </div>
 
       {activeTab === 'users' ? (
         <UserManagementView />
+      ) : activeTab === 'server' ? (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Server Status Header Card */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                  <Server className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">وضعیت سرور مرکزی و همگام‌سازی کلاینت‌ها</h3>
+                  <p className="text-xs text-slate-500">پایگاه داده یکپارچه روی سرور لینوکس جهت دسترسی همزمان چند کامپیوتر در شبکه</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    setIsSyncing(true);
+                    setServerMsg(null);
+                    const ok = await forceSyncWithServer();
+                    setIsSyncing(false);
+                    if (ok) {
+                      setServerMsg('همگام‌سازی با موفقیت انجام شد و آخرین اطلاعات از سرور دریافت گردید.');
+                      setTimeout(() => setServerMsg(null), 4000);
+                    } else {
+                      setServerMsg('خطا در همگام‌سازی با سرور لینوکس.');
+                      setTimeout(() => setServerMsg(null), 4000);
+                    }
+                  }}
+                  disabled={isSyncing}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'در حال همگام‌سازی...' : 'همگام‌سازی فوری با سرور'}</span>
+                </button>
+              </div>
+            </div>
+
+            {serverMsg && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-900 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{serverMsg}</span>
+              </div>
+            )}
+
+            {/* Diagnostics Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
+                <div className="text-xs text-slate-500 font-bold mb-1 flex items-center gap-1.5">
+                  <span className={`w-2.5 h-2.5 rounded-full ${serverSyncStatus === 'connected' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  وضعیت اتصال به سرور:
+                </div>
+                <div className="text-sm font-black text-slate-900">
+                  {serverSyncStatus === 'connected' ? 'آنلاین و فعال' : 'قطع ارتباط'}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  آخرین سینک: {lastSyncTime || 'هم‌اکنون'}
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
+                <div className="text-xs text-slate-500 font-bold mb-1 flex items-center gap-1.5">
+                  <Database className="w-4 h-4 text-indigo-500" />
+                  نسخه پایگاه داده سرور:
+                </div>
+                <div className="text-sm font-black text-slate-900">
+                  نسخه {serverVersion || 1}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  تغییرات به طور خودکار به بقیه اعمال می‌شود
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
+                <div className="text-xs text-slate-500 font-bold mb-1 flex items-center gap-1.5">
+                  <HardDrive className="w-4 h-4 text-indigo-500" />
+                  مسیر فایل پایگاه داده:
+                </div>
+                <div className="text-xs font-mono font-bold text-slate-900 dir-ltr text-right truncate">
+                  {serverInfo?.dataFile || '/data/server_database.json'}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  حجم دیتابیس: {serverInfo?.dataSizeKb || 12} KB
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
+                <div className="text-xs text-slate-500 font-bold mb-1 flex items-center gap-1.5">
+                  <Globe className="w-4 h-4 text-indigo-500" />
+                  پورت شبکه سرویس:
+                </div>
+                <div className="text-sm font-black text-slate-900">
+                  Port 3000 (0.0.0.0)
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  قابل دسترسی از تمام رایانه‌ها
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Network instructions card */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-4">
+            <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <Laptop className="w-4 h-4 text-indigo-600" />
+              راهنمای اتصال سایر کامپیوترها به سرور لینوکس
+            </h4>
+            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+              <p>
+                برای دسترسی کاربران مختلف در انبار یا کارخانه به این سیستم، کافی است در مرورگر کامپیوتر مقصد آدرس IP سرور لینوکس را با پورت <strong>3000</strong> وارد کنید:
+              </p>
+              <div className="p-3 bg-slate-900 text-emerald-400 rounded-xl font-mono dir-ltr text-left">
+                http://[IP_سرور_لینوکس]:3000
+              </div>
+              <p className="text-slate-500">
+                هر تغییری شامل ثبت ورود/خروج کالا، ایجاد پروژه، تعریف قطعات و انتقال بین انبارها که توسط هر کاربری روی هر سیستمی ثبت شود، بلافاصله روی فایل مرکزی سرور لینوکس ذخیره شده و بدون نیاز به رفرش صفحه به سایر کاربران نمایش داده خواهد شد.
+              </p>
+            </div>
+          </div>
+        </div>
       ) : (
         <>
           {/* Main Grid Actions: Manual Backup & Restore */}

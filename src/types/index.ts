@@ -115,20 +115,37 @@ export interface StockOutDoc {
 
 export type TransferStatus = 'Pending' | 'InTransit' | 'Completed' | 'Rejected';
 
+export interface WarehouseTransferItem {
+  itemId: string;
+  quantity: number;
+  unitPrice?: number;
+  pickedQuantity?: number;
+  receivedQuantity?: number;
+  checked?: boolean;
+  notes?: string;
+}
+
 export interface WarehouseTransfer {
   id: string;
-  docNumber: string;
+  docNumber: string; // شماره حواله / درخواست
   date: string;
-  sourceWarehouseId: string;
-  targetWarehouseId: string;
-  registeredBy: string;
-  handlerName: string;
+  sourceWarehouseId: string; // انبار مبدا (مثلاً انبار مرکزی)
+  targetWarehouseId: string; // انبار مقصد (مثلاً انبار پروژه / فرعی)
+  projectId?: string; // شناسه پروژه مربوطه
+  projectName?: string; // نام پروژه
+  requestedBy: string; // ثبت‌کننده درخواست (مسئول آنالیز پروژه)
+  requestDate?: string;
+  dispatchedBy?: string; // تاییدکننده و انباردار مرکزی
+  dispatchDate?: string;
+  receivedBy?: string; // تحویل‌گیرنده در انبار مقصد/پروژه
+  receiveDate?: string;
+  handlerName: string; // راننده / مسئول حمل
+  driverPhone?: string;
+  vehicleNumber?: string;
   status: TransferStatus;
-  items: {
-    itemId: string;
-    quantity: number;
-  }[];
+  items: WarehouseTransferItem[];
   notes?: string;
+  rejectReason?: string;
   createdAt: string;
 }
 
@@ -170,6 +187,7 @@ export interface ProjectStep {
   outsourcingCost?: number;
   outputItemId?: string; // کد یا شناسه کالای نیمه‌ساخته خروجی این مرحله
   outputQuantity?: number; // تعداد تولید شده نیمه‌ساخته
+  scrapAllowancePercent?: number; // درصد ضایعات پیش‌بینی شده مختص این مرحله
   targetWarehouseId?: string; // انبار مقصد پس از اتمام این مرحله
   completedQuantity?: number;
   completedDate?: string;
@@ -236,6 +254,7 @@ export interface Project {
   targetFinishedItemId: string;
   targetQuantity: number;
   producedQuantity: number;
+  scrapAllowancePercent?: number; // درصد ضایعات پیش‌بینی شده کل پروژه
   steps: ProjectStep[];
   description?: string;
 }

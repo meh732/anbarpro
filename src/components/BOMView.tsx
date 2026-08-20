@@ -3,8 +3,11 @@ import { useApp } from '../context/AppContext';
 import { BOM, ProjectStep } from '../types';
 import { 
   Cpu, Plus, Layers, Calculator, CheckCircle2, 
-  AlertTriangle, DollarSign, Edit, Trash2, X, FolderTree, GitBranch, Boxes
+  AlertTriangle, DollarSign, Edit, Trash2, X, FolderTree, GitBranch, Boxes,
+  FileSpreadsheet, Download, Sparkles
 } from 'lucide-react';
+import { BOMExcelImportModal } from './BOMExcelImportModal';
+import { exportBOMsToExcel } from '../utils/excelUtils';
 
 export const BOMView: React.FC = () => {
   const { 
@@ -19,6 +22,7 @@ export const BOMView: React.FC = () => {
   const [selectedBomId, setSelectedBomId] = useState<string>(boms[0]?.id || '');
   const [testProduceQty, setTestProduceQty] = useState<number>(100);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
   const [editingBom, setEditingBom] = useState<BOM | null>(null);
 
   const selectedBom = boms.find(b => b.id === selectedBomId) || boms[0];
@@ -152,15 +156,35 @@ export const BOMView: React.FC = () => {
           </p>
         </div>
 
-        {canAdd && (
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={handleOpenAdd}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
+            onClick={() => setIsExcelImportModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="ورود فرمول‌های ساخت (BOM) از طریق فایل اکسل"
           >
-            <Plus className="w-4 h-4" />
-            تعریف فرمول ساخت جدید
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>ورود فرمول‌ها از اکسل</span>
           </button>
-        )}
+
+          <button
+            onClick={() => exportBOMsToExcel(boms, items)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="خروجی کامل فرمول‌های ساخت به فایل اکسل"
+          >
+            <Download className="w-4 h-4 text-slate-600" />
+            <span>خروجی اکسل</span>
+          </button>
+
+          {canAdd && (
+            <button
+              onClick={handleOpenAdd}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              تعریف فرمول ساخت جدید
+            </button>
+          )}
+        </div>
       </div>
 
       {/* BOM Selector Grid */}
@@ -543,6 +567,12 @@ export const BOMView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* BOM Excel Import Modal */}
+      <BOMExcelImportModal
+        isOpen={isExcelImportModalOpen}
+        onClose={() => setIsExcelImportModalOpen(false)}
+      />
     </div>
   );
 };

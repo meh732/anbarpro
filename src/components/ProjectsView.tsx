@@ -7,8 +7,9 @@ import {
   Trash2, ArrowUp, ArrowDown, Cpu, ArrowRightLeft, AlertTriangle, Layers,
   Boxes, Warehouse, Check, FileCheck, ShieldAlert, Sparkles,
   PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3,
-  Pencil, Edit, Eye
+  Pencil, Edit, Eye, Calculator
 } from 'lucide-react';
+import { SmartStageScalingModal } from './SmartStageScalingModal';
 
 // Helper Component for True 2D Graphical Organizational Tree Diagram with Connecting Branch Lines
 const GraphicalOrgTreeNode: React.FC<{
@@ -498,6 +499,7 @@ export const ProjectsView: React.FC = () => {
   const [editProjEndDate, setEditProjEndDate] = useState('');
   const [editProjDescription, setEditProjDescription] = useState('');
   const [editProjTargetItemId, setEditProjTargetItemId] = useState('');
+  const [editProjScrapPercent, setEditProjScrapPercent] = useState<number>(0);
 
   // Edit Step Modal state
   const [editingStepData, setEditingStepData] = useState<{ step: ProjectStep; projectId: string } | null>(null);
@@ -508,10 +510,14 @@ export const ProjectsView: React.FC = () => {
   const [editStepOperators, setEditStepOperators] = useState('');
   const [editStepOutputItemId, setEditStepOutputItemId] = useState('');
   const [editStepOutputQty, setEditStepOutputQty] = useState(1);
+  const [editStepScrapPercent, setEditStepScrapPercent] = useState<number>(0);
   const [editStepStatus, setEditStepStatus] = useState<'Pending' | 'InProgress' | 'Completed'>('Pending');
 
   // BOM Explosion Modal state
   const [bomExplosionProject, setBomExplosionProject] = useState<Project | null>(null);
+
+  // Smart BOM Scaling Modal state
+  const [smartScalingProject, setSmartScalingProject] = useState<Project | null>(null);
 
   // Tree Diagram & Management Reports Modal state
   const [treeReportProject, setTreeReportProject] = useState<Project | null>(null);
@@ -537,6 +543,7 @@ export const ProjectsView: React.FC = () => {
   const [subStepTitle, setSubStepTitle] = useState('');
   const [subStepOutputItemId, setSubStepOutputItemId] = useState('');
   const [subStepOutputQty, setSubStepOutputQty] = useState<number>(1);
+  const [subStepScrapPercent, setSubStepScrapPercent] = useState<number>(0);
   const [subStepContractorId, setSubStepContractorId] = useState('');
   const [subStepCost, setSubStepCost] = useState(0);
 
@@ -549,6 +556,7 @@ export const ProjectsView: React.FC = () => {
   const [projectManager, setProjectManager] = useState('مهندس رضایی');
   const [targetFinishedItemId, setTargetFinishedItemId] = useState(items.find(i => i.itemType === 'Finished')?.id || items[0]?.id || '');
   const [targetQuantity, setTargetQuantity] = useState(100);
+  const [scrapAllowancePercent, setScrapAllowancePercent] = useState<number>(0);
   const [description, setDescription] = useState('');
 
   // Custom Steps Form State (With Output Items & Default Step 1: Material Transfer)
@@ -558,28 +566,32 @@ export const ProjectsView: React.FC = () => {
       name: 'تحویل و تخصیص مواد اولیه از انبار مرکزی به قفسه پروژه در خط تولید', 
       operator: 'انباردار انبار مرکزی', 
       isOutsourced: false,
-      outputItemId: '' 
+      outputItemId: '',
+      scrapAllowancePercent: 0
     },
     { 
       id: 'step-init-2', 
       name: 'مونتاژ برد الکترونیکی (مونتاژ SMD و لحیم‌کاری)', 
       operator: 'تیم مونتاژ الکترونیک', 
       isOutsourced: false,
-      outputItemId: items.find(i => i.itemType === 'SemiFinished')?.id || ''
+      outputItemId: items.find(i => i.itemType === 'SemiFinished')?.id || '',
+      scrapAllowancePercent: 2
     },
     { 
       id: 'step-init-3', 
       name: 'تست عملکردی، کالیبراسیون و کنترل کیفیت QC', 
       operator: 'تکنیسین تست و QC', 
       isOutsourced: false,
-      outputItemId: ''
+      outputItemId: '',
+      scrapAllowancePercent: 0
     },
     { 
       id: 'step-init-4', 
       name: 'مونتاژ مکانیکی در قاب، بسته‌بندی و تحویل به انبار محصول نهایی', 
       operator: 'اپراتور مونتاژ نهایی', 
       isOutsourced: false,
-      outputItemId: items.find(i => i.itemType === 'Finished')?.id || ''
+      outputItemId: items.find(i => i.itemType === 'Finished')?.id || '',
+      scrapAllowancePercent: 1
     },
   ];
   const [customSteps, setCustomSteps] = useState(defaultInitialSteps);
@@ -588,6 +600,7 @@ export const ProjectsView: React.FC = () => {
     setCode(`PRJ-2026-P${Math.floor(10 + Math.random() * 90)}`);
     setName('');
     setClient('');
+    setScrapAllowancePercent(0);
     const semiItem = items.find(i => i.itemType === 'SemiFinished')?.id || '';
     const finItem = targetFinishedItemId || items.find(i => i.itemType === 'Finished')?.id || '';
 
@@ -597,28 +610,32 @@ export const ProjectsView: React.FC = () => {
         name: 'تحویل و تخصیص قطعات از انبار مرکزی به قفسه پروژه در خط تولید', 
         operator: 'انباردار انبار مرکزی', 
         isOutsourced: false,
-        outputItemId: ''
+        outputItemId: '',
+        scrapAllowancePercent: 0
       },
       { 
         id: `step-${Date.now()}-2`, 
         name: 'مونتاژ برد الکترونیکی (مونتاژ SMD و لحیم‌کاری)', 
         operator: 'تیم مونتاژ الکترونیک', 
         isOutsourced: false,
-        outputItemId: semiItem
+        outputItemId: semiItem,
+        scrapAllowancePercent: 2
       },
       { 
         id: `step-${Date.now()}-3`, 
         name: 'تست عملکردی، برنامه‌ریزی و کنترل کیفیت QC', 
         operator: 'تکنیسین کنترل کیفیت', 
         isOutsourced: false,
-        outputItemId: ''
+        outputItemId: '',
+        scrapAllowancePercent: 0
       },
       { 
         id: `step-${Date.now()}-4`, 
         name: 'مونتاژ مکانیکی، بسته‌بندی و تحویل نهایی به انبار محصول', 
         operator: 'اپراتور مونتاژ نهایی', 
         isOutsourced: false,
-        outputItemId: finItem
+        outputItemId: finItem,
+        scrapAllowancePercent: 1
       },
     ]);
     setIsModalOpen(true);
@@ -638,6 +655,7 @@ export const ProjectsView: React.FC = () => {
     setEditProjEndDate(proj.endDate || '');
     setEditProjDescription(proj.description || '');
     setEditProjTargetItemId(proj.targetFinishedItemId || '');
+    setEditProjScrapPercent(proj.scrapAllowancePercent || 0);
   };
 
   const handleSaveEditProject = (e: React.FormEvent) => {
@@ -656,6 +674,7 @@ export const ProjectsView: React.FC = () => {
       endDate: editProjEndDate,
       description: editProjDescription,
       targetFinishedItemId: editProjTargetItemId,
+      scrapAllowancePercent: Number(editProjScrapPercent) || 0,
     });
 
     setEditingProject(null);
@@ -677,6 +696,7 @@ export const ProjectsView: React.FC = () => {
     setEditStepOperators(step.assignedOperators?.join(', ') || '');
     setEditStepOutputItemId(step.outputItemId || '');
     setEditStepOutputQty(step.outputQuantity || 1);
+    setEditStepScrapPercent(step.scrapAllowancePercent || 0);
     setEditStepStatus(step.status || 'Pending');
   };
 
@@ -699,6 +719,7 @@ export const ProjectsView: React.FC = () => {
         : editStepOperators ? editStepOperators.split(',').map(s => s.trim()) : ['خط مونتاژ داخلی'],
       outputItemId: editStepOutputItemId || undefined,
       outputQuantity: editStepOutputQty || undefined,
+      scrapAllowancePercent: Number(editStepScrapPercent) || 0,
     });
 
     setEditingStepData(null);
@@ -766,12 +787,14 @@ export const ProjectsView: React.FC = () => {
       outsourcingCost: subStepCost || undefined,
       outputItemId: subStepOutputItemId || undefined,
       outputQuantity: subStepOutputQty || undefined,
+      scrapAllowancePercent: Number(subStepScrapPercent) || 0,
     });
 
     setAddingSubStepTo(null);
     setSubStepTitle('');
     setSubStepOutputItemId('');
     setSubStepOutputQty(1);
+    setSubStepScrapPercent(0);
     setSubStepContractorId('');
     setSubStepCost(0);
   };
@@ -801,6 +824,7 @@ export const ProjectsView: React.FC = () => {
         contractorName: selectedCont?.name,
         outsourcingCost: st.outsourcingCost,
         outputItemId: st.outputItemId || undefined,
+        scrapAllowancePercent: Number(st.scrapAllowancePercent) || 0,
       };
     });
 
@@ -815,6 +839,7 @@ export const ProjectsView: React.FC = () => {
       projectManager,
       targetFinishedItemId,
       targetQuantity,
+      scrapAllowancePercent: Number(scrapAllowancePercent) || 0,
       producedQuantity: 0,
       description,
       steps: stepsToSave,
@@ -1011,6 +1036,11 @@ export const ProjectsView: React.FC = () => {
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badge.style}`}>
                       {badge.label}
                     </span>
+                    {(proj.scrapAllowancePercent !== undefined && proj.scrapAllowancePercent > 0) && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-50 text-amber-800 border border-amber-300">
+                        ضایعات مجاز: {proj.scrapAllowancePercent}٪
+                      </span>
+                    )}
                   </div>
                   <h3 className="font-bold text-base text-slate-900">{proj.name}</h3>
                   <div className="text-xs text-slate-500 flex flex-wrap items-center gap-4">
@@ -1081,11 +1111,21 @@ export const ProjectsView: React.FC = () => {
                       <span>گردش و مراحل ۵ گانه تولید پروژه:</span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSmartScalingProject(proj)}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                        title="محاسبه و تنظیم خودکار اهداف مراحل و قطعات نیمه‌ساخته بر اساس درخت فرمول ساخت BOM"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-100" />
+                        <span>محاسبه هوشمند اهداف مراحل (BOM)</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => setTreeReportProject(proj)}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
                       >
                         <FolderTree className="w-4 h-4" />
                         <span>نمودار درختی و گزارش مدیریتی</span>
@@ -1094,10 +1134,10 @@ export const ProjectsView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setBomExplosionProject(proj)}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all"
+                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
                       >
                         <Boxes className="w-4 h-4" />
-                        <span>آنالیز قطعات، ضایعات و صدور حواله تحویل به قفسه پروژه (BOM Explosion)</span>
+                        <span>آنالیز قطعات و حواله به قفسه (BOM Explosion)</span>
                       </button>
                     </div>
                   </div>
@@ -1218,6 +1258,19 @@ export const ProjectsView: React.FC = () => {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ضریب ضایعات پیش‌فرض پروژه (٪)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={scrapAllowancePercent}
+                    onChange={(e) => setScrapAllowancePercent(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 font-mono focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
                 {/* BOM Auto-link status indicator */}
                 {(() => {
                   const selectedItemObj = items.find(i => i.id === targetFinishedItemId);
@@ -1317,7 +1370,7 @@ export const ProjectsView: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-100">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1 border-t border-slate-100">
                         <div>
                           <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">اپراتور / تیم مسئول</label>
                           <input
@@ -1343,7 +1396,21 @@ export const ProjectsView: React.FC = () => {
                           </select>
                         </div>
 
-                        <div className="flex items-center gap-2 pt-2 sm:col-span-2">
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">ضایعات اختصاصی مرحله (٪)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="0.5"
+                            placeholder="0"
+                            value={step.scrapAllowancePercent ?? 0}
+                            onChange={(e) => handleUpdateStepRow(step.id, 'scrapAllowancePercent', Math.max(0, parseFloat(e.target.value) || 0))}
+                            className="w-full px-2 py-1 border border-slate-200 rounded-md text-[11px] font-mono focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2 sm:col-span-3">
                           <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 font-semibold">
                             <input
                               type="checkbox"
@@ -1455,8 +1522,20 @@ export const ProjectsView: React.FC = () => {
                 </select>
               </div>
 
-              {subStepOutputItemId && (
-                <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">ضایعات اختصاصی این زیرمرحله (٪)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={subStepScrapPercent}
+                    onChange={(e) => setSubStepScrapPercent(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                {subStepOutputItemId && (
                   <div>
                     <label className="block text-slate-700 font-semibold mb-1">تیراژ/تعداد خروجی زیرمرحله</label>
                     <input
@@ -1467,7 +1546,11 @@ export const ProjectsView: React.FC = () => {
                       className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
+                )}
+              </div>
 
+              {subStepOutputItemId && (
+                <>
                   {/* Active BOM Link Indicator */}
                   {(() => {
                     const matchedBom = boms.find(b => b.finishedItemId === subStepOutputItemId && b.isActive);
@@ -1665,20 +1748,34 @@ export const ProjectsView: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">محصول خروجی نهایی پروژه</label>
-                <select
-                  value={editProjTargetItemId}
-                  onChange={(e) => setEditProjTargetItemId(e.target.value)}
-                  className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">-- بدون انتخاب --</option>
-                  {items.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.code})
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">محصول خروجی نهایی پروژه</label>
+                  <select
+                    value={editProjTargetItemId}
+                    onChange={(e) => setEditProjTargetItemId(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">-- بدون انتخاب --</option>
+                    {items.map(item => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">ضریب ضایعات پیش‌فرض پروژه (٪)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={editProjScrapPercent}
+                    onChange={(e) => setEditProjScrapPercent(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1824,18 +1921,32 @@ export const ProjectsView: React.FC = () => {
                 </select>
               </div>
 
-              {editStepOutputItemId && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">تیراژ خروجی به ازای هر واحد محصول</label>
+                  <label className="block text-slate-700 font-semibold mb-1">ضایعات اختصاصی این مرحله (٪)</label>
                   <input
                     type="number"
-                    min={1}
-                    value={editStepOutputQty}
-                    onChange={(e) => setEditStepOutputQty(Number(e.target.value))}
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={editStepScrapPercent}
+                    onChange={(e) => setEditStepScrapPercent(Math.max(0, parseFloat(e.target.value) || 0))}
                     className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-              )}
+                {editStepOutputItemId && (
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">تیراژ خروجی به ازای هر واحد محصول</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={editStepOutputQty}
+                      onChange={(e) => setEditStepOutputQty(Number(e.target.value))}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
+              </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
                 <button
@@ -2711,6 +2822,15 @@ export const ProjectsView: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Smart Stage Scaling Modal */}
+      {smartScalingProject && (
+        <SmartStageScalingModal
+          project={smartScalingProject}
+          isOpen={!!smartScalingProject}
+          onClose={() => setSmartScalingProject(null)}
+        />
+      )}
     </div>
   );
 };

@@ -5,8 +5,12 @@ import {
   Plus, Search, Filter, Edit, Trash2, QrCode, Boxes, 
   AlertCircle, CheckCircle2, FileSpreadsheet, X, FolderTree, 
   Tag, ChevronRight, Layers, Check, Eye, Printer, Building2,
-  MapPin, Barcode, FileText, ShieldCheck, ChevronDown, Network
+  MapPin, Barcode, FileText, ShieldCheck, ChevronDown, Network,
+  Download, Upload, Sparkles
 } from 'lucide-react';
+import { ItemsExcelImportModal } from './ItemsExcelImportModal';
+import { InitialStockExcelImportModal } from './InitialStockExcelImportModal';
+import { exportItemsToExcel } from '../utils/excelUtils';
 
 const BarcodeVisual: React.FC<{ code: string; name?: string; location?: string }> = ({ code, name, location }) => {
   const bars = useMemo(() => {
@@ -69,6 +73,8 @@ export const ItemsView: React.FC = () => {
   const [kardexWarehouseId, setKardexWarehouseId] = useState<string>('ALL');
   const [printableLabelItem, setPrintableLabelItem] = useState<Item | null>(null);
   const [printableCatalogItem, setPrintableCatalogItem] = useState<Item | null>(null);
+  const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
+  const [isInitialStockModalOpen, setIsInitialStockModalOpen] = useState(false);
 
   const handleCloseViewing = () => {
     setViewingItem(null);
@@ -563,13 +569,41 @@ export const ItemsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Excel Import & Initial Stock Dropdown / Buttons */}
+          <button
+            onClick={() => setIsExcelImportModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="ورود و تعریف دسته‌ای کالاها از طریق فایل اکسل"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>ورود کالا از اکسل</span>
+          </button>
+
+          <button
+            onClick={() => setIsInitialStockModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="ثبت مقادیر موجودی ابتدای دوره و افتتاحیه انبارها از طریق اکسل"
+          >
+            <Boxes className="w-4 h-4 text-blue-600" />
+            <span>ثبت موجودی اول دوره (اکسل)</span>
+          </button>
+
+          <button
+            onClick={() => exportItemsToExcel(items, itemGroups)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="خروجی اطلاعات کالاها به اکسل"
+          >
+            <Download className="w-4 h-4 text-slate-600" />
+            <span>خروجی اکسل</span>
+          </button>
+
           <button
             onClick={handleOpenGroupModal}
             className="glass-btn-secondary !rounded-xl py-2 px-3.5"
           >
             <FolderTree className="w-4 h-4 text-indigo-600" />
-            <span>مهندسی ساختار درختی کالا</span>
+            <span>مهندسی ساختار درختی</span>
           </button>
 
           <button
@@ -1561,6 +1595,17 @@ export const ItemsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Excel Batch Import Modals */}
+      <ItemsExcelImportModal
+        isOpen={isExcelImportModalOpen}
+        onClose={() => setIsExcelImportModalOpen(false)}
+      />
+
+      <InitialStockExcelImportModal
+        isOpen={isInitialStockModalOpen}
+        onClose={() => setIsInitialStockModalOpen(false)}
+      />
     </div>
   );
 };
