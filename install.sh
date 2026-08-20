@@ -111,9 +111,66 @@ run_npm_with_progress() {
     fi
 }
 
+# Setup SWAP space to prevent low-RAM Linux servers from hanging during package install and asset compilation
+setup_swap_if_needed() {
+    echo -e "\n${YELLOW}🛡️ Checking SWAP configuration to prevent low-memory system freeze...${NC}"
+    
+    # Check current swap size
+    local total_swap=0
+    if [ -f /proc/swaps ]; then
+        total_swap=$(free -m | grep -i swap | awk '{print $2}')
+    fi
+    total_swap=${total_swap:-0}
+    
+    if [ "$total_swap" -gt 500 ]; then
+        echo -e "   ${GREEN}✅ SWAP space is already configured (${total_swap} MB).${NC}"
+        return 0
+    fi
+    
+    echo -e "   ${YELLOW}⚠️ Insufficient or NO swap space detected (${total_swap} MB).${NC}"
+    echo -e "   ${YELLOW}⚙️ Automatically configuring a 2GB swap file at /swapfile to ensure stable build...${NC}"
+    
+    # Verify free disk space
+    local free_disk=$(df -m / | awk 'NR==2 {print $4}')
+    if [ "$free_disk" -lt 3000 ]; then
+        echo -e "   ${RED}❌ Disk space is very low (${free_disk}MB). Skipping swap creation.${NC}"
+        return 1
+    fi
+    
+    # Disable swap if exists
+    swapoff /swapfile 2>/dev/null || true
+    rm -f /swapfile
+    
+    # Create swap file
+    if command -v fallocate &> /dev/null; then
+        fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 2>/dev/null
+    else
+        dd if=/dev/zero of=/swapfile bs=1M count=2048 2>/dev/null
+    fi
+    
+    if [ -f /swapfile ]; then
+        chmod 600 /swapfile
+        mkswap /swapfile &>/dev/null
+        swapon /swapfile &>/dev/null
+        
+        # Add to fstab if not present
+        if ! grep -q "/swapfile" /etc/fstab; then
+            echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
+        fi
+        
+        local new_swap=$(free -m | grep -i swap | awk '{print $2}')
+        echo -e "   ${GREEN}✅ 2GB SWAP space successfully created and enabled (New swap size: ${new_swap} MB).${NC}"
+    else
+        echo -e "   ${RED}❌ Failed to create swap file.${NC}"
+    fi
+}
+
 # Fresh installation process
 install_anbarpro() {
     echo -e "\n${YELLOW}🔄 Starting AnbarPro installation process...${NC}"
+    
+    # Ensure swap is setup to avoid freeze during build/npm install
+    setup_swap_if_needed
     
     # 1. Ask for destination directory
     read -p "📂 Enter installation directory [Default: /usr/local/anbarpro]: " INSTALL_DIR
@@ -215,13 +272,13 @@ install_anbarpro() {
     
     # 5. Build
     echo -e "\n${YELLOW}📦 Compiling project and building assets (Vite)...${NC}"
-    npm run build
+    NODE_OPTIONS="--max-old-space-size=1536" npm run build
     
     # Auto-repair fallback if native binary fails during build
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${YELLOW}🔄 Attempting automatic native bindings repair and rebuilding...${NC}"
         npm install --save-dev --force @tailwindcss/oxide @tailwindcss/oxide-linux-x64-gnu
-        npm run build
+        NODE_OPTIONS="--max-old-space-size=1536" npm run build
     fi
     
     if [ ! -f "dist/server.cjs" ]; then
@@ -400,6 +457,10 @@ EOF
 # Update System
 update_anbarpro() {
     echo -e "\n${YELLOW}🔄 Checking system installation paths...${NC}"
+    
+    # Ensure swap is setup to avoid freeze during update build/npm install
+    setup_swap_if_needed
+    
     INSTALL_DIR="/usr/local/anbarpro"
     if [ ! -d "$INSTALL_DIR" ]; then
         read -p "📂 Enter AnbarPro installation folder path [/usr/local/anbarpro]: " INPUT_DIR
@@ -443,13 +504,13 @@ update_anbarpro() {
         run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
     fi
     
-    npm run build
+    NODE_OPTIONS="--max-old-space-size=1536" npm run build
     
     # Auto-repair fallback if native binary fails during build
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${YELLOW}🔄 Attempting automatic native bindings repair and rebuilding...${NC}"
         npm install --save-dev --force @tailwindcss/oxide @tailwindcss/oxide-linux-x64-gnu
-        npm run build
+        NODE_OPTIONS="--max-old-space-size=1536" npm run build
     fi
     
     if [ ! -f "dist/server.cjs" ]; then
