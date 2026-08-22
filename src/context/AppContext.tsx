@@ -3,15 +3,25 @@ import { translations, Language } from '../utils/translations';
 import { 
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, ProjectStep, Operator, User, UserRole,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
-  TraceabilityEvent, SystemNotification, AuditLog, Contractor, StockCountingSession, StockCountingItem 
+  TraceabilityEvent, SystemNotification, NotificationType, AuditLog, Contractor, StockCountingSession, StockCountingItem,
+  ChatMessage, ChatChannel, ChatAttachment
 } from '../types';
 import { InitialStockParsedRow } from '../utils/excelUtils';
 import { calculateAllProjectStageTargets, applySmartTargetsToProjectSteps } from '../utils/smartBOMCalculator';
 import { 
+  verifyPassword, hashPassword, ensureUsersPasswordsHashed, 
+  getAccountLockoutStatus, recordFailedLogin, recordSuccessfulLogin 
+} from '../utils/security';
+import { 
+  soundEngine, requestBrowserNotificationPermission, sendNativeBrowserNotification, 
+  getBrowserNotificationPermission, registerNotificationNavigationHandler 
+} from '../utils/browserNotifications';
+import { 
   INITIAL_ITEMS, INITIAL_ITEM_GROUPS, INITIAL_WAREHOUSES, INITIAL_CONTRACTORS, INITIAL_INVENTORY, INITIAL_BOMS, 
   INITIAL_PROJECTS, INITIAL_OPERATORS, INITIAL_USERS, INITIAL_STOCK_COUNTINGS, INITIAL_STOCK_IN_DOCS, 
   INITIAL_STOCK_OUT_DOCS, INITIAL_TRANSFERS, INITIAL_PURCHASE_REQUESTS, 
-  INITIAL_PRODUCTION_LOGS, INITIAL_MATERIAL_HANDOVERS, INITIAL_NOTIFICATIONS, INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS 
+  INITIAL_PRODUCTION_LOGS, INITIAL_MATERIAL_HANDOVERS, INITIAL_NOTIFICATIONS, INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS,
+  INITIAL_CHANNELS, INITIAL_MESSAGES
 } from '../data/mockData';
 
 interface AppContextType {
@@ -25,6 +35,8 @@ interface AppContextType {
   addUser: (user: Omit<User, 'id'>) => void;
   updateUser: (id: string, updated: Partial<User>) => void;
   deleteUser: (id: string) => void;
+  changePassword: (userId: string, oldPass: string, newPass: string) => { success: boolean; message: string };
+  adminResetPassword: (userId: string, newPass: string) => { success: boolean; message: string };
   hasTabPermission: (tabId: string) => boolean;
   hasActionPermission: (action: 'add' | 'edit' | 'delete' | 'export') => boolean;
   
@@ -49,8 +61,36 @@ interface AppContextType {
   productionLogs: ProductionLog[];
   materialHandovers: MaterialHandover[];
   notifications: SystemNotification[];
+  messages: ChatMessage[];
+  channels: ChatChannel[];
   traceabilityEvents: TraceabilityEvent[];
   auditLogs: AuditLog[];
+  
+  // Instant Messaging & Chat
+  sendChatMessage: (data: { message: string; channelId?: string; recipientId?: string; attachments?: ChatAttachment[]; replyToId?: string }) => Promise<boolean>;
+  deleteChatMessage: (id: string) => Promise<boolean>;
+  toggleMessageReaction: (messageId: string, emoji: string) => Promise<boolean>;
+  unreadMessagesCount: number;
+
+  // Browser & Sound Notifications
+  sendSystemNotification: (notif: { 
+    type: NotificationType; 
+    title: string; 
+    message: string; 
+    linkTab?: string; 
+    targetUserId?: string; 
+    targetRole?: UserRole | 'All'; 
+    priority?: 'normal' | 'urgent' | 'high'; 
+    senderName?: string; 
+    metadata?: Record<string, any>;
+  }) => void;
+  browserNotificationPermission: NotificationPermission | 'unsupported';
+  requestNotificationPermission: () => Promise<NotificationPermission | 'unsupported'>;
+  soundEnabled: boolean;
+  setSoundEnabled: (enabled: boolean) => void;
+  testBrowserNotification: () => void;
+  unreadCount: number;
+
   
   // Actions
   addMaterialHandover: (handover: Omit<MaterialHandover, 'id' | 'createdAt'>) => void;
@@ -262,7 +302,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${STORAGE_KEY}_company_name`, name);
   };
 
-  const [users, setUsers] = useState<User[]>(() => loadStorage('users', INITIAL_USERS));
+  const [users, setUsers] = useState<User[]>(() => {
+    const raw = loadStorage('users', INITIAL_USERS);
+    return ensureUsersPasswordsHashed(raw);
+  });
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     const isInst = localStorage.getItem(`${STORAGE_KEY}_is_installed`) === 'true';
@@ -330,8 +373,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [productionLogs, setProductionLogs] = useState<ProductionLog[]>(() => loadStorage('productionLogs', INITIAL_PRODUCTION_LOGS));
   const [materialHandovers, setMaterialHandovers] = useState<MaterialHandover[]>(() => loadStorage('materialHandovers', INITIAL_MATERIAL_HANDOVERS));
   const [notifications, setNotifications] = useState<SystemNotification[]>(() => loadStorage('notifications', INITIAL_NOTIFICATIONS));
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadStorage('messages', INITIAL_MESSAGES));
+  const [channels, setChannels] = useState<ChatChannel[]>(INITIAL_CHANNELS);
+  const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission | 'unsupported'>(getBrowserNotificationPermission());
+  const [soundEnabled, setSoundEnabledState] = useState<boolean>(soundEngine.isSoundEnabled());
   const [traceabilityEvents, setTraceabilityEvents] = useState<TraceabilityEvent[]>(() => loadStorage('traceabilityEvents', INITIAL_TRACEABILITY));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadStorage('auditLogs', INITIAL_AUDIT_LOGS));
+
+  const setSoundEnabled = (enabled: boolean) => {
+    soundEngine.setSoundEnabled(enabled);
+    setSoundEnabledState(enabled);
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -516,12 +568,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${STORAGE_KEY}_productionLogs`, JSON.stringify(productionLogs));
     localStorage.setItem(`${STORAGE_KEY}_materialHandovers`, JSON.stringify(materialHandovers));
     localStorage.setItem(`${STORAGE_KEY}_notifications`, JSON.stringify(notifications));
+    localStorage.setItem(`${STORAGE_KEY}_messages`, JSON.stringify(messages));
     localStorage.setItem(`${STORAGE_KEY}_traceabilityEvents`, JSON.stringify(traceabilityEvents));
     localStorage.setItem(`${STORAGE_KEY}_auditLogs`, JSON.stringify(auditLogs));
   }, [
     items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
-    productionLogs, materialHandovers, notifications, traceabilityEvents, auditLogs
+    productionLogs, materialHandovers, notifications, messages, traceabilityEvents, auditLogs
   ]);
 
   // =========================================================================
@@ -547,6 +600,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.productionLogs) setProductionLogs(data.productionLogs);
     if (data.materialHandovers) setMaterialHandovers(data.materialHandovers);
     if (data.notifications) setNotifications(data.notifications);
+    if (data.messages) setMessages(data.messages);
+    if (data.channels) setChannels(data.channels);
     if (data.traceabilityEvents) setTraceabilityEvents(data.traceabilityEvents);
     if (data.auditLogs) setAuditLogs(data.auditLogs);
     if (data.users && data.users.length > 0) setUsers(data.users);
@@ -579,6 +634,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         items, itemGroups, warehouses, contractors, inventory, boms, projects,
         operators, stockCountings, stockInDocs, stockOutDocs, transfers,
         purchaseRequests, productionLogs, materialHandovers, notifications,
+        messages, channels,
         traceabilityEvents, auditLogs, users, isInstalled, companyName,
         autoBackupIntervalHours, lastBackupTimestamp, backupHistory
       };
@@ -898,19 +954,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Auth & User Management Logic
   const login = (username: string, pass: string): { success: boolean; message: string } => {
-    const found = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+    const cleanUser = username.trim().toLowerCase();
+    
+    // Check Brute-Force lockout
+    const lockout = getAccountLockoutStatus(cleanUser);
+    if (lockout.isLocked) {
+      return { 
+        success: false, 
+        message: `حساب کاربری به دلیل ۵ بار تلاش ناموفق موقتاً قفل است. لطفاً ${lockout.remainingSeconds} ثانیه دیگر مجدداً تلاش نمایید.` 
+      };
+    }
+
+    const found = users.find(u => u.username.toLowerCase() === cleanUser);
     if (!found) {
-      return { success: false, message: 'نام کاربری وارد شده در سیستم وجود ندارد.' };
+      const lockRes = recordFailedLogin(cleanUser);
+      if (lockRes.isNowLocked) {
+        return { 
+          success: false, 
+          message: `حساب کاربری به دلیل ۵ بار تلاش ناموفق موقتاً به مدت ۳۰ ثانیه قفل شد.` 
+        };
+      }
+      return { success: false, message: 'نام کاربری یا رمز عبور نامعتبر است.' };
     }
+
     if (found.isActive === false) {
-      return { success: false, message: 'حساب کاربری شما غیرفعال شده است. لطفا با مدیر سیستم تماس بگیرید.' };
+      return { success: false, message: 'حساب کاربری شما غیرفعال شده است. لطفاً با مدیر سیستم تماس بگیرید.' };
     }
-    if (found.password && found.password !== pass) {
-      return { success: false, message: 'رمز عبور اشتباه است.' };
+
+    // Verify Password using SHA-256 Salted comparison
+    const isPassValid = verifyPassword(pass, found.password, found.username);
+    if (!isPassValid) {
+      const lockRes = recordFailedLogin(cleanUser);
+      if (lockRes.isNowLocked) {
+        return { 
+          success: false, 
+          message: `حساب کاربری به دلیل ۵ بار تلاش متوالی اشتباه موقتاً قفل شد. لطفاً ۳۰ ثانیه دیگر تلاش کنید.` 
+        };
+      }
+      return { 
+        success: false, 
+        message: `رمز عبور اشتباه است. (${lockRes.attemptsLeft} تلاش دیگر تا قفل موقت)` 
+      };
     }
-    setCurrentUser(found);
+
+    // Login successful: reset failed attempt counter
+    recordSuccessfulLogin(cleanUser);
+
+    // Auto-upgrade legacy password to cryptographic hash if needed
+    const secureHashedPassword = hashPassword(pass, found.username);
+    const updatedUserObj: User = {
+      ...found,
+      password: secureHashedPassword
+    };
+
+    if (found.password !== secureHashedPassword) {
+      setUsers(prev => prev.map(u => u.id === found.id ? updatedUserObj : u));
+    }
+
+    setCurrentUser(updatedUserObj);
     setIsAuthenticated(true);
-    addAudit('ورود به سیستم', 'کاربر', found.id, `ورود موفقیت‌آمیز کاربر ${found.fullName}`);
+    addAudit('ورود به سیستم', 'کاربر', found.id, `ورود امن و احراز هویت موفقیت‌آمیز کاربر ${found.fullName}`);
     return { success: true, message: 'ورود با موفقیت انجام شد.' };
   };
 
@@ -920,22 +1023,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addUser = (userData: Omit<User, 'id'>) => {
+    const rawPass = userData.password || '123456';
+    const securedPass = hashPassword(rawPass, userData.username);
+
     const newUser: User = {
       ...userData,
       id: `usr-${Date.now()}`,
+      password: securedPass,
       isActive: userData.isActive ?? true,
       allowedTabs: userData.allowedTabs || ['dashboard']
     };
     setUsers(prev => [...prev, newUser]);
-    addAudit('تعریف کاربر جدید', 'کاربر', newUser.id, `ایجاد کاربر ${newUser.fullName} با نقش ${newUser.role}`);
+    addAudit('تعریف کاربر جدید', 'کاربر', newUser.id, `ایجاد کاربر ${newUser.fullName} با نقش ${newUser.role} (رمز عبور رمزنگاری شد)`);
   };
 
   const updateUser = (id: string, updated: Partial<User>) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updated } : u));
+    setUsers(prev => prev.map(u => {
+      if (u.id !== id) return u;
+      let finalPassword = u.password;
+      if (updated.password && updated.password !== u.password) {
+        // Hash the new password if it's not already a hash
+        finalPassword = hashPassword(updated.password, (updated.username || u.username));
+      }
+      return {
+        ...u,
+        ...updated,
+        password: finalPassword
+      };
+    }));
+
     if (currentUser.id === id) {
-      setCurrentUser(prev => ({ ...prev, ...updated }));
+      setCurrentUser(prev => {
+        let finalPassword = prev.password;
+        if (updated.password && updated.password !== prev.password) {
+          finalPassword = hashPassword(updated.password, (updated.username || prev.username));
+        }
+        return { ...prev, ...updated, password: finalPassword };
+      });
     }
     addAudit('ویرایش کاربر', 'کاربر', id, `بروزرسانی مشخصات کاربر ${updated.fullName || id}`);
+  };
+
+  const changePassword = (userId: string, oldPass: string, newPass: string): { success: boolean; message: string } => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return { success: false, message: 'کاربر مورد نظر یافت نشد.' };
+
+    if (!verifyPassword(oldPass, target.password, target.username)) {
+      return { success: false, message: 'رمز عبور فعلی نادرست می‌باشد.' };
+    }
+
+    if (!newPass || newPass.length < 4) {
+      return { success: false, message: 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد.' };
+    }
+
+    const hashedNew = hashPassword(newPass, target.username);
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: hashedNew } : u));
+    
+    if (currentUser.id === userId) {
+      setCurrentUser(prev => ({ ...prev, password: hashedNew }));
+    }
+
+    addAudit('تغییر رمز عبور', 'کاربر', userId, `تغییر امن رمز عبور توسط ${target.fullName}`);
+    return { success: true, message: 'رمز عبور شما با موفقیت تغییر کرد و با استاندارد امنیتی SHA-256 رمزنگاری شد.' };
+  };
+
+  const adminResetPassword = (userId: string, newPass: string): { success: boolean; message: string } => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return { success: false, message: 'کاربر یافت نشد.' };
+
+    if (!newPass || newPass.length < 4) {
+      return { success: false, message: 'رمز عبور باید حداقل ۴ کاراکتر باشد.' };
+    }
+
+    const hashedNew = hashPassword(newPass, target.username);
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: hashedNew } : u));
+
+    addAudit('بازنشانی رمز عبور کاربر', 'کاربر', userId, `بازنشانی رمز عبور کاربر ${target.fullName} توسط مدیر سیستم`);
+    return { success: true, message: `رمز عبور کاربر ${target.fullName} با موفقیت بازنشانی شد.` };
   };
 
   const deleteUser = (id: string) => {
@@ -995,6 +1159,197 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setAuditLogs(prev => [newLog, ...prev]);
   };
+
+  // Register Notification Click Route Handler
+  useEffect(() => {
+    registerNotificationNavigationHandler((tabId: string) => {
+      setActiveTab(tabId);
+    });
+  }, []);
+
+  // System Notification Dispatcher with Native Push & Audio
+  const sendSystemNotification = useCallback((notifData: {
+    type: NotificationType;
+    title: string;
+    message: string;
+    linkTab?: string;
+    targetUserId?: string;
+    targetRole?: UserRole | 'All';
+    priority?: 'normal' | 'urgent' | 'high';
+    senderName?: string;
+    metadata?: Record<string, any>;
+  }) => {
+    const newNotif: SystemNotification = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: notifData.type,
+      title: notifData.title,
+      message: notifData.message,
+      date: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+      isRead: false,
+      linkTab: notifData.linkTab,
+      targetUserId: notifData.targetUserId,
+      targetRole: notifData.targetRole,
+      priority: notifData.priority || 'normal',
+      senderName: notifData.senderName,
+      metadata: notifData.metadata,
+    };
+
+    setNotifications(prev => [newNotif, ...prev.slice(0, 99)]);
+
+    // Check if target matches current user (cartable routing)
+    const isTargetForUser = 
+      (!notifData.targetUserId || notifData.targetUserId === currentUser.id) &&
+      (!notifData.targetRole || notifData.targetRole === 'All' || notifData.targetRole === currentUser.role || currentUser.role === 'SystemAdmin');
+
+    if (isTargetForUser) {
+      const sound = notifData.priority === 'urgent' ? 'alert' : notifData.type === 'ChatMessage' ? 'message' : 'notification';
+      soundEngine.play(sound as any);
+      sendNativeBrowserNotification(notifData.title, {
+        body: notifData.message,
+        linkTab: notifData.linkTab || 'dashboard',
+        soundType: sound as any,
+      });
+    }
+  }, [currentUser]);
+
+  // Request browser permission
+  const requestNotificationPermission = async () => {
+    const status = await requestBrowserNotificationPermission();
+    setBrowserNotificationPermission(status);
+    if (status === 'granted') {
+      soundEngine.play('success');
+      sendNativeBrowserNotification('اعلان‌های سیستم فعال شد', {
+        body: 'از این پس هشدارهای موجودی، پیام‌های چت و درخواست‌های کارتابل به شما اعلان خواهد شد.',
+        linkTab: 'dashboard',
+        soundType: 'success',
+      });
+    }
+    return status;
+  };
+
+  // Test Notification Trigger
+  const testBrowserNotification = () => {
+    sendSystemNotification({
+      type: 'Info',
+      title: 'تست اعلان سیستم انبار و تولید',
+      message: `سلام ${currentUser.fullName}، سیستم اعلان فوری و صوتی با موفقیت فراخوانی شد.`,
+      linkTab: 'dashboard',
+      priority: 'normal',
+      senderName: 'سیستم هوشمند انبار'
+    });
+  };
+
+  // Chat message actions
+  const sendChatMessage = async (data: {
+    message: string;
+    channelId?: string;
+    recipientId?: string;
+    attachments?: ChatAttachment[];
+    replyToId?: string;
+  }): Promise<boolean> => {
+    const tempId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const newMsg: ChatMessage = {
+      id: tempId,
+      senderId: currentUser.id,
+      senderName: currentUser.fullName,
+      senderRole: currentUser.role,
+      channelId: data.channelId,
+      recipientId: data.recipientId,
+      message: data.message,
+      attachments: data.attachments || [],
+      replyToId: data.replyToId,
+      reactions: {},
+      timestamp: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
+      isRead: false,
+    };
+
+    // Optimistic local update & audio
+    setMessages(prev => [...prev, newMsg]);
+    soundEngine.play('message');
+
+    // Also dispatch notification if direct message
+    if (data.recipientId) {
+      sendSystemNotification({
+        type: 'ChatMessage',
+        title: `پیام جدید از ${currentUser.fullName}`,
+        message: data.message,
+        linkTab: 'chat',
+        targetUserId: data.recipientId,
+        priority: 'urgent',
+        senderName: currentUser.fullName
+      });
+    }
+
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: currentUser.id,
+          senderName: currentUser.fullName,
+          senderRole: currentUser.role,
+          channelId: data.channelId,
+          recipientId: data.recipientId,
+          message: data.message,
+          attachments: data.attachments,
+          replyToId: data.replyToId,
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.message) {
+          setMessages(prev => prev.map(m => m.id === tempId ? json.message : m));
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('Error sending message:', err);
+      return true; // Still active locally
+    }
+  };
+
+  const deleteChatMessage = async (id: string): Promise<boolean> => {
+    setMessages(prev => prev.filter(m => m.id !== id));
+    try {
+      await fetch(`/api/messages/${id}`, { method: 'DELETE' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const toggleMessageReaction = async (messageId: string, emoji: string): Promise<boolean> => {
+    setMessages(prev => prev.map(msg => {
+      if (msg.id !== messageId) return msg;
+      const reactions = { ...(msg.reactions || {}) };
+      const currentList = reactions[emoji] || [];
+      if (currentList.includes(currentUser.id)) {
+        reactions[emoji] = currentList.filter(u => u !== currentUser.id);
+        if (reactions[emoji].length === 0) delete reactions[emoji];
+      } else {
+        reactions[emoji] = [...currentList, currentUser.id];
+      }
+      return { ...msg, reactions };
+    }));
+
+    try {
+      await fetch(`/api/messages/${messageId}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji, userId: currentUser.id }),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const unreadMessagesCount = messages.filter(m => 
+    !m.isRead && m.senderId !== currentUser.id && (!m.recipientId || m.recipientId === currentUser.id)
+  ).length;
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const getItemQuantityInWarehouse = (itemId: string, warehouseId: string): number => {
     const inv = inventory.find(i => i.itemId === itemId && i.warehouseId === warehouseId);
@@ -2133,16 +2488,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Notification for Central Warehouse if it's a Pending requisition
     if (transferData.status === 'Pending') {
-      const notif: SystemNotification = {
-        id: `notif-${Date.now()}`,
+      sendSystemNotification({
         type: 'TransferAlert',
         title: 'درخواست جدید کالا از انبار مرکزی',
         message: `درخواست انتقال ${newTransfer.docNumber} توسط ${newTransfer.requestedBy} برای پروژه ${newTransfer.projectName || 'مرتبط'} در کارتابل قرار گرفت.`,
-        date: new Date().toLocaleString('fa-IR'),
-        isRead: false,
         linkTab: 'transfers',
-      };
-      setNotifications(prev => [notif, ...prev]);
+        targetRole: 'WarehouseManager',
+        priority: 'high',
+        senderName: newTransfer.requestedBy
+      });
     }
 
     addAudit('ثبت درخواست/حواله انتقال بین انبارها', 'WarehouseTransfer', newTransfer.docNumber, `انتقال از ${transferData.sourceWarehouseId} به ${transferData.targetWarehouseId} (وضعیت: ${transferData.status})`);
@@ -2189,17 +2543,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }));
 
-    // Notification for Destination Warehouse
-    const notif: SystemNotification = {
-      id: `notif-${Date.now()}`,
+    // Notification for Destination Warehouse / Project Manager
+    sendSystemNotification({
       type: 'TransferAlert',
-      title: 'محموله جدید در راه است (کارتابل مقصد)',
-      message: `حواله انتقال ${target.docNumber} توسط انبار مرکزی (${details.dispatchedBy}) ارسال شد و در کارتابل دریافت قرار گرفت.`,
-      date: new Date().toLocaleString('fa-IR'),
-      isRead: false,
+      title: 'محموله جدید در راه است (کارتابل دریافت)',
+      message: `حواله انتقال ${target.docNumber} توسط (${details.dispatchedBy}) ارسال شد و در کارتابل دریافت قرار گرفت.`,
       linkTab: 'transfers',
-    };
-    setNotifications(prev => [notif, ...prev]);
+      priority: 'urgent',
+      senderName: details.dispatchedBy
+    });
 
     addAudit('تایید ارسال و صدور حواله انتقال', 'WarehouseTransfer', target.docNumber, `خروج از انبار مرکزی و ارسال به انبار ${target.targetWarehouseId}`);
   };
@@ -2242,17 +2594,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }));
 
-    // Notification for Requester / System
-    const notif: SystemNotification = {
-      id: `notif-${Date.now()}`,
+    // Notification for Requester / Central Warehouse
+    sendSystemNotification({
       type: 'TransferAlert',
       title: 'تکمیل حواله انتقال بین انبار',
       message: `حواله ${target.docNumber} در انبار مقصد (${details.receivedBy}) تایید و موجودی ثبت گردید.`,
-      date: new Date().toLocaleString('fa-IR'),
-      isRead: false,
       linkTab: 'transfers',
-    };
-    setNotifications(prev => [notif, ...prev]);
+      priority: 'normal',
+      senderName: details.receivedBy
+    });
 
     addAudit('تایید دریافت و ورود به انبار مقصد', 'WarehouseTransfer', target.docNumber, `تحویل قطعی در انبار ${target.targetWarehouseId}`);
   };
@@ -2269,6 +2619,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'Rejected', rejectReason: reason } : t));
+    
+    sendSystemNotification({
+      type: 'TransferAlert',
+      title: 'رد درخواست/حواله انتقال',
+      message: `حواله ${target.docNumber} به علت: "${reason}" رد شد.`,
+      linkTab: 'transfers',
+      priority: 'urgent',
+      senderName: currentUser.fullName
+    });
+
     addAudit('رد درخواست/حواله انتقال', 'WarehouseTransfer', target.docNumber, `علت رد: ${reason}`);
   };
 
@@ -2306,17 +2666,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setPurchaseRequests(prev => [newReq, ...prev]);
 
-    // Create Notification
-    const notif: SystemNotification = {
-      id: `notif-${Date.now()}`,
+    // Send push notification to procurement / management cartable
+    sendSystemNotification({
       type: 'RequestSubmitted',
-      title: 'درخواست جدید کالا/خرید',
-      message: `درخواست ${newReq.requestNumber} توسط ${newReq.requesterName} ثبت گردید.`,
-      date: new Date().toLocaleString('fa-IR'),
-      isRead: false,
+      title: 'درخواست جدید کالا/خرید در کارتابل',
+      message: `درخواست شماره ${newReq.requestNumber} توسط ${newReq.requesterName} (واحد: ${newReq.requestingUnit}) ثبت گردید.`,
       linkTab: 'requests',
-    };
-    setNotifications(prev => [notif, ...prev]);
+      targetRole: 'All',
+      priority: newReq.urgency === 'Immediate' ? 'urgent' : 'normal',
+      senderName: newReq.requesterName
+    });
 
     addAudit('ثبت درخواست کالا', 'PurchaseRequest', newReq.requestNumber, `واحد درخواست‌کننده: ${newReq.requestingUnit}`);
   };
@@ -2327,7 +2686,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updatePurchaseRequestStatus = (id: string, status: PurchaseRequest['status']) => {
+    const req = purchaseRequests.find(r => r.id === id);
     setPurchaseRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    
+    if (req) {
+      const statusTitleMap: Record<string, string> = {
+        'Pending': 'در انتظار بررسی',
+        'Approved_InStock': 'تایید شده (موجود در انبار)',
+        'Purchase_Needed': 'نیاز به خرید و تامین',
+        'Manufacturing_Needed': 'نیاز به تولید داخلی',
+        'Fulfilled': 'تحویل کامل / تکمیل شده',
+        'Rejected': 'رد شده'
+      };
+      const statusTitle = statusTitleMap[status] || status;
+      sendSystemNotification({
+        type: 'RequestApproved',
+        title: `وضعیت درخواست ${req.requestNumber}: ${statusTitle}`,
+        message: `درخواست شما توسط مدیریت/تدارکات به وضعیت [${statusTitle}] تغییر یافت.`,
+        linkTab: 'requests',
+        priority: status === 'Fulfilled' ? 'high' : 'normal',
+        senderName: currentUser.fullName
+      });
+    }
+
     addAudit('بررسی درخواست کالا', 'PurchaseRequest', id, `وضعیت به ${status} به‌روزرسانی شد`);
   };
 
@@ -2642,7 +3023,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const adminUserObj: User = {
       id: 'usr-1',
       username: adminUser.trim(),
-      password: adminPass,
+      password: hashPassword(adminPass, adminUser.trim()),
       fullName: 'مدیر سیستم',
       role: 'SystemAdmin',
       department: 'مدیریت',
@@ -2823,11 +3204,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       currentUser, setCurrentUser, users,
-      isAuthenticated, login, logout, addUser, updateUser, deleteUser, hasTabPermission, hasActionPermission,
+      isAuthenticated, login, logout, addUser, updateUser, deleteUser,
+      changePassword, adminResetPassword,
+      hasTabPermission, hasActionPermission,
       activeTab, setActiveTab,
       items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, stockCountings,
       stockInDocs, stockOutDocs, transfers, purchaseRequests,
-      productionLogs, materialHandovers, notifications, traceabilityEvents, auditLogs,
+      productionLogs, materialHandovers, notifications, messages, channels,
+      traceabilityEvents, auditLogs,
+      sendChatMessage, deleteChatMessage, toggleMessageReaction, unreadMessagesCount,
+      sendSystemNotification, browserNotificationPermission, requestNotificationPermission,
+      soundEnabled, setSoundEnabled, testBrowserNotification, unreadCount,
       addMaterialHandover, handoverStepMaterials, recordStepOutputReceipt, calculateProjectProgressSummary,
       addItem, updateItem, deleteItem,
       addItemGroup, updateItemGroup, deleteItemGroup,

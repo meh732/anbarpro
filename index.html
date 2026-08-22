@@ -2,13 +2,35 @@
 <html lang="fa" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>سامانه مدیریت انبار و تولید قطعات الکترونیکی (ElectroStock Core)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>سامانه مدیریت انبار و تولید قطعات الکترونیک انبار‌مه</title>
+    
+    <!-- PWA Web App Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Theme & Color Settings for Mobile Browsers -->
+    <meta name="theme-color" content="#4f46e5" />
+    <meta name="msapplication-navbutton-color" content="#4f46e5" />
+    <meta name="msapplication-TileColor" content="#0f172a" />
+    
+    <!-- iOS Safari PWA Standalone Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="انبار‌مه" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
+    
+    <!-- Standard & SVG Favicons -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-slate-900 text-slate-100 font-['Vazirmatn',sans-serif] antialiased selection:bg-cyan-500 selection:text-slate-900">
+  <body class="bg-slate-900 text-slate-100 font-['Vazirmatn',sans-serif] antialiased selection:bg-cyan-500 selection:text-slate-900 overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

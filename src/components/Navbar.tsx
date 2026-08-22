@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Bell, ChevronDown, LogOut, QrCode, AlertTriangle, Clock, CheckCircle, 
-  Menu, Search, Server, Wifi, RefreshCw, Database, HardDrive, Cpu, CheckCircle2, ShieldCheck, X, Zap
+  Menu, Search, Server, Wifi, RefreshCw, Database, HardDrive, Cpu, CheckCircle2, ShieldCheck, X, Zap,
+  KeyRound, Eye, EyeOff, Shield, Smartphone, LockKeyhole, Lock, Volume2, VolumeX, MessageSquare, Send
 } from 'lucide-react';
+import { evaluatePasswordStrength } from '../utils/security';
+import { PWAInstallPrompt } from './PWAInstallPrompt';
 
 interface NavbarProps {
   onToggleMobileSidebar: () => void;
@@ -15,11 +18,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
     users, 
     activeTab, setActiveTab,
     notifications, markNotificationAsRead, markAllNotificationsAsRead, unreadCount,
-    currentUser, setCurrentUser, logout,
+    currentUser, setCurrentUser, logout, changePassword,
     setIsScannerOpen,
     companyName,
     serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer,
-    liteMode, setLiteMode
+    liteMode, setLiteMode,
+    soundEnabled, setSoundEnabled,
+    browserNotificationPermission, requestNotificationPermission, testBrowserNotification,
+    unreadMessagesCount
   } = useApp();
 
   const [showNotifs, setShowNotifs] = useState(false);
@@ -27,6 +33,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
   const [showServerModal, setShowServerModal] = useState(false);
   const [isSyncingManually, setIsSyncingManually] = useState(false);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
+
+  // Change Password State
+  const [showChangePassModal, setShowChangePassModal] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOldPass, setShowOldPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [changePassStatus, setChangePassStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const handleManualSync = async () => {
     setIsSyncingManually(true);
@@ -159,7 +174,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
             <button
               onClick={() => setShowNotifs(!showNotifs)}
               className="p-2.5 bg-white/70 hover:bg-white text-slate-600 border border-slate-200/60 rounded-xl relative transition-all cursor-pointer shadow-xs"
-              title="اعلان‌ها"
+              title="اعلان‌ها و کارتابل"
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
@@ -174,17 +189,41 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                 <div className="p-4 border-b border-slate-200/50 flex items-center justify-between bg-white/50 backdrop-blur-md">
                   <div className="flex items-center gap-2">
                     <Bell className="w-4 h-4 text-indigo-600" />
-                    <span className="font-black text-slate-900 text-sm">اعلان‌های سیستم</span>
+                    <span className="font-black text-slate-900 text-sm">اعلان‌ها و کارتابل فوری</span>
                   </div>
-                  {unreadCount > 0 && (
-                    <button 
-                      onClick={markAllNotificationsAsRead} 
-                      className="text-xs text-indigo-600 hover:text-indigo-800 font-black cursor-pointer bg-indigo-50 px-2 py-1 rounded-lg"
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSoundEnabled(!soundEnabled)}
+                      className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                        soundEnabled ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-slate-100 border-slate-200 text-slate-400'
+                      }`}
+                      title={soundEnabled ? "صدای اعلان فعال است (کلیک برای بی‌صدا)" : "صدای اعلان غیرفعال است"}
                     >
-                      علامت‌گذاری خوانده شده
+                      {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
                     </button>
-                  )}
+                    {unreadCount > 0 && (
+                      <button 
+                        onClick={markAllNotificationsAsRead} 
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-black cursor-pointer bg-indigo-50 px-2 py-1 rounded-lg"
+                      >
+                        علامت‌گذاری همه
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Push Notification Banner */}
+                {browserNotificationPermission !== 'granted' && (
+                  <div className="p-3 bg-indigo-50/90 border-b border-indigo-100 flex items-center justify-between gap-2 text-xs">
+                    <span className="text-indigo-900 font-medium">فعال‌سازی اعلان در ویندوز/موبایل:</span>
+                    <button
+                      onClick={() => requestNotificationPermission()}
+                      className="bg-indigo-600 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] hover:bg-indigo-700 transition-colors shadow-xs shrink-0 cursor-pointer"
+                    >
+                      اجازه دسترسی
+                    </button>
+                  </div>
+                )}
 
                 <div className="max-h-80 overflow-y-auto custom-scrollbar divide-y divide-slate-100/60">
                   {notifications.length === 0 ? (
@@ -204,6 +243,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                           <span className="font-black text-xs text-slate-800 flex items-center gap-1.5">
                             {notif.type === 'LowStock' && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
                             {notif.type === 'RequestSubmitted' && <Clock className="w-4 h-4 text-indigo-500 shrink-0" />}
+                            {notif.type === 'RequestApproved' && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
+                            {notif.type === 'TransferAlert' && <RefreshCw className="w-4 h-4 text-purple-500 shrink-0" />}
+                            {notif.type === 'ChatMessage' && <MessageSquare className="w-4 h-4 text-emerald-600 shrink-0" />}
                             {notif.type === 'ProjectFinished' && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />}
                             {notif.title}
                           </span>
@@ -213,6 +255,31 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                       </div>
                     ))
                   )}
+                </div>
+
+                {/* Footer Quick Actions */}
+                <div className="p-2.5 bg-slate-50/80 border-t border-slate-200/50 flex items-center justify-between text-xs">
+                  <button
+                    onClick={() => {
+                      testBrowserNotification();
+                    }}
+                    className="text-slate-600 hover:text-indigo-600 font-bold px-2 py-1 rounded hover:bg-white transition-colors cursor-pointer text-[11px]"
+                  >
+                    تست اعلان صوتی/تصویری
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('chat');
+                      setShowNotifs(false);
+                    }}
+                    className="text-emerald-700 hover:text-emerald-900 font-black px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer text-[11px] flex items-center gap-1"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>ورود به چت</span>
+                    {unreadMessagesCount > 0 && (
+                      <span className="bg-emerald-600 text-white text-[9px] px-1 rounded-full font-mono">{unreadMessagesCount}</span>
+                    )}
+                  </button>
                 </div>
               </div>
             )}
@@ -235,41 +302,72 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
             </button>
 
             {showUserDropdown && (
-              <div className="absolute left-0 mt-3 w-72 glass-dropdown rounded-2xl z-50 overflow-hidden flex flex-col p-2.5 shadow-2xl border border-white/80 animate-fadeIn">
-                <div className="p-3 bg-white/60 border border-slate-200/50 rounded-xl mb-2 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-sm font-black shadow-sm">
+              <div className="absolute left-0 mt-3 w-80 glass-dropdown rounded-2xl z-50 overflow-hidden flex flex-col p-3 shadow-2xl border border-white/80 animate-fadeIn">
+                <div className="p-3.5 bg-white/80 border border-slate-200/60 rounded-2xl mb-2.5 flex items-center gap-3 shadow-xs">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-base font-black shadow-sm shrink-0">
                     {currentUser.fullName ? currentUser.fullName.charAt(0) : 'U'}
                   </div>
-                  <div className="overflow-hidden">
+                  <div className="overflow-hidden flex-1">
                     <div className="font-black text-xs text-slate-900 truncate">{currentUser.fullName}</div>
-                    <div className="text-[11px] text-slate-500 truncate">@{currentUser.username}</div>
+                    <div className="text-[11px] text-slate-500 font-mono truncate">@{currentUser.username}</div>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold border border-indigo-200/60">
+                        {roleLabels[currentUser.role] || currentUser.role}
+                      </span>
+                      {currentUser.department && (
+                        <span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                          {currentUser.department}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                
-                <div className="px-2 py-1 text-[10px] font-black uppercase text-slate-400">تغییر کاربر فعال</div>
-                <div className="max-h-44 overflow-y-auto custom-scrollbar space-y-1 my-1">
-                  {users.map(user => (
-                    <button
-                      key={user.id}
-                      onClick={() => {
-                        setCurrentUser(user);
-                        setShowUserDropdown(false);
-                      }}
-                      className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors ${currentUser.id === user.id ? 'bg-indigo-500/10 text-indigo-700 font-black' : 'hover:bg-white/50 text-slate-700 font-bold'}`}
-                    >
-                      <span className="truncate">{user.fullName}</span>
-                      <span className="text-[9px] bg-slate-200/60 px-1.5 py-0.5 rounded text-slate-600 font-bold">{roleLabels[user.role] || user.role}</span>
-                    </button>
-                  ))}
+
+                {/* Security status */}
+                <div className="px-3 py-2 bg-emerald-50/70 border border-emerald-200/70 rounded-xl mb-2 flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1.5 text-emerald-800 font-bold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>امنیت حساب کاربری</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-200">
+                    SHA-256
+                  </span>
                 </div>
 
-                <div className="border-t border-slate-200/50 mt-1 pt-1.5">
+                <div className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      setShowChangePassModal(true);
+                      setOldPassword('');
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setChangePassStatus(null);
+                    }}
+                    className="w-full text-right px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:text-indigo-600 flex items-center justify-between transition-colors border border-transparent hover:border-slate-200/60"
+                  >
+                    <span className="flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-indigo-500" />
+                      <span>تغییر کلمه عبور من</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">ایمن‌سازی</span>
+                  </button>
+
+                  <div className="pt-1 border-t border-slate-200/50">
+                    <PWAInstallPrompt compact />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200/50 mt-2 pt-2">
                   <button
                     onClick={() => { setShowUserDropdown(false); logout(); }}
                     className="w-full text-right px-3 py-2.5 text-xs text-rose-600 hover:bg-rose-50/80 rounded-xl font-black flex items-center justify-between cursor-pointer transition-colors"
                   >
-                    <span>خروج از حساب</span>
-                    <LogOut className="w-4 h-4" />
+                    <span className="flex items-center gap-2">
+                      <LogOut className="w-4 h-4" />
+                      <span>خروج امن از سیستم</span>
+                    </span>
+                    <span className="text-[10px] text-rose-400 font-normal">Logout</span>
                   </button>
                 </div>
               </div>
@@ -408,6 +506,171 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                 بستن
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECURE USER CHANGE PASSWORD MODAL */}
+      {showChangePassModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-fadeIn">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div className="flex items-center gap-2.5 text-indigo-700">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800">تغییر رمز عبور حساب کاربری</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">@{currentUser.username} ({currentUser.fullName})</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowChangePassModal(false);
+                  setChangePassStatus(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {changePassStatus && (
+              <div className={`p-3 rounded-2xl text-xs mb-4 flex items-center gap-2 ${
+                changePassStatus.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}>
+                {changePassStatus.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />}
+                <span>{changePassStatus.message}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!oldPassword) {
+                  setChangePassStatus({ type: 'error', message: 'لطفاً رمز عبور فعلی خود را وارد کنید.' });
+                  return;
+                }
+                if (newPassword !== confirmPassword) {
+                  setChangePassStatus({ type: 'error', message: 'رمز عبور جدید با تکرار آن مطابقت ندارد.' });
+                  return;
+                }
+                if (newPassword.length < 4) {
+                  setChangePassStatus({ type: 'error', message: 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد.' });
+                  return;
+                }
+
+                const res = changePassword(currentUser.id, oldPassword, newPassword);
+                if (res.success) {
+                  setChangePassStatus({ type: 'success', message: res.message });
+                  setTimeout(() => {
+                    setShowChangePassModal(false);
+                    setChangePassStatus(null);
+                  }, 1200);
+                } else {
+                  setChangePassStatus({ type: 'error', message: res.message });
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">رمز عبور فعلی:</label>
+                <div className="relative">
+                  <input
+                    type={showOldPass ? 'text' : 'password'}
+                    required
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2 pr-3 pl-9 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none font-mono"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOldPass(!showOldPass)}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    {showOldPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">رمز عبور جدید:</label>
+                <div className="relative">
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2 pr-3 pl-9 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none font-mono"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPass(!showNewPass)}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    {showNewPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                {newPassword.length > 0 && (
+                  <div className="mt-1.5 flex items-center justify-between text-[10px]">
+                    <span className="text-slate-500">
+                      قدرت رمز:{' '}
+                      <strong className={
+                        evaluatePasswordStrength(newPassword).score >= 3 ? 'text-emerald-600' :
+                        evaluatePasswordStrength(newPassword).score === 2 ? 'text-amber-600' : 'text-rose-500'
+                      }>
+                        {evaluatePasswordStrength(newPassword).label}
+                      </strong>
+                    </span>
+                    <div className="flex gap-1 w-16 h-1 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          evaluatePasswordStrength(newPassword).score >= 3 ? 'bg-emerald-500 w-full' :
+                          evaluatePasswordStrength(newPassword).score === 2 ? 'bg-amber-500 w-2/3' : 'bg-rose-500 w-1/3'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">تکرار رمز عبور جدید:</label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none font-mono"
+                  dir="ltr"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowChangePassModal(false);
+                    setChangePassStatus(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/20 flex items-center gap-1.5"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>ذخیره و رمزنگاری رمز جدید</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

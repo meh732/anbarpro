@@ -399,12 +399,67 @@ export interface AuditLog {
   details: string;
 }
 
+export type NotificationType = 
+  | 'LowStock' 
+  | 'ProjectFinished' 
+  | 'RequestSubmitted' 
+  | 'RequestApproved' 
+  | 'RequestRejected' 
+  | 'TransferAlert' 
+  | 'TransferDispatched'
+  | 'TransferReceived'
+  | 'StockCountingAlert'
+  | 'ChatMessage'
+  | 'BOMShortage' 
+  | 'Info' 
+  | 'Warning' 
+  | 'Success';
+
 export interface SystemNotification {
   id: string;
-  type: 'LowStock' | 'ProjectFinished' | 'RequestSubmitted' | 'TransferAlert' | 'BOMShortage' | 'Info';
+  type: NotificationType;
   title: string;
   message: string;
   date: string;
   isRead: boolean;
   linkTab?: string;
+  targetUserId?: string; // If sent to a specific user (e.g. for cartable)
+  targetRole?: UserRole | 'All'; // If sent to a specific role
+  priority?: 'normal' | 'urgent' | 'high';
+  senderName?: string;
+  metadata?: Record<string, any>;
 }
+
+export interface ChatAttachment {
+  type: 'item' | 'request' | 'transfer' | 'project' | 'file';
+  id: string;
+  code?: string;
+  title: string;
+  subtitle?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  channelId?: string;       // e.g. 'general', 'warehouse', 'production', 'purchasing'
+  recipientId?: string;     // If direct 1-on-1 message
+  message: string;
+  timestamp: string;
+  createdAt: string;
+  isRead?: boolean;
+  replyToId?: string;
+  attachments?: ChatAttachment[];
+  reactions?: Record<string, string[]>; // { '👍': ['usr-1'], '❤️': ['usr-2'] }
+}
+
+export interface ChatChannel {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+  allowedRoles?: UserRole[];
+  unreadCount?: number;
+}
+

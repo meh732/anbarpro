@@ -4,8 +4,9 @@ import { User, UserRole, Operator } from '../types';
 import { 
   Users, UserPlus, Shield, ShieldCheck, Key, Edit, Trash2, 
   CheckCircle2, XCircle, Lock, Building, Mail, Check, Layers, AlertTriangle,
-  UserCheck, Plus, Pencil, Clock, Factory
+  UserCheck, Plus, Pencil, Clock, Factory, Eye, EyeOff, LockKeyhole, KeyRound
 } from 'lucide-react';
+import { evaluatePasswordStrength } from '../utils/security';
 
 interface TabDefinition {
   id: string;
@@ -37,6 +38,7 @@ const ALL_SYSTEM_TABS: TabDefinition[] = [
 export const UserManagementView: React.FC = () => {
   const { 
     users, addUser, updateUser, deleteUser, 
+    adminResetPassword,
     operators, addOperator, updateOperator, deleteOperator,
     currentUser, language, t, hasActionPermission 
   } = useApp();
@@ -54,6 +56,7 @@ export const UserManagementView: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showUserPassword, setShowUserPassword] = useState(false);
   const [role, setRole] = useState<UserRole>('Storekeeper');
   const [department, setDepartment] = useState('انبارداری');
   const [email, setEmail] = useState('');
@@ -63,6 +66,12 @@ export const UserManagementView: React.FC = () => {
   const [userCanEdit, setUserCanEdit] = useState(true);
   const [userCanDelete, setUserCanDelete] = useState(false);
   const [userCanExport, setUserCanExport] = useState(true);
+
+  // --- ADMIN RESET PASSWORD MODAL ---
+  const [resetModalUser, setResetModalUser] = useState<User | null>(null);
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [showResetNewPassword, setShowResetNewPassword] = useState(false);
+  const [resetStatusMsg, setResetStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // --- OPERATOR MODAL STATE ---
   const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
@@ -108,7 +117,8 @@ export const UserManagementView: React.FC = () => {
     setEditingUserId(u.id);
     setFullName(u.fullName);
     setUsername(u.username);
-    setPassword(u.password || '');
+    setPassword('');
+    setShowUserPassword(false);
     setRole(u.role);
     setDepartment(u.department);
     setEmail(u.email);
@@ -178,10 +188,9 @@ export const UserManagementView: React.FC = () => {
       : selectedTabs;
 
     if (editingUserId) {
-      updateUser(editingUserId, {
+      const updatePayload: Partial<User> = {
         fullName,
         username,
-        password,
         role,
         department,
         email,
@@ -191,12 +200,16 @@ export const UserManagementView: React.FC = () => {
         canEdit: userCanEdit,
         canDelete: userCanDelete,
         canExport: userCanExport
-      });
+      };
+      if (password.trim().length > 0) {
+        updatePayload.password = password.trim();
+      }
+      updateUser(editingUserId, updatePayload);
     } else {
       addUser({
         fullName,
         username,
-        password,
+        password: password.trim() || '123456',
         role,
         department,
         email,
@@ -393,9 +406,10 @@ export const UserManagementView: React.FC = () => {
                       <span className="font-medium text-slate-800">{u.department || 'نامشخص'}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400 text-[11px]">{isFa ? 'رمز عبور:' : 'Password:'}</span>
-                      <span className="font-mono text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">
-                        {u.password || '••••••'}
+                      <span className="text-slate-400 text-[11px]">{isFa ? 'امنیت رمز عبور:' : 'Security:'}</span>
+                      <span className="font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px] flex items-center gap-1 font-semibold">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>رمزنگاری SHA-256</span>
                       </span>
                     </div>
                   </div>
@@ -434,6 +448,22 @@ export const UserManagementView: React.FC = () => {
 
                 {/* Card Action Buttons */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 mt-3">
+                  {currentUser.role === 'SystemAdmin' && (
+                    <button
+                      onClick={() => {
+                        setResetModalUser(u);
+                        setResetNewPassword('');
+                        setShowResetNewPassword(false);
+                        setResetStatusMsg(null);
+                      }}
+                      className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1 border border-amber-200"
+                      title={isFa ? 'بازنشانی امن کلمه عبور' : 'Reset User Password'}
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                      <span className="hidden sm:inline">{isFa ? 'تغییر رمز' : 'Reset Pass'}</span>
+                    </button>
+                  )}
+
                   {canEdit && (
                     <button
                       onClick={() => handleOpenEditModal(u)}
@@ -673,18 +703,53 @@ export const UserManagementView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {isFa ? 'رمز عبور ورود:' : 'Password:'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="password123"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none font-mono"
-                    dir="ltr"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      {editingUserId ? (isFa ? 'تغییر رمز عبور (اختیاری):' : 'New Password (Optional):') : (isFa ? 'رمز عبور ورود:' : 'Password:')}
+                    </label>
+                    {editingUserId && (
+                      <span className="text-[10px] text-slate-400">{isFa ? 'خالی = بدون تغییر' : 'Leave empty to keep'}</span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showUserPassword ? 'text' : 'password'}
+                      required={!editingUserId}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={editingUserId ? '••••••••' : 'password123'}
+                      className="w-full px-3 py-2 pr-3 pl-8 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none font-mono"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowUserPassword(!showUserPassword)}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      {showUserPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  {password.length > 0 && (
+                    <div className="mt-1.5 flex items-center justify-between text-[10px]">
+                      <span className="text-slate-500">
+                        {isFa ? 'سطح امنیت:' : 'Strength:'}{' '}
+                        <strong className={
+                          evaluatePasswordStrength(password).score >= 3 ? 'text-emerald-600' :
+                          evaluatePasswordStrength(password).score === 2 ? 'text-amber-600' : 'text-rose-500'
+                        }>
+                          {evaluatePasswordStrength(password).label}
+                        </strong>
+                      </span>
+                      <div className="flex gap-1 w-16 h-1 bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            evaluatePasswordStrength(password).score >= 3 ? 'bg-emerald-500 w-full' :
+                            evaluatePasswordStrength(password).score === 2 ? 'bg-amber-500 w-2/3' : 'bg-rose-500 w-1/3'
+                          }`}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -973,6 +1038,142 @@ export const UserManagementView: React.FC = () => {
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
                 >
                   {editingOperatorId ? 'ذخیره تغییرات اپراتور' : 'افزودن به لیست اپراتورها'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ADMIN RESET PASSWORD MODAL */}
+      {resetModalUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-fadeIn">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div className="flex items-center gap-2 text-amber-700">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800">
+                    {isFa ? 'بازنشانی امن کلمه عبور کاربر' : 'Admin Password Reset'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {resetModalUser.fullName} (@{resetModalUser.username})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setResetModalUser(null);
+                  setResetStatusMsg(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {resetStatusMsg && (
+              <div className={`p-3 rounded-2xl text-xs mb-4 flex items-center gap-2 ${
+                resetStatusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}>
+                {resetStatusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />}
+                <span>{resetStatusMsg.text}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!resetNewPassword || resetNewPassword.length < 4) {
+                  setResetStatusMsg({ type: 'error', text: 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد.' });
+                  return;
+                }
+                const res = adminResetPassword(resetModalUser.id, resetNewPassword);
+                if (res.success) {
+                  setResetStatusMsg({ type: 'success', text: res.message });
+                  setTimeout(() => {
+                    setResetModalUser(null);
+                    setResetStatusMsg(null);
+                  }, 1200);
+                } else {
+                  setResetStatusMsg({ type: 'error', text: res.message });
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  {isFa ? 'کلمه عبور جدید:' : 'New Password:'}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showResetNewPassword ? 'text' : 'password'}
+                    required
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2.5 pr-3 pl-9 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-amber-500 focus:outline-none font-mono"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetNewPassword(!showResetNewPassword)}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    {showResetNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                {resetNewPassword.length > 0 && (
+                  <div className="mt-2 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">
+                      قدرت رمز:{' '}
+                      <strong className={
+                        evaluatePasswordStrength(resetNewPassword).score >= 3 ? 'text-emerald-600' :
+                        evaluatePasswordStrength(resetNewPassword).score === 2 ? 'text-amber-600' : 'text-rose-500'
+                      }>
+                        {evaluatePasswordStrength(resetNewPassword).label}
+                      </strong>
+                    </span>
+                    <div className="flex gap-1 w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          evaluatePasswordStrength(resetNewPassword).score >= 3 ? 'bg-emerald-500 w-full' :
+                          evaluatePasswordStrength(resetNewPassword).score === 2 ? 'bg-amber-500 w-2/3' : 'bg-rose-500 w-1/3'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] text-slate-600 space-y-1">
+                <div className="font-bold text-slate-700 flex items-center gap-1">
+                  <Shield className="w-3 h-3 text-indigo-600" />
+                  <span>استاندارد امنیتی AnbarMeh:</span>
+                </div>
+                <p>
+                  رمز عبور با سالت منحصر‌به‌فرد نام کاربری هش می‌شود و به هیچ عنوان به صورت متن خام در سرور یا دیتابیس ذخیره نخواهد شد.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetModalUser(null);
+                    setResetStatusMsg(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                >
+                  {isFa ? 'انصراف' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-600/20 flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>{isFa ? 'ثبت و رمزنگاری رمز جدید' : 'Set New Password'}</span>
                 </button>
               </div>
             </form>

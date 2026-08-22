@@ -23,6 +23,7 @@ import { BackupView } from './components/BackupView';
 import { StockCountingView } from './components/StockCountingView';
 import { ContractorsView } from './components/ContractorsView';
 import { KardexView } from './components/KardexView';
+import { ChatView } from './components/ChatView';
 import { ShieldAlert } from 'lucide-react';
 
 const MainContent: React.FC = () => {
@@ -76,6 +77,7 @@ const MainContent: React.FC = () => {
 
     switch (activeTab) {
       case 'dashboard': return <DashboardView />;
+      case 'chat': return <ChatView />;
       case 'items': return <ItemsView />;
       case 'kardex': return <KardexView />;
       case 'warehouses': return <WarehousesView />;

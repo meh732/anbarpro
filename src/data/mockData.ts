@@ -663,7 +663,114 @@ export const INITIAL_MATERIAL_HANDOVERS: MaterialHandover[] = [
     createdAt: '2026-02-04'
   }
 ];
-export const INITIAL_NOTIFICATIONS: SystemNotification[] = [];
+export const INITIAL_NOTIFICATIONS: SystemNotification[] = [
+  {
+    id: 'notif-1',
+    type: 'RequestSubmitted',
+    title: 'درخواست خرید جدید در کارتابل',
+    message: 'درخواست خرید قطعات پروژه کنتور هوشمند توسط مهندس رضایی ثبت و منتظر تایید است.',
+    date: 'امروز - ۱۰:۳۰',
+    isRead: false,
+    linkTab: 'requests',
+    targetRole: 'Purchasing',
+    priority: 'urgent',
+    senderName: 'مهندس رضایی'
+  },
+  {
+    id: 'notif-2',
+    type: 'TransferAlert',
+    title: 'حواله انتقال ارسالی به انبار تولید',
+    message: 'حواله TRF-1404-082 با ۵۰ قطعه از انبار مرکزی به مقصد انبار تولید ارسال شد.',
+    date: 'امروز - ۰۸:۴۵',
+    isRead: false,
+    linkTab: 'transfers',
+    targetRole: 'Storekeeper',
+    priority: 'normal',
+    senderName: 'علی کاظمی'
+  },
+  {
+    id: 'notif-3',
+    type: 'LowStock',
+    title: 'هشدار حداقل موجودی قطعه',
+    message: 'موجودی میکروکنترلر STM32F103C8T6 به زیر حد هشدار (۴۰ عدد) رسیده است.',
+    date: 'دیروز - ۱۶:۲۰',
+    isRead: true,
+    linkTab: 'items',
+    priority: 'high'
+  }
+];
+
+export const INITIAL_CHANNELS: import('../types').ChatChannel[] = [
+  {
+    id: 'general',
+    name: 'اطلاعیه‌ها و عمومی سازمان',
+    description: 'کانال عمومی هماهنگی پرسنل کارخانه و انبارداری',
+    icon: 'Megaphone'
+  },
+  {
+    id: 'warehouse',
+    name: 'انبارداری و لجستیک',
+    description: 'هماهنگی ورودی/خروجی کالاها، حواله‌های انتقالی و انبارگردانی',
+    icon: 'Warehouse'
+  },
+  {
+    id: 'production',
+    name: 'خط تولید و مونتاژ',
+    description: 'گزارش شیفت‌ها، ایستگاه‌های کاری، کسری قطعات و تحویل محصول',
+    icon: 'Factory'
+  },
+  {
+    id: 'purchasing',
+    name: 'تدارکات و بازرگانی',
+    description: 'پیگیری درخواست‌های خرید، استعلام قطعات و ورود کالا',
+    icon: 'ShoppingCart'
+  }
+];
+
+export const INITIAL_MESSAGES: import('../types').ChatMessage[] = [
+  {
+    id: 'msg-1',
+    senderId: 'usr-1',
+    senderName: 'مدیر ارشد سیستم',
+    senderRole: 'SystemAdmin',
+    channelId: 'general',
+    message: 'همکاران گرامی، سامانه اعلان‌های فوری و سیستم گفتگوی داخلی فعال گردید. لطفاً نوتیفیکیشن مرورگر را از نوار بالا فعال فرمایید.',
+    timestamp: '۱۰:۰۰',
+    createdAt: new Date(Date.now() - 3600000).toISOString(),
+    reactions: { '👍': ['usr-2', 'usr-3'] }
+  },
+  {
+    id: 'msg-2',
+    senderId: 'usr-3',
+    senderName: 'مهندس رضایی',
+    senderRole: 'ProjectManager',
+    channelId: 'warehouse',
+    message: 'سلام جناب کاظمی، لطفاً حواله انتقال قطعات SMD برای پروژه کنتور را در اولویت ترخیص قرار دهید.',
+    timestamp: '۱۰:۱۵',
+    createdAt: new Date(Date.now() - 2500000).toISOString(),
+    attachments: [
+      {
+        type: 'transfer',
+        id: 'tr-102',
+        code: 'TRF-1404-082',
+        title: 'حواله انتقال قطعات پروژه کنتور هوشمند'
+      }
+    ]
+  },
+  {
+    id: 'msg-3',
+    senderId: 'usr-2',
+    senderName: 'علی کاظمی',
+    senderRole: 'Storekeeper',
+    channelId: 'warehouse',
+    message: 'سلام مهندس جان، حواله آماده‌سازی شده و تحویل راننده گردید. در کارتابل وضعیت به «در حال حمل» تغییر یافت.',
+    timestamp: '۱۰:۲۲',
+    createdAt: new Date(Date.now() - 2100000).toISOString(),
+    reactions: { '✅': ['usr-3'] }
+  }
+];
+
 export const INITIAL_TRACEABILITY: TraceabilityEvent[] = [];
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [];
+
 

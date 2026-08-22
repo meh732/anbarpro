@@ -6,13 +6,13 @@ import {
   INITIAL_USERS, INITIAL_STOCK_COUNTINGS, INITIAL_STOCK_IN_DOCS, 
   INITIAL_STOCK_OUT_DOCS, INITIAL_TRANSFERS, INITIAL_PURCHASE_REQUESTS, 
   INITIAL_PRODUCTION_LOGS, INITIAL_MATERIAL_HANDOVERS, INITIAL_NOTIFICATIONS, 
-  INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS 
+  INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS, INITIAL_CHANNELS, INITIAL_MESSAGES 
 } from '../data/mockData';
 import {
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, Operator, User,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog,
   MaterialHandover, TraceabilityEvent, SystemNotification, AuditLog, Contractor,
-  StockCountingSession
+  StockCountingSession, ChatMessage, ChatChannel
 } from '../types';
 
 export interface ServerDatabaseState {
@@ -40,6 +40,8 @@ export interface ServerDatabaseState {
   productionLogs: ProductionLog[];
   materialHandovers: MaterialHandover[];
   notifications: SystemNotification[];
+  messages: ChatMessage[];
+  channels: ChatChannel[];
   traceabilityEvents: TraceabilityEvent[];
   auditLogs: AuditLog[];
 }
@@ -70,6 +72,8 @@ export function getDefaultServerState(): ServerDatabaseState {
     productionLogs: INITIAL_PRODUCTION_LOGS,
     materialHandovers: INITIAL_MATERIAL_HANDOVERS,
     notifications: INITIAL_NOTIFICATIONS,
+    messages: INITIAL_MESSAGES,
+    channels: INITIAL_CHANNELS,
     traceabilityEvents: INITIAL_TRACEABILITY,
     auditLogs: INITIAL_AUDIT_LOGS,
   };
@@ -238,6 +242,8 @@ class ServerStoreManager {
       productionLogs: [],
       materialHandovers: [],
       notifications: [],
+      messages: [],
+      channels: INITIAL_CHANNELS,
       traceabilityEvents: [],
       auditLogs: [{
         id: `log-${Date.now()}-wipe`,

@@ -1,0 +1,70 @@
+{
+  "name": "سامانه مدیریت انبار و تولید قطعات الکترونیک انبار‌مه",
+  "short_name": "انبار‌مه ERP",
+  "description": "سامانه یکپارچه انبارداری، کنترل موجودی، فرمول ساخت (BOM)، پروژه‌ها و رهگیری قطعات الکترونیک",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#4f46e5",
+  "background_color": "#0f172a",
+  "lang": "fa",
+  "dir": "rtl",
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "اسکنر بارکد قطعات",
+      "short_name": "اسکن بارکد",
+      "url": "/?tab=scan",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "داشبورد کارتابل و وضعیت",
+      "short_name": "داشبورد",
+      "url": "/?tab=dashboard",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "ورود و خروج کالا",
+      "short_name": "اسناد انبار",
+      "url": "/?tab=stock_movement",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "فرمول ساخت و تولید (BOM)",
+      "short_name": "فرمول ساخت",
+      "url": "/?tab=bom",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

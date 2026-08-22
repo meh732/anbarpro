@@ -5,7 +5,8 @@ import {
   ArrowLeftRight, ClipboardCheck, Factory, Cpu, FileCheck,
   Building2, Users, SearchCheck, BarChart3, ShieldCheck,
   Settings, Terminal, ChevronDown, ChevronLeft, ChevronRight,
-  LogOut, QrCode, Search, Sparkles, X, User as UserIcon
+  LogOut, QrCode, Search, Sparkles, X, User as UserIcon,
+  MessageSquare
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -47,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     items,
     inventory,
     purchaseRequests,
+    unreadMessagesCount,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,9 +68,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navSections: NavSection[] = useMemo(() => [
     {
-      title: 'میز کار',
+      title: 'میز کار و ارتباطات',
       items: [
         { id: 'dashboard', label: 'داشبورد مدیریت', icon: LayoutGrid },
+        { 
+          id: 'chat', 
+          label: 'گفتگو و هماهنگی', 
+          icon: MessageSquare,
+          badge: unreadMessagesCount > 0 ? unreadMessagesCount : undefined,
+          badgeColor: 'bg-emerald-500 text-white font-bold animate-pulse'
+        },
       ],
     },
     {

@@ -277,6 +277,171 @@ async function startServer() {
   });
 
   // =========================================================================
+  //  TEAM CHAT & INSTANT MESSAGING REST ENDPOINTS
+  // =========================================================================
+
+  // GET /api/messages - Retrieve chat messages
+  app.get('/api/messages', (req, res) => {
+    try {
+      const state = serverStore.getState();
+      const { channelId, recipientId, senderId } = req.query;
+      let msgs = state.messages || [];
+
+      if (channelId) {
+        msgs = msgs.filter(m => m.channelId === channelId);
+      } else if (recipientId && senderId) {
+        msgs = msgs.filter(m => 
+          (m.senderId === senderId && m.recipientId === recipientId) ||
+          (m.senderId === recipientId && m.recipientId === senderId)
+        );
+      }
+
+      res.json({
+        success: true,
+        messages: msgs,
+        version: state.version,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/messages - Send a new chat message
+  app.post('/api/messages', (req, res) => {
+    try {
+      const { senderId, senderName, senderRole, channelId, recipientId, message, attachments, replyToId } = req.body;
+
+      if (!message || !senderId) {
+        return res.status(400).json({ success: false, error: 'پیام و شناسه ارسال‌کننده الزامی است.' });
+      }
+
+      const state = serverStore.getState();
+      const currentMsgs = state.messages || [];
+      const currentNotifs = state.notifications || [];
+
+      const newMsg = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        senderId,
+        senderName: senderName || 'کاربر',
+        senderRole: senderRole || 'Storekeeper',
+        channelId,
+        recipientId,
+        message,
+        attachments: attachments || [],
+        replyToId,
+        reactions: {},
+        timestamp: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+        createdAt: new Date().toISOString(),
+        isRead: false,
+      };
+
+      const updatedMsgs = [...currentMsgs, newMsg];
+
+      // If this is a direct message or tagged, generate a targeted notification
+      const newNotifs = [...currentNotifs];
+      if (recipientId) {
+        newNotifs.unshift({
+          id: `notif-chat-${Date.now()}`,
+          type: 'ChatMessage',
+          title: `پیام جدید از ${senderName}`,
+          message: message.length > 60 ? `${message.substring(0, 60)}...` : message,
+          date: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+          isRead: false,
+          linkTab: 'chat',
+          targetUserId: recipientId,
+          priority: 'urgent',
+          senderName,
+        });
+      } else if (channelId) {
+        // Channel announcement
+        newNotifs.unshift({
+          id: `notif-chat-${Date.now()}`,
+          type: 'ChatMessage',
+          title: `پیام در کانال #${channelId}`,
+          message: `${senderName}: ${message.length > 50 ? message.substring(0, 50) + '...' : message}`,
+          date: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+          isRead: false,
+          linkTab: 'chat',
+          targetRole: 'All',
+          priority: 'normal',
+          senderName,
+        });
+      }
+
+      const updatedState = serverStore.updateState({
+        messages: updatedMsgs,
+        notifications: newNotifs.slice(0, 100) // keep latest 100 notifications
+      });
+
+      res.json({
+        success: true,
+        message: newMsg,
+        version: updatedState.version,
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/messages:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/messages/:id/react - Toggle emoji reaction
+  app.post('/api/messages/:id/react', (req, res) => {
+    try {
+      const { id } = req.params;
+      const { emoji, userId } = req.body;
+      if (!emoji || !userId) {
+        return res.status(400).json({ success: false, error: 'Emoji and userId are required.' });
+      }
+
+      const state = serverStore.getState();
+      const currentMsgs = state.messages || [];
+      const msgIndex = currentMsgs.findIndex(m => m.id === id);
+
+      if (msgIndex === -1) {
+        return res.status(404).json({ success: false, error: 'پیام یافت نشد.' });
+      }
+
+      const msg = currentMsgs[msgIndex];
+      const reactions = { ...(msg.reactions || {}) };
+      const userList = reactions[emoji] || [];
+
+      if (userList.includes(userId)) {
+        reactions[emoji] = userList.filter(u => u !== userId);
+        if (reactions[emoji].length === 0) {
+          delete reactions[emoji];
+        }
+      } else {
+        reactions[emoji] = [...userList, userId];
+      }
+
+      currentMsgs[msgIndex] = { ...msg, reactions };
+      const updatedState = serverStore.updateState({ messages: currentMsgs });
+
+      res.json({
+        success: true,
+        message: currentMsgs[msgIndex],
+        version: updatedState.version,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // DELETE /api/messages/:id - Delete a message
+  app.delete('/api/messages/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      const state = serverStore.getState();
+      const updatedMsgs = (state.messages || []).filter(m => m.id !== id);
+      const updatedState = serverStore.updateState({ messages: updatedMsgs });
+      res.json({ success: true, version: updatedState.version });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+
+  // =========================================================================
   //  LEGACY SQL & BACKUP ROUTES (Optional / Progressive Enhancement)
   // =========================================================================
 
