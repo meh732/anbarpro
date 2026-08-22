@@ -197,6 +197,66 @@ class ServerStoreManager {
     return this.state;
   }
 
+  public resetToEmpty(keepUsers = true, companyName?: string): ServerDatabaseState {
+    const adminUser = this.state.users?.find(u => u.role === 'SystemAdmin') || {
+      id: 'usr-1',
+      username: 'admin',
+      fullName: 'مدیر ارشد سیستم',
+      role: 'SystemAdmin',
+      department: 'مدیریت',
+      email: 'admin@local.host',
+      allowedTabs: ['*'],
+      isActive: true,
+      canAdd: true,
+      canEdit: true,
+      canDelete: true,
+      canExport: true
+    };
+
+    const emptyState: ServerDatabaseState = {
+      version: Date.now(),
+      lastUpdated: new Date().toISOString(),
+      isInstalled: true,
+      companyName: companyName || this.state.companyName || 'سامانه مدیریت انبار و تولید',
+      autoBackupIntervalHours: 24,
+      lastBackupTimestamp: new Date().toISOString(),
+      backupHistory: this.state.backupHistory || [],
+      users: keepUsers ? (this.state.users?.length ? this.state.users : [adminUser]) : [adminUser],
+      items: [],
+      itemGroups: [],
+      warehouses: [],
+      contractors: [],
+      inventory: [],
+      boms: [],
+      projects: [],
+      operators: [],
+      stockCountings: [],
+      stockInDocs: [],
+      stockOutDocs: [],
+      transfers: [],
+      purchaseRequests: [],
+      productionLogs: [],
+      materialHandovers: [],
+      notifications: [],
+      traceabilityEvents: [],
+      auditLogs: [{
+        id: `log-${Date.now()}-wipe`,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        userId: adminUser.id,
+        userName: adminUser.fullName,
+        role: adminUser.role,
+        action: 'تخلیه و خام‌سازی دیتابیس',
+        targetEntity: 'System',
+        targetId: 'DATABASE_WIPED',
+        details: 'کلیه داده‌های موقت و تستی حذف شدند و پایگاه داده در وضعیت خام قرار گرفت.'
+      }],
+    };
+
+    this.state = emptyState;
+    this.saveToDiskSync(this.state);
+    return this.state;
+  }
+
   public getStorageInfo() {
     let sizeBytes = 0;
     let exists = false;

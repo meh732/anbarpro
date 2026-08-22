@@ -227,6 +227,9 @@ interface AppContextType {
   serverInfo: any;
   forceSyncWithServer: () => Promise<boolean>;
   resetServerDatabase: () => Promise<boolean>;
+  resetToEmptyDatabase: () => Promise<boolean>;
+  loadDemoData: () => Promise<boolean>;
+  resetToSetupWizard: () => Promise<boolean>;
 
   // Lite Mode / Performance Toggle for Low-End Devices
   liteMode: boolean;
@@ -643,6 +646,153 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
       return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const resetToEmptyDatabase = async (): Promise<boolean> => {
+    try {
+      isRemoteUpdatingRef.current = true;
+      setItems([]);
+      setItemGroups([]);
+      setWarehouses([]);
+      setContractors([]);
+      setInventory([]);
+      setBoms([]);
+      setProjects([]);
+      setOperators([]);
+      setStockCountings([]);
+      setStockInDocs([]);
+      setStockOutDocs([]);
+      setTransfers([]);
+      setPurchaseRequests([]);
+      setProductionLogs([]);
+      setMaterialHandovers([]);
+      setNotifications([]);
+      setTraceabilityEvents([]);
+
+      const initialLog: AuditLog = {
+        id: `log-${Date.now()}-wipe`,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        userId: currentUser?.id || 'usr-1',
+        userName: currentUser?.fullName || 'مدیر سیستم',
+        role: currentUser?.role || 'SystemAdmin',
+        action: 'تخلیه و خام‌سازی پایگاه داده',
+        targetEntity: 'System',
+        targetId: 'DATABASE_WIPED',
+        details: 'تمامی اطلاعات آزمایشی و فرآیندهای انبار پاکسازی شدند و سیستم در وضعیت کاملاً خام (صفر) قرار گرفت.'
+      };
+      setAuditLogs([initialLog]);
+
+      // Clear operational data from localStorage
+      const operationalKeys = [
+        'items', 'itemGroups', 'warehouses', 'contractors', 'inventory', 'boms', 
+        'projects', 'operators', 'stockCountings', 'stockInDocs', 'stockOutDocs', 
+        'transfers', 'purchaseRequests', 'productionLogs', 'materialHandovers', 
+        'notifications', 'traceabilityEvents'
+      ];
+      operationalKeys.forEach(k => {
+        try {
+          localStorage.removeItem(`${STORAGE_KEY}_${k}`);
+        } catch {}
+      });
+
+      // Call server to wipe database centrally
+      const res = await fetch('/api/reset-empty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keepUsers: true, companyName })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          serverVersionRef.current = json.version || Date.now();
+          setServerVersion(serverVersionRef.current);
+        }
+      }
+
+      isRemoteUpdatingRef.current = false;
+      return true;
+    } catch (err) {
+      console.error('Error in resetToEmptyDatabase:', err);
+      isRemoteUpdatingRef.current = false;
+      return false;
+    }
+  };
+
+  const loadDemoData = async (): Promise<boolean> => {
+    try {
+      isRemoteUpdatingRef.current = true;
+      setItems(INITIAL_ITEMS);
+      setItemGroups(INITIAL_ITEM_GROUPS);
+      setWarehouses(INITIAL_WAREHOUSES);
+      setContractors(INITIAL_CONTRACTORS);
+      setInventory(INITIAL_INVENTORY);
+      setBoms(INITIAL_BOMS);
+      setProjects(INITIAL_PROJECTS);
+      setOperators(INITIAL_OPERATORS);
+      setStockCountings(INITIAL_STOCK_COUNTINGS);
+      setStockInDocs(INITIAL_STOCK_IN_DOCS);
+      setStockOutDocs(INITIAL_STOCK_OUT_DOCS);
+      setTransfers(INITIAL_TRANSFERS);
+      setPurchaseRequests(INITIAL_PURCHASE_REQUESTS);
+      setProductionLogs(INITIAL_PRODUCTION_LOGS);
+      setMaterialHandovers(INITIAL_MATERIAL_HANDOVERS);
+      setNotifications(INITIAL_NOTIFICATIONS);
+      setTraceabilityEvents(INITIAL_TRACEABILITY);
+      setAuditLogs(INITIAL_AUDIT_LOGS);
+
+      const res = await fetch('/api/reset-demo', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          serverVersionRef.current = json.version || Date.now();
+          setServerVersion(serverVersionRef.current);
+        }
+      }
+      isRemoteUpdatingRef.current = false;
+      return true;
+    } catch (err) {
+      console.error('Error loading demo data:', err);
+      isRemoteUpdatingRef.current = false;
+      return false;
+    }
+  };
+
+  const resetToSetupWizard = async (): Promise<boolean> => {
+    try {
+      localStorage.clear();
+      setItems([]);
+      setItemGroups([]);
+      setWarehouses([]);
+      setContractors([]);
+      setInventory([]);
+      setBoms([]);
+      setProjects([]);
+      setOperators([]);
+      setStockCountings([]);
+      setStockInDocs([]);
+      setStockOutDocs([]);
+      setTransfers([]);
+      setPurchaseRequests([]);
+      setProductionLogs([]);
+      setMaterialHandovers([]);
+      setNotifications([]);
+      setTraceabilityEvents([]);
+      setAuditLogs([]);
+      setUsers([]);
+      setIsInstalled(false);
+      setIsAuthenticated(false);
+
+      await fetch('/api/reset-empty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keepUsers: false })
+      }).catch(() => {});
+
+      return true;
     } catch {
       return false;
     }
@@ -2705,6 +2855,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isInstalled, setIsInstalled, companyName, setCompanyName,
       completeInstallation,
       serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer, resetServerDatabase,
+      resetToEmptyDatabase, loadDemoData, resetToSetupWizard,
       liteMode, setLiteMode
     }}>
       {children}

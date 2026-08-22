@@ -204,6 +204,37 @@ async function startServer() {
     }
   });
 
+  // 5.1 POST /api/reset-empty - Reset server database to completely clean/raw empty state
+  app.post('/api/reset-empty', (req, res) => {
+    try {
+      const { keepUsers = true, companyName } = req.body || {};
+      const emptyState = serverStore.resetToEmpty(keepUsers, companyName);
+      res.json({
+        success: true,
+        message: 'پایگاه داده با موفقیت کاملاً تخلیه و به حالت خام (صفر) تبدیل شد.',
+        version: emptyState.version,
+        data: emptyState,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 5.2 POST /api/reset-demo - Load rich demo dataset
+  app.post('/api/reset-demo', (req, res) => {
+    try {
+      const defaultState = serverStore.resetToDefault();
+      res.json({
+        success: true,
+        message: 'داده‌های نمونه و سناریوهای تستی با موفقیت در پایگاه داده بارگذاری شدند.',
+        version: defaultState.version,
+        data: defaultState,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // 6. POST /api/import-data - Import JSON backup onto server
   app.post('/api/import-data', (req, res) => {
     try {
