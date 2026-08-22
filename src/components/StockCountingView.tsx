@@ -20,7 +20,10 @@ export const StockCountingView: React.FC = () => {
 
   // Price visibility permission check
   const userCanViewPrice = currentUser?.canViewPrices ?? (
-    currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'manager'
+    currentUser?.role === 'SystemAdmin' || 
+    currentUser?.role === 'PlantManager' || 
+    currentUser?.role === 'WarehouseManager' || 
+    currentUser?.role === 'Purchasing'
   );
 
   // Active Session Selection

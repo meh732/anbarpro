@@ -246,6 +246,61 @@ export interface StockCountingSession {
   deficitDocNumber?: string;
 }
 
+export interface ContractorWageContract {
+  id: string;
+  contractorId: string;
+  projectId?: string;
+  stepId?: string;
+  contractNumber: string;
+  title: string;
+  calculationType: 'PerPiece' | 'Fixed' | 'Batch'; // فی به ازای هر قطعه تولید شده | مبلغ ثابت مرحله | هر بچ
+  wagePerUnit: number; // نرخ کارمزد به ازای هر عدد سالم به ریال
+  scrapPenaltyPerUnit?: number; // جریمه به ازای هر قطعه ضایعات ریال
+  agreedQuantity?: number; // تیراژ قرارداد
+  status: 'Active' | 'Completed' | 'Suspended';
+  startDate: string;
+  endDate?: string;
+  notes?: string;
+}
+
+export type ContractorTransactionType = 
+  | 'WagePayable'    // بستانکار شدن پیمانکار بابت تولید و کارمزد قطعات سالم (بستانکار)
+  | 'Payment'        // پرداخت وجه به پیمانکار (بدهکار شدن پیمانکار / نقدی، چک، واریز)
+  | 'Prepayment'     // پیش‌پرداخت به پیمانکار (بدهکار)
+  | 'ScrapPenalty'   // جریمه و کسر ضایعات غیرمجاز (بدهکار)
+  | 'TaxDeduction'   // کسر بیمه و مالیات تکلیفی و ماده ۳۸ (بدهکار)
+  | 'DepositDeduction' // کسر سپرده حسن انجام کار (بدهکار)
+  | 'InitialBalance' // مانده اولیه دفتری حساب پیمانکار
+  | 'Adjustment';    // تعدیل و اصلاحیه حسابداری
+
+export interface ContractorFinancialTransaction {
+  id: string;
+  docNumber: string; // شماره سند حسابداری / رسید
+  date: string;
+  contractorId: string;
+  contractId?: string;
+  projectId?: string;
+  stepId?: string;
+  type: ContractorTransactionType;
+  description: string;
+  
+  // جزئیات کارمزد تولیدی
+  productionQuantity?: number; // تعداد تولید شده سالم
+  scrapQuantity?: number; // تعداد ضایعات
+  unitWage?: number; // نرخ کارمزد واحد
+  
+  // مبالغ مالی بر اساس اصول دوبل حسابداری
+  debit: number;   // بدهکار (پرداخت‌ها، پیش‌پرداخت، کسورات و جریمه‌ها)
+  credit: number;  // بستانکار (کارمزد استحقاقی بر اساس تیراژ تولید)
+  
+  paymentMethod?: 'BankTransfer' | 'Cheque' | 'Cash' | 'PettyCash';
+  trackingNumber?: string; // شماره پیگیری / شماره چک
+  registeredBy: string;
+  attachments?: string[];
+  notes?: string;
+  createdAt: string;
+}
+
 export interface Contractor {
   id: string;
   code: string;
@@ -255,6 +310,10 @@ export interface Contractor {
   specialty: string; // e.g. مونتاژ SMD, آبکاری, قالب‌سازی, تولید PCB
   address: string;
   activeContractsCount: number;
+  bankAccountInfo?: string; // شماره شبا / کارت / حساب
+  nationalId?: string; // شناسه ملی / کد اقتصادی
+  initialBalance?: number; // مانده حساب اولیه (مثبت: بستانکار ما، منفی: بدهکار)
+  defaultUnitWage?: number; // نرخ کارمزد پیش‌فرض هر قطعه
 }
 
 export interface Project {

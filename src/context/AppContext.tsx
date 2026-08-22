@@ -4,7 +4,7 @@ import {
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, ProjectStep, Operator, User, UserRole,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
   TraceabilityEvent, SystemNotification, NotificationType, AuditLog, Contractor, StockCountingSession, StockCountingItem,
-  ChatMessage, ChatChannel, ChatAttachment
+  ChatMessage, ChatChannel, ChatAttachment, ContractorWageContract, ContractorFinancialTransaction
 } from '../types';
 import { InitialStockParsedRow } from '../utils/excelUtils';
 import { calculateAllProjectStageTargets, applySmartTargetsToProjectSteps } from '../utils/smartBOMCalculator';
@@ -21,7 +21,7 @@ import {
   INITIAL_PROJECTS, INITIAL_OPERATORS, INITIAL_USERS, INITIAL_STOCK_COUNTINGS, INITIAL_STOCK_IN_DOCS, 
   INITIAL_STOCK_OUT_DOCS, INITIAL_TRANSFERS, INITIAL_PURCHASE_REQUESTS, 
   INITIAL_PRODUCTION_LOGS, INITIAL_MATERIAL_HANDOVERS, INITIAL_NOTIFICATIONS, INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS,
-  INITIAL_CHANNELS, INITIAL_MESSAGES
+  INITIAL_CHANNELS, INITIAL_MESSAGES, INITIAL_CONTRACTOR_CONTRACTS, INITIAL_CONTRACTOR_TRANSACTIONS
 } from '../data/mockData';
 
 interface AppContextType {
@@ -49,6 +49,8 @@ interface AppContextType {
   itemGroups: ItemGroup[];
   warehouses: Warehouse[];
   contractors: Contractor[];
+  contractorContracts: ContractorWageContract[];
+  contractorTransactions: ContractorFinancialTransaction[];
   inventory: InventoryBalance[];
   boms: BOM[];
   projects: Project[];
@@ -109,6 +111,25 @@ interface AppContextType {
   addContractor: (cont: Omit<Contractor, 'id'>) => void;
   updateContractor: (id: string, updated: Partial<Contractor>) => void;
   deleteContractor: (id: string) => void;
+  
+  // Contractor Financial & Wage System (قراردادهای کارمزد و اسناد حسابداری دوبل)
+  addContractorContract: (contract: Omit<ContractorWageContract, 'id'>) => void;
+  updateContractorContract: (id: string, updated: Partial<ContractorWageContract>) => void;
+  deleteContractorContract: (id: string) => void;
+  
+  addContractorTransaction: (tx: Omit<ContractorFinancialTransaction, 'id' | 'createdAt'>) => void;
+  updateContractorTransaction: (id: string, updated: Partial<ContractorFinancialTransaction>) => void;
+  deleteContractorTransaction: (id: string) => void;
+  
+  getContractorFinancialSummary: (contractorId: string) => {
+    totalDebit: number;    // کل بدهکار (پرداخت‌ها و کسورات)
+    totalCredit: number;   // کل بستانکار (کارمزد استحقاقی تولید)
+    balance: number;       // مانده (بستانکاری یا بدهکاری)
+    status: 'Creditor' | 'Debtor' | 'Settled'; // وضعیت (بستانکار / بدهکار / تسویه)
+    totalProducedQuantity: number; // کل تیراژ تولید شده توسط پیمانکار
+    activeContractsCount: number;
+    transactionsCount: number;
+  };
   
   addBOM: (bom: Omit<BOM, 'id' | 'createdAt'>) => void;
   updateBOM: (id: string, updated: Partial<BOM>) => void;
@@ -371,6 +392,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [itemGroups, setItemGroups] = useState<ItemGroup[]>(() => loadStorage('itemGroups', INITIAL_ITEM_GROUPS));
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => loadStorage('warehouses', INITIAL_WAREHOUSES));
   const [contractors, setContractors] = useState<Contractor[]>(() => loadStorage('contractors', INITIAL_CONTRACTORS));
+  const [contractorContracts, setContractorContracts] = useState<ContractorWageContract[]>(() => loadStorage('contractorContracts', INITIAL_CONTRACTOR_CONTRACTS));
+  const [contractorTransactions, setContractorTransactions] = useState<ContractorFinancialTransaction[]>(() => loadStorage('contractorTransactions', INITIAL_CONTRACTOR_TRANSACTIONS));
   const [inventory, setInventory] = useState<InventoryBalance[]>(() => loadStorage('inventory', INITIAL_INVENTORY));
   const [boms, setBoms] = useState<BOM[]>(() => loadStorage('boms', INITIAL_BOMS));
   const [projects, setProjects] = useState<Project[]>(() => loadStorage('projects', INITIAL_PROJECTS));
@@ -536,7 +559,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isInstalledCheck = localStorage.getItem(`${STORAGE_KEY}_is_installed`) === 'true';
       if (!isInstalledCheck) {
         const businessTables = [
-          'users', 'items', 'itemGroups', 'warehouses', 'contractors', 'inventory', 
+          'users', 'items', 'itemGroups', 'warehouses', 'contractors', 'contractorContracts', 'contractorTransactions', 'inventory', 
           'boms', 'projects', 'operators', 'stockCountings', 'stockInDocs', 'stockOutDocs', 
           'transfers', 'purchaseRequests', 'productionLogs', 'materialHandovers', 
           'notifications', 'traceabilityEvents', 'auditLogs'
@@ -566,6 +589,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${STORAGE_KEY}_itemGroups`, JSON.stringify(itemGroups));
     localStorage.setItem(`${STORAGE_KEY}_warehouses`, JSON.stringify(warehouses));
     localStorage.setItem(`${STORAGE_KEY}_contractors`, JSON.stringify(contractors));
+    localStorage.setItem(`${STORAGE_KEY}_contractorContracts`, JSON.stringify(contractorContracts));
+    localStorage.setItem(`${STORAGE_KEY}_contractorTransactions`, JSON.stringify(contractorTransactions));
     localStorage.setItem(`${STORAGE_KEY}_inventory`, JSON.stringify(inventory));
     localStorage.setItem(`${STORAGE_KEY}_boms`, JSON.stringify(boms));
     localStorage.setItem(`${STORAGE_KEY}_projects`, JSON.stringify(projects));
@@ -582,7 +607,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${STORAGE_KEY}_traceabilityEvents`, JSON.stringify(traceabilityEvents));
     localStorage.setItem(`${STORAGE_KEY}_auditLogs`, JSON.stringify(auditLogs));
   }, [
-    items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, 
+    items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
     productionLogs, materialHandovers, notifications, messages, traceabilityEvents, auditLogs
   ]);
@@ -598,6 +623,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.itemGroups) setItemGroups(data.itemGroups);
     if (data.warehouses) setWarehouses(data.warehouses);
     if (data.contractors) setContractors(data.contractors);
+    if (data.contractorContracts) setContractorContracts(data.contractorContracts);
+    if (data.contractorTransactions) setContractorTransactions(data.contractorTransactions);
     if (data.inventory) setInventory(data.inventory);
     if (data.boms) setBoms(data.boms);
     if (data.projects) setProjects(data.projects);
@@ -641,7 +668,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isInitialServerSyncDoneRef.current || isRemoteUpdatingRef.current) return;
     try {
       const payload = customPayload || {
-        items, itemGroups, warehouses, contractors, inventory, boms, projects,
+        items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects,
         operators, stockCountings, stockInDocs, stockOutDocs, transfers,
         purchaseRequests, productionLogs, materialHandovers, notifications,
         messages, channels,
@@ -673,7 +700,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setServerSyncStatus('offline');
     }
   }, [
-    items, itemGroups, warehouses, contractors, inventory, boms, projects,
+    items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects,
     operators, stockCountings, stockInDocs, stockOutDocs, transfers,
     purchaseRequests, productionLogs, materialHandovers, notifications,
     traceabilityEvents, auditLogs, users, isInstalled, companyName,
@@ -1516,6 +1543,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('حذف پیمانکار', 'Contractor', id, `حذف پیمانکار ${target?.name || id}`);
   };
 
+  // Contractor Wage Contracts
+  const addContractorContract = (contractData: Omit<ContractorWageContract, 'id'>) => {
+    const newContract: ContractorWageContract = {
+      ...contractData,
+      id: `cntr-${Date.now()}`,
+    };
+    setContractorContracts(prev => [newContract, ...prev]);
+    // update contractor active contracts count
+    setContractors(prev => prev.map(c => c.id === contractData.contractorId ? { ...c, activeContractsCount: (c.activeContractsCount || 0) + 1 } : c));
+    addAudit('ثبت قرارداد کارمزد پیمانکار', 'ContractorWageContract', newContract.contractNumber, `ایجاد قرارداد "${newContract.title}" با نرخ ${newContract.wagePerUnit} ریال`);
+  };
+
+  const updateContractorContract = (id: string, updated: Partial<ContractorWageContract>) => {
+    setContractorContracts(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+    addAudit('ویرایش قرارداد کارمزد', 'ContractorWageContract', id, 'به‌روزرسانی مفاد قرارداد پیمانکار');
+  };
+
+  const deleteContractorContract = (id: string) => {
+    const target = contractorContracts.find(c => c.id === id);
+    setContractorContracts(prev => prev.filter(c => c.id !== id));
+    if (target) {
+      setContractors(prev => prev.map(c => c.id === target.contractorId ? { ...c, activeContractsCount: Math.max(0, (c.activeContractsCount || 1) - 1) } : c));
+    }
+    addAudit('حذف قرارداد کارمزد', 'ContractorWageContract', id, `حذف قرارداد ${target?.contractNumber || id}`);
+  };
+
+  // Contractor Financial Transactions (Double-Entry Accounting)
+  const addContractorTransaction = (txData: Omit<ContractorFinancialTransaction, 'id' | 'createdAt'>) => {
+    const newTx: ContractorFinancialTransaction = {
+      ...txData,
+      id: `ctx-${Date.now()}`,
+      createdAt: new Date().toISOString().substring(0, 10),
+    };
+    setContractorTransactions(prev => [newTx, ...prev]);
+    
+    // Traceability or Notification
+    const cont = contractors.find(c => c.id === txData.contractorId);
+    const actionDesc = txData.credit > 0 
+      ? `ثبت سند کارمزد و بستانکاری به مبلغ ${txData.credit.toLocaleString('fa-IR')} ریال برای ${cont?.name || 'پیمانکار'}`
+      : `ثبت سند پرداخت / بدهکاری به مبلغ ${txData.debit.toLocaleString('fa-IR')} ریال برای ${cont?.name || 'پیمانکار'}`;
+
+    addAudit('ثبت سند مالی پیمانکار', 'ContractorFinancialTransaction', newTx.docNumber, actionDesc);
+  };
+
+  const updateContractorTransaction = (id: string, updated: Partial<ContractorFinancialTransaction>) => {
+    setContractorTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
+    addAudit('ویرایش سند مالی پیمانکار', 'ContractorFinancialTransaction', id, 'اصلاح سند حسابداری پیمانکار');
+  };
+
+  const deleteContractorTransaction = (id: string) => {
+    const target = contractorTransactions.find(t => t.id === id);
+    setContractorTransactions(prev => prev.filter(t => t.id !== id));
+    addAudit('حذف سند مالی پیمانکار', 'ContractorFinancialTransaction', id, `حذف سند ${target?.docNumber || id}`);
+  };
+
+  const getContractorFinancialSummary = (contractorId: string) => {
+    const cont = contractors.find(c => c.id === contractorId);
+    const txs = contractorTransactions.filter(t => t.contractorId === contractorId);
+    const contracts = contractorContracts.filter(c => c.contractorId === contractorId);
+
+    const initialBal = cont?.initialBalance || 0; // positive = credit (we owe him), negative = debit (he owes us)
+    let totalDebit = initialBal < 0 ? Math.abs(initialBal) : 0;
+    let totalCredit = initialBal > 0 ? initialBal : 0;
+    let totalProducedQuantity = 0;
+
+    txs.forEach(t => {
+      totalDebit += t.debit || 0;
+      totalCredit += t.credit || 0;
+      if (t.productionQuantity) {
+        totalProducedQuantity += t.productionQuantity;
+      }
+    });
+
+    const balance = totalCredit - totalDebit; // > 0: Creditor (طلبکار / مانده بستانکار), < 0: Debtor (بدهکار), 0: Settled (تسویه)
+    let status: 'Creditor' | 'Debtor' | 'Settled' = 'Settled';
+    if (balance > 0) status = 'Creditor';
+    else if (balance < 0) status = 'Debtor';
+
+    return {
+      totalDebit,
+      totalCredit,
+      balance: Math.abs(balance),
+      status,
+      totalProducedQuantity,
+      activeContractsCount: contracts.filter(c => c.status === 'Active').length,
+      transactionsCount: txs.length,
+    };
+  };
+
   // BOM Management
   const addBOM = (bomData: Omit<BOM, 'id' | 'createdAt'>) => {
     const newBom: BOM = {
@@ -2254,6 +2370,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: newProjStatus
       };
     }));
+
+    // 5. Automated Contractor Wage & Accounting Ledger Integration
+    if (targetStep.isOutsourced && targetStep.contractorId && qtyProd > 0) {
+      const activeContract = contractorContracts.find(
+        c => c.contractorId === targetStep.contractorId && (c.stepId === targetStep.id || c.projectId === data.projectId || c.status === 'Active')
+      );
+      const unitWage = activeContract?.wagePerUnit || targetStep.contractorCost || 0;
+      
+      if (unitWage > 0) {
+        const totalWage = qtyProd * unitWage;
+        const txDocNumber = `WAG-REC-${Math.floor(1000 + Math.random() * 9000)}`;
+        
+        const autoTx: ContractorFinancialTransaction = {
+          id: `ctx-auto-${Date.now()}`,
+          docNumber: txDocNumber,
+          date: today,
+          contractorId: targetStep.contractorId,
+          contractId: activeContract?.id,
+          projectId: data.projectId,
+          stepId: data.stepId,
+          type: 'WagePayable',
+          description: `ثبت خودکار کارمزد تولید مرحله «${targetStep.name}» (تعداد: ${qtyProd.toLocaleString('fa-IR')} عدد × نرخ: ${unitWage.toLocaleString('fa-IR')} ریال)`,
+          productionQuantity: qtyProd,
+          scrapQuantity: qtyScrap,
+          unitWage: unitWage,
+          debit: 0,
+          credit: totalWage,
+          registeredBy: `سیستم خودکار انبارداری (${currentUser.fullName})`,
+          notes: `سند متناظر با تحویل خروجی مرحله در پروژه ${proj.code}`,
+          createdAt: new Date().toISOString().substring(0, 10),
+        };
+
+        setContractorTransactions(prev => [autoTx, ...prev]);
+        
+        addAudit(
+          'صدور خودکار سند کارمزد پیمانکار',
+          'ContractorFinancialTransaction',
+          txDocNumber,
+          `بستانکار شدن پیمانکار به مبلغ ${totalWage.toLocaleString('fa-IR')} ریال بابت تولید ${qtyProd} عدد`
+        );
+      }
+    }
 
     addAudit(
       'ثبت دریافت خروجی مرحله پروژه',
@@ -3223,7 +3381,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       changePassword, adminResetPassword,
       hasTabPermission, hasActionPermission,
       activeTab, setActiveTab,
-      items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, stockCountings,
+      items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects, operators, stockCountings,
       stockInDocs, stockOutDocs, transfers, purchaseRequests,
       productionLogs, materialHandovers, notifications, messages, channels,
       traceabilityEvents, auditLogs,
@@ -3235,6 +3393,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addItemGroup, updateItemGroup, deleteItemGroup,
       addWarehouse, updateWarehouse, deleteWarehouse,
       addContractor, updateContractor, deleteContractor,
+      addContractorContract, updateContractorContract, deleteContractorContract,
+      addContractorTransaction, updateContractorTransaction, deleteContractorTransaction,
+      getContractorFinancialSummary,
       addBOM, updateBOM, deleteBOM,
       importItemsBatch, importInitialStockBatch, importBOMsBatch, applySmartStageTargetsToProject,
       addProject, updateProject, deleteProject, updateProjectStep, updateProjectStepDetails, addProjectSubStep, deleteProjectStep,

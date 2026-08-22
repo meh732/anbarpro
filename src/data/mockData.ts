@@ -1,7 +1,8 @@
 import { 
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, Operator, User, 
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
-  TraceabilityEvent, SystemNotification, AuditLog, Contractor, StockCountingSession 
+  TraceabilityEvent, SystemNotification, AuditLog, Contractor, StockCountingSession,
+  ContractorWageContract, ContractorFinancialTransaction
 } from '../types';
 
 // =================================================================
@@ -148,6 +149,10 @@ export const INITIAL_CONTRACTORS: Contractor[] = [
     specialty: 'مونتاژ اتوماتیک SMD و Pick & Place',
     address: 'تهران - شهرک صنعتی شمس‌آباد - بلوار اصلی',
     activeContractsCount: 2,
+    bankAccountInfo: 'IR450120000000001234567890 (بانک تجارت)',
+    nationalId: '10103456789',
+    initialBalance: 0,
+    defaultUnitWage: 90000,
   },
   {
     id: 'cont-2',
@@ -158,7 +163,132 @@ export const INITIAL_CONTRACTORS: Contractor[] = [
     specialty: 'تزریق پلاستیک بدنه و قاب قطعات الکترونیکی',
     address: 'کرج - شهرک صنعتی سیمین دشت',
     activeContractsCount: 1,
+    bankAccountInfo: 'IR880170000000009876543210 (بانک ملت)',
+    nationalId: '10861234567',
+    initialBalance: -5000000, // ۵ میلیون بدهکار به دلیل پیش‌پرداخت اولیه
+    defaultUnitWage: 45000,
   },
+];
+
+export const INITIAL_CONTRACTOR_CONTRACTS: ContractorWageContract[] = [
+  {
+    id: 'cntr-101',
+    contractorId: 'cont-1',
+    projectId: 'proj-101',
+    stepId: 'stg-2',
+    contractNumber: 'WAGE-1404-01',
+    title: 'قرارداد کارمزد مونتاژ ماشینی بردهای SMD کنتور هوشمند',
+    calculationType: 'PerPiece',
+    wagePerUnit: 90000, // ۹۰ هزار ریال به ازای هر عدد برد سالم
+    scrapPenaltyPerUnit: 185000, // جریمه ضایعات غیرمجاز (برابر فی برد خام)
+    agreedQuantity: 500,
+    status: 'Active',
+    startDate: '2026-01-20',
+    endDate: '2026-03-25',
+    notes: 'تسویه بر اساس رسید انبار نیمه‌ساخته و تاییدیه کنترل کیفیت QC',
+  },
+  {
+    id: 'cntr-102',
+    contractorId: 'cont-2',
+    projectId: 'proj-101',
+    stepId: 'stg-4',
+    contractNumber: 'WAGE-1404-02',
+    title: 'قرارداد کارمزد تزریق و تولید قاب ABS کنتور',
+    calculationType: 'PerPiece',
+    wagePerUnit: 45000,
+    agreedQuantity: 500,
+    status: 'Active',
+    startDate: '2026-01-25',
+    notes: 'مواد اولیه گرانول توسط کارخانه تحویل شده است',
+  }
+];
+
+export const INITIAL_CONTRACTOR_TRANSACTIONS: ContractorFinancialTransaction[] = [
+  {
+    id: 'ctx-1',
+    docNumber: 'FIN-WAG-001',
+    date: '2026-01-22',
+    contractorId: 'cont-1',
+    contractId: 'cntr-101',
+    projectId: 'proj-101',
+    stepId: 'stg-2',
+    type: 'Prepayment',
+    description: 'پرداخت پیش‌پرداخت ۳۰ درصدی شروع قرارداد مونتاژ SMD',
+    debit: 15000000, // ۱۵ میلیون ریال بدهکار (پرداخت نقدی)
+    credit: 0,
+    paymentMethod: 'BankTransfer',
+    trackingNumber: 'TRK-9842104',
+    registeredBy: 'واحد مالی و حسابداری',
+    createdAt: '2026-01-22',
+  },
+  {
+    id: 'ctx-2',
+    docNumber: 'FIN-WAG-002',
+    date: '2026-01-28',
+    contractorId: 'cont-1',
+    contractId: 'cntr-101',
+    projectId: 'proj-101',
+    stepId: 'stg-2',
+    type: 'WagePayable',
+    description: 'کارمزد تولید پارت اول - تحویل ۲۰۰ عدد برد سالم مونتاژ شده SMD',
+    productionQuantity: 200,
+    scrapQuantity: 2,
+    unitWage: 90000,
+    debit: 0,
+    credit: 18000000, // ۲۰۰ * ۹۰,۰۰۰ = ۱۸,۰۰۰,۰۰۰ ریال بستانکار
+    registeredBy: 'سیستم خودکار انبار و کارمزد',
+    notes: 'طبق رسید خروجی مرحله ۲.۱ پروژه PRJ-101',
+    createdAt: '2026-01-28',
+  },
+  {
+    id: 'ctx-3',
+    docNumber: 'FIN-WAG-003',
+    date: '2026-02-05',
+    contractorId: 'cont-1',
+    contractId: 'cntr-101',
+    projectId: 'proj-101',
+    stepId: 'stg-2',
+    type: 'TaxDeduction',
+    description: 'کسر ۵ درصد مالیات تکلیفی و سپرده بیمه ماده ۳۸ قرارداد',
+    debit: 900000, // ۹۰۰ هزار ریال کسر مالیات
+    credit: 0,
+    registeredBy: 'واحد مالی و حسابداری',
+    createdAt: '2026-02-05',
+  },
+  {
+    id: 'ctx-4',
+    docNumber: 'FIN-WAG-004',
+    date: '2026-02-10',
+    contractorId: 'cont-1',
+    contractId: 'cntr-101',
+    projectId: 'proj-101',
+    stepId: 'stg-2',
+    type: 'WagePayable',
+    description: 'کارمزد تولید پارت دوم - تحویل ۱۵۰ عدد برد سالم مونتاژ شده SMD',
+    productionQuantity: 150,
+    scrapQuantity: 1,
+    unitWage: 90000,
+    debit: 0,
+    credit: 13500000, // ۱۵۰ * ۹۰,۰۰۰ = ۱۳,۵۰۰,۰۰۰ ریال بستانکار
+    registeredBy: 'سیستم خودکار انبار و کارمزد',
+    createdAt: '2026-02-10',
+  },
+  {
+    id: 'ctx-5',
+    docNumber: 'FIN-WAG-005',
+    date: '2026-02-15',
+    contractorId: 'cont-1',
+    contractId: 'cntr-101',
+    projectId: 'proj-101',
+    type: 'Payment',
+    description: 'واریز بین‌الحسابی وجه به حساب بانکی پیمانکار (بانک تجارت)',
+    debit: 10000000, // ۱۰ میلیون ریال پرداخت
+    credit: 0,
+    paymentMethod: 'BankTransfer',
+    trackingNumber: 'TRK-9891044',
+    registeredBy: 'واحد مالی و حسابداری',
+    createdAt: '2026-02-15',
+  }
 ];
 
 // =================================================================
