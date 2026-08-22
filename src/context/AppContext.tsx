@@ -2371,16 +2371,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }));
 
-    // 5. Automated Contractor Wage & Accounting Ledger Integration
+    // 5. Automated Contractor Wage & Accounting Ledger Integration (پروژه‌محور)
     if (targetStep.isOutsourced && targetStep.contractorId && qtyProd > 0) {
-      const activeContract = contractorContracts.find(
-        c => c.contractorId === targetStep.contractorId && (c.stepId === targetStep.id || c.projectId === data.projectId || c.status === 'Active')
+      // Find matching contract with highest specificity: (1) Step-specific in project -> (2) Project-specific -> (3) General
+      const stepContract = contractorContracts.find(
+        c => c.contractorId === targetStep.contractorId && c.projectId === data.projectId && c.stepId === targetStep.id && c.status === 'Active'
       );
-      const unitWage = activeContract?.wagePerUnit || targetStep.contractorCost || 0;
+      const projContract = contractorContracts.find(
+        c => c.contractorId === targetStep.contractorId && c.projectId === data.projectId && c.status === 'Active'
+      );
+      const generalContract = contractorContracts.find(
+        c => c.contractorId === targetStep.contractorId && !c.projectId && c.status === 'Active'
+      );
+      const activeContract = stepContract || projContract || generalContract;
+
+      const contObj = contractors.find(c => c.id === targetStep.contractorId);
+      const unitWage = activeContract?.wagePerUnit || targetStep.contractorCost || targetStep.outsourcingCost || contObj?.defaultUnitWage || 0;
       
       if (unitWage > 0) {
         const totalWage = qtyProd * unitWage;
-        const txDocNumber = `WAG-REC-${Math.floor(1000 + Math.random() * 9000)}`;
+        const txDocNumber = `WAG-PRJ-${proj.code}-${Math.floor(1000 + Math.random() * 9000)}`;
         
         const autoTx: ContractorFinancialTransaction = {
           id: `ctx-auto-${Date.now()}`,
@@ -2391,14 +2401,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectId: data.projectId,
           stepId: data.stepId,
           type: 'WagePayable',
-          description: `ثبت خودکار کارمزد تولید مرحله «${targetStep.name}» (تعداد: ${qtyProd.toLocaleString('fa-IR')} عدد × نرخ: ${unitWage.toLocaleString('fa-IR')} ریال)`,
+          description: `کارمزد تولید مرحله «${targetStep.name}» در پروژه «${proj.name}» (تعداد: ${qtyProd.toLocaleString('fa-IR')} عدد × نرخ: ${unitWage.toLocaleString('fa-IR')} ریال)`,
           productionQuantity: qtyProd,
           scrapQuantity: qtyScrap,
           unitWage: unitWage,
           debit: 0,
           credit: totalWage,
           registeredBy: `سیستم خودکار انبارداری (${currentUser.fullName})`,
-          notes: `سند متناظر با تحویل خروجی مرحله در پروژه ${proj.code}`,
+          notes: `سند صورتحساب متناظر با تحویل خروجی مرحله در پروژه ${proj.code}`,
           createdAt: new Date().toISOString().substring(0, 10),
         };
 
@@ -2408,8 +2418,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           'صدور خودکار سند کارمزد پیمانکار',
           'ContractorFinancialTransaction',
           txDocNumber,
-          `بستانکار شدن پیمانکار به مبلغ ${totalWage.toLocaleString('fa-IR')} ریال بابت تولید ${qtyProd} عدد`
+          `بستانکار شدن پیمانکار بابت پروژه ${proj.name} به مبلغ ${totalWage.toLocaleString('fa-IR')} ریال (${qtyProd} عدد × ${unitWage.toLocaleString('fa-IR')} ریال)`
         );
+
+        // Deduct scrap penalty if configured
+        if (activeContract?.scrapPenaltyPerUnit && activeContract.scrapPenaltyPerUnit > 0 && qtyScrap > 0) {
+          const penaltyAmount = qtyScrap * activeContract.scrapPenaltyPerUnit;
+          const penaltyDocNumber = `PEN-${proj.code}-${Math.floor(1000 + Math.random() * 9000)}`;
+          const penaltyTx: ContractorFinancialTransaction = {
+            id: `ctx-pen-${Date.now()}`,
+            docNumber: penaltyDocNumber,
+            date: today,
+            contractorId: targetStep.contractorId,
+            contractId: activeContract.id,
+            projectId: data.projectId,
+            stepId: data.stepId,
+            type: 'ScrapPenalty',
+            description: `کسر جریمه ضایعات نامنطبق مرحله «${targetStep.name}» در پروژه «${proj.name}» (${qtyScrap.toLocaleString('fa-IR')} عدد × جریمه: ${activeContract.scrapPenaltyPerUnit.toLocaleString('fa-IR')} ریال)`,
+            scrapQuantity: qtyScrap,
+            debit: penaltyAmount,
+            credit: 0,
+            registeredBy: `سیستم خودکار انبارداری (${currentUser.fullName})`,
+            notes: `کسر جریمه ضایعات پروژه ${proj.code}`,
+            createdAt: new Date().toISOString().substring(0, 10),
+          };
+          setContractorTransactions(prev => [penaltyTx, ...prev]);
+        }
       }
     }
 

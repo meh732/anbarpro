@@ -355,7 +355,7 @@ export const StepOutputReceiptModal: React.FC<{
   project: Project;
   step: ProjectStep;
 }> = ({ isOpen, onClose, project, step }) => {
-  const { items, warehouses, operators, recordStepOutputReceipt, currentUser } = useApp();
+  const { items, warehouses, operators, recordStepOutputReceipt, currentUser, contractors, contractorContracts } = useApp();
 
   const outputItemId = step.outputItemId || project.targetFinishedItemId;
   const outputItem = items.find(i => i.id === outputItemId);
@@ -376,6 +376,21 @@ export const StepOutputReceiptModal: React.FC<{
   );
   const [notes, setNotes] = useState('');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Contractor info if step is outsourced
+  const assignedContractor = step.contractorId ? contractors.find(c => c.id === step.contractorId) : null;
+  const stepContract = contractorContracts.find(
+    c => c.contractorId === step.contractorId && c.projectId === project.id && c.stepId === step.id && c.status === 'Active'
+  );
+  const projContract = contractorContracts.find(
+    c => c.contractorId === step.contractorId && c.projectId === project.id && c.status === 'Active'
+  );
+  const generalContract = contractorContracts.find(
+    c => c.contractorId === step.contractorId && !c.projectId && c.status === 'Active'
+  );
+  const matchedContract = stepContract || projContract || generalContract;
+  const unitWage = matchedContract?.wagePerUnit || step.contractorCost || step.outsourcingCost || assignedContractor?.defaultUnitWage || 0;
+  const calculatedTotalWage = (Number(quantityProduced) || 0) * unitWage;
 
   // Initialize operator
   useEffect(() => {
@@ -493,6 +508,40 @@ export const StepOutputReceiptModal: React.FC<{
               </div>
             </div>
           </div>
+
+          {/* Contractor Wage & Financial Accounting Integration Card */}
+          {step.isOutsourced && assignedContractor && (
+            <div className="bg-amber-50/80 border border-amber-200 p-3.5 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                  <Factory className="w-4 h-4 text-amber-600" />
+                  <span>پیمانکار مجری: {assignedContractor.name} ({assignedContractor.code})</span>
+                </div>
+                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md">
+                  برونسپاری پروژه {project.code}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                <div className="bg-white p-2 rounded-xl border border-amber-100">
+                  <span className="text-slate-500 block text-[10px]">نرخ کارمزد توافقی در این پروژه:</span>
+                  <span className="font-mono font-bold text-slate-900">
+                    {unitWage > 0 ? `${unitWage.toLocaleString('fa-IR')} ریال / قطعه` : 'تعیین نشده'}
+                  </span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-amber-100">
+                  <span className="text-slate-500 block text-[10px]">کارمزد محاسبه‌شده این نوبت:</span>
+                  <span className="font-mono font-bold text-emerald-700">
+                    {calculatedTotalWage.toLocaleString('fa-IR')} ریال
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-amber-800 leading-normal">
+                ✓ با تایید دریافت، سند حسابداری دوبل به صورت خودکار صادر شده و پیمانکار بابت این پروژه بستانکار خواهد شد.
+              </p>
+            </div>
+          )}
 
           {/* Input Quantities */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
