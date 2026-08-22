@@ -469,7 +469,8 @@ export const INITIAL_USERS: User[] = [
     canAdd: true,
     canEdit: true,
     canDelete: true,
-    canExport: true
+    canExport: true,
+    canViewPrices: true
   },
   { 
     id: 'usr-2', 
@@ -484,7 +485,8 @@ export const INITIAL_USERS: User[] = [
     canAdd: true,
     canEdit: true,
     canDelete: false,
-    canExport: true
+    canExport: true,
+    canViewPrices: true
   },
   { 
     id: 'usr-3', 
@@ -499,7 +501,8 @@ export const INITIAL_USERS: User[] = [
     canAdd: true,
     canEdit: true,
     canDelete: false,
-    canExport: true
+    canExport: true,
+    canViewPrices: true
   },
   { 
     id: 'usr-4', 
@@ -514,7 +517,8 @@ export const INITIAL_USERS: User[] = [
     canAdd: true,
     canEdit: false,
     canDelete: false,
-    canExport: false
+    canExport: false,
+    canViewPrices: false
   },
 ];
 

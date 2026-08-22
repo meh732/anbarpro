@@ -92,17 +92,17 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
   const currentTabInfo = tabTitles[activeTab] || { title: 'پنل مدیریت', category: 'سیستم انبار' };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/70 backdrop-blur-xl border-b border-slate-200/60 shadow-xs px-3 sm:px-6 lg:px-8 pt-[max(0.6rem,env(safe-area-inset-top))] pb-2.5 sm:py-3 transition-all">
-      <div className="flex items-center justify-between gap-2 sm:gap-4">
+    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/70 shadow-xs px-2.5 sm:px-6 lg:px-8 pt-[max(0.65rem,env(safe-area-inset-top))] pb-2 sm:py-3 transition-all">
+      <div className="flex items-center justify-between gap-1.5 sm:gap-4">
         
         {/* Right Section (in RTL): Mobile Hamburger + Breadcrumb */}
-        <div className="flex items-center gap-2 sm:gap-3 md:gap-4 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 md:gap-4 min-w-0">
           <button
             onClick={onToggleMobileSidebar}
-            className="lg:hidden p-2 bg-white/90 hover:bg-white text-slate-700 rounded-xl border border-slate-200/70 shadow-xs transition-all cursor-pointer shrink-0 active:scale-95"
+            className="lg:hidden p-2 bg-slate-100/90 hover:bg-slate-200/80 text-slate-700 rounded-xl border border-slate-200/80 shadow-2xs transition-all cursor-pointer shrink-0 active:scale-95"
             title="باز کردن منو"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-4.5 h-4.5" />
           </button>
 
           <div className="min-w-0">
@@ -111,19 +111,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
               <span>/</span>
               <span className="text-indigo-600 font-extrabold shrink-0">{currentTabInfo.category}</span>
             </div>
-            <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-black text-slate-900 tracking-tight truncate max-w-[150px] sm:max-w-none">
+            <h1 className="text-xs sm:text-base md:text-lg lg:text-xl font-black text-slate-900 tracking-tight truncate max-w-[130px] sm:max-w-none">
               {currentTabInfo.title}
             </h1>
           </div>
         </div>
 
         {/* Left Section (in RTL): Action buttons & User profile */}
-        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 md:gap-3 shrink-0">
           
           {/* Central Linux Server Sync Status Badge & Dialog Trigger */}
           <button
             onClick={() => setShowServerModal(true)}
-            className={`flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 ${
+            className={`flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer shadow-2xs active:scale-95 ${
               serverSyncStatus === 'connected'
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100/80'
                 : serverSyncStatus === 'syncing'
@@ -146,6 +146,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
             </span>
           </button>
 
+          {/* Quick Chat Shortcut (if unread messages on mobile) */}
+          {unreadMessagesCount > 0 && activeTab !== 'chat' && (
+            <button
+              onClick={() => setActiveTab('chat')}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-xs animate-pulse cursor-pointer"
+              title="پیام جدید دارید"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span className="text-[10px]">{unreadMessagesCount}</span>
+            </button>
+          )}
+
           {/* Quick Scanner (Tablet / Desktop) */}
           <button
             onClick={() => setIsScannerOpen(true)}
@@ -158,7 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           {/* Lite Mode Toggle */}
           <button
             onClick={() => setLiteMode(!liteMode)}
-            className={`p-2 sm:px-2.5 sm:py-1.5 rounded-xl font-black text-[10px] sm:text-xs transition-all cursor-pointer active:scale-95 shadow-xs border flex items-center gap-1 ${
+            className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl font-black text-[10px] sm:text-xs transition-all cursor-pointer active:scale-95 shadow-2xs border flex items-center gap-1 ${
               liteMode 
                 ? 'bg-amber-50 text-amber-700 border-amber-300' 
                 : 'bg-white/80 hover:bg-white text-indigo-700 border-indigo-200/60'
@@ -173,12 +185,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           <div className="relative">
             <button
               onClick={() => setShowNotifs(!showNotifs)}
-              className="p-2 sm:p-2.5 bg-white/80 hover:bg-white text-slate-600 border border-slate-200/70 rounded-xl relative transition-all cursor-pointer shadow-xs active:scale-95"
+              className="p-1.5 sm:p-2 bg-white/80 hover:bg-white text-slate-600 border border-slate-200/70 rounded-xl relative transition-all cursor-pointer shadow-2xs active:scale-95"
               title="اعلان‌ها و کارتابل"
             >
-              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Bell className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-rose-500 text-white text-[9px] sm:text-[10px] font-black rounded-full border-2 border-white flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-4.5 sm:h-4.5 bg-rose-500 text-white text-[9px] font-black rounded-full border-2 border-white flex items-center justify-center animate-pulse">
                   {unreadCount}
                 </span>
               )}

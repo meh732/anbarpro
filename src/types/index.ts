@@ -211,10 +211,14 @@ export interface StockCountingItem {
   locationInRack?: string;
   systemQuantity: number;  // موجودی سیستمی
   physicalQuantity: number; // موجودی واقعی شمارش شده (که معمولا برابر finalCount است)
-  firstCount?: number;      // شمارش اول
-  secondCount?: number;     // شمارش دوم
+  firstCount?: number;      // شمارش اول (تیم الف)
+  secondCount?: number;     // شمارش دوم (تیم ب)
+  thirdCount?: number;      // شمارش سوم / داوری نهایی
   finalCount?: number;      // شمارش مبنای نهایی
   variance: number;         // مغایرت (موجودی واقعی - سیستمی)
+  difference?: number;      // مغایرت
+  tagNumber?: string;       // شماره تگ الصاقی پالت/قفسه
+  unitPrice?: number;       // نرخ ریالی واحد کالا جهت محاسبه ریالی مغایرت
   notes?: string;
   countedBy?: string;
   countedAt?: string;
@@ -228,13 +232,18 @@ export interface StockCountingSession {
   warehouseName: string;
   startDate: string;
   endDate?: string;
-  status: 'InPlanning' | 'InCounting' | 'PendingReview' | 'AppliedAdjustments' | 'Closed';
+  status: 'InPlanning' | 'InCounting' | 'PendingReview' | 'AppliedAdjustments' | 'Applied' | 'Closed';
   registeredBy: string;
   notes?: string;
   items: StockCountingItem[];
   createdAt: string;
   filterType?: 'All' | 'Group' | 'Project' | 'Location';
   filterValue?: string;
+  countingStage?: 1 | 2 | 3;
+  isBlindCount?: boolean;   // شمارش کور بدون نمایش موجودی سیستم برای شمارشگران
+  committeeMembers?: { name: string; role: string; signed?: boolean; signedAt?: string }[];
+  surplusDocNumber?: string;
+  deficitDocNumber?: string;
 }
 
 export interface Contractor {
@@ -385,6 +394,7 @@ export interface User {
   canEdit?: boolean;     // امکان ویرایش اطلاعات
   canDelete?: boolean;   // امکان حذف اسناد و کالاها
   canExport?: boolean;   // امکان دریافت خروجی اکسل و بکاپ
+  canViewPrices?: boolean; // دسترسی به مشاهده فی، نرخ کالاها و کاردکس مالی
 }
 
 export interface AuditLog {

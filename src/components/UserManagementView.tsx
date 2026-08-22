@@ -17,12 +17,15 @@ interface TabDefinition {
 
 const ALL_SYSTEM_TABS: TabDefinition[] = [
   { id: 'dashboard', nameFa: 'داشبورد مدیریتی', nameEn: 'Executive Dashboard', category: 'executive' },
+  { id: 'chat', nameFa: 'گفتگو و هماهنگی سازمانی', nameEn: 'Team Chat & Coordination', category: 'executive' },
   { id: 'reports', nameFa: 'گزارش‌های جامع و اکسل', nameEn: 'Reports & Analytics', category: 'executive' },
   
   { id: 'items', nameFa: 'کاتالوگ و ساختار کالاها', nameEn: 'Item Catalog', category: 'warehouse' },
+  { id: 'kardex', nameFa: 'کاردکس مقداری و ریالی کالا', nameEn: 'Stock Ledger (Kardex)', category: 'warehouse' },
   { id: 'warehouses', nameFa: 'مدیریت و موجودی انبارها', nameEn: 'Warehouses & Stock', category: 'warehouse' },
   { id: 'stock_movement', nameFa: 'ورود و خروج کالا (اسناد)', nameEn: 'Stock Documents', category: 'warehouse' },
   { id: 'transfers', nameFa: 'انتقال بین انبارها', nameEn: 'Warehouse Transfers', category: 'warehouse' },
+  { id: 'stock_counting', nameFa: 'انبارگردانی و مغایرت‌گیری', nameEn: 'Stock Counting & Audit', category: 'warehouse' },
   { id: 'requests', nameFa: 'درخواست کالا و خرید', nameEn: 'Purchase Requests', category: 'warehouse' },
   
   { id: 'projects', nameFa: 'پروژه‌ها و مراحل تولید', nameEn: 'Production Projects', category: 'production' },
@@ -66,6 +69,7 @@ export const UserManagementView: React.FC = () => {
   const [userCanEdit, setUserCanEdit] = useState(true);
   const [userCanDelete, setUserCanDelete] = useState(false);
   const [userCanExport, setUserCanExport] = useState(true);
+  const [userCanViewPrices, setUserCanViewPrices] = useState(true);
 
   // --- ADMIN RESET PASSWORD MODAL ---
   const [resetModalUser, setResetModalUser] = useState<User | null>(null);
@@ -109,7 +113,8 @@ export const UserManagementView: React.FC = () => {
     setUserCanEdit(true);
     setUserCanDelete(false);
     setUserCanExport(true);
-    setSelectedTabs(['dashboard', 'items', 'warehouses', 'stock_movement', 'transfers']);
+    setUserCanViewPrices(true);
+    setSelectedTabs(['dashboard', 'items', 'warehouses', 'stock_movement', 'transfers', 'kardex', 'stock_counting']);
     setIsModalOpen(true);
   };
 
@@ -127,6 +132,7 @@ export const UserManagementView: React.FC = () => {
     setUserCanEdit(u.canEdit ?? true);
     setUserCanDelete(u.canDelete ?? false);
     setUserCanExport(u.canExport ?? true);
+    setUserCanViewPrices(u.canViewPrices ?? (u.role === 'SystemAdmin' || u.role === 'PlantManager' || u.role === 'WarehouseManager' || u.role === 'Purchasing'));
     setSelectedTabs(u.allowedTabs?.includes('*') ? ALL_SYSTEM_TABS.map(t => t.id) : u.allowedTabs || ['dashboard']);
     setIsModalOpen(true);
   };
@@ -155,13 +161,15 @@ export const UserManagementView: React.FC = () => {
       setUserCanEdit(true);
       setUserCanDelete(true);
       setUserCanExport(true);
+      setUserCanViewPrices(true);
     } else if (presetType === 'warehouse') {
-      setSelectedTabs(['dashboard', 'items', 'warehouses', 'stock_movement', 'transfers', 'requests', 'reports']);
+      setSelectedTabs(['dashboard', 'items', 'warehouses', 'stock_movement', 'transfers', 'requests', 'kardex', 'stock_counting', 'reports']);
       setRole('WarehouseManager');
       setUserCanAdd(true);
       setUserCanEdit(true);
       setUserCanDelete(false);
       setUserCanExport(true);
+      setUserCanViewPrices(true);
     } else if (presetType === 'production') {
       setSelectedTabs(['dashboard', 'projects', 'bom', 'operator_logger', 'operator_perf', 'traceability', 'reports']);
       setRole('PlantManager');
@@ -169,6 +177,7 @@ export const UserManagementView: React.FC = () => {
       setUserCanEdit(true);
       setUserCanDelete(false);
       setUserCanExport(true);
+      setUserCanViewPrices(true);
     } else if (presetType === 'operator') {
       setSelectedTabs(['operator_logger', 'projects']);
       setRole('Operator');
@@ -176,6 +185,7 @@ export const UserManagementView: React.FC = () => {
       setUserCanEdit(false);
       setUserCanDelete(false);
       setUserCanExport(false);
+      setUserCanViewPrices(false);
     }
   };
 
@@ -199,7 +209,8 @@ export const UserManagementView: React.FC = () => {
         canAdd: userCanAdd,
         canEdit: userCanEdit,
         canDelete: userCanDelete,
-        canExport: userCanExport
+        canExport: userCanExport,
+        canViewPrices: userCanViewPrices
       };
       if (password.trim().length > 0) {
         updatePayload.password = password.trim();
@@ -218,7 +229,8 @@ export const UserManagementView: React.FC = () => {
         canAdd: userCanAdd,
         canEdit: userCanEdit,
         canDelete: userCanDelete,
-        canExport: userCanExport
+        canExport: userCanExport,
+        canViewPrices: userCanViewPrices
       });
     }
     setIsModalOpen(false);
@@ -442,6 +454,9 @@ export const UserManagementView: React.FC = () => {
                     </span>
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canExport ?? true ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`}>
                       خروجی
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${u.canViewPrices ?? (u.role === 'SystemAdmin' || u.role === 'PlantManager' || u.role === 'WarehouseManager' || u.role === 'Purchasing') ? 'bg-teal-50 text-teal-800 border-teal-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'}`} title={u.canViewPrices ? 'مشاهده فی و کاردکس مالی مجاز است' : 'مشاهده فی و قیمت‌ها مسدود است'}>
+                      {u.canViewPrices ?? (u.role === 'SystemAdmin' || u.role === 'PlantManager' || u.role === 'WarehouseManager' || u.role === 'Purchasing') ? '💰 مشاهده فی' : '🚫 عدم نمایش فی'}
                     </span>
                   </div>
                 </div>
@@ -813,7 +828,7 @@ export const UserManagementView: React.FC = () => {
               <div className="space-y-2.5 pt-3 border-t border-slate-200 bg-slate-50/80 p-3.5 rounded-2xl">
                 <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                  <span>{isFa ? 'مجوزهای عملیاتی (ایجاد، ویرایش، حذف و خروجی گرفتن):' : 'Granular Action Permissions:'}</span>
+                  <span>{isFa ? 'مجوزهای عملیاتی (ایجاد، ویرایش، حذف، خروجی و دسترسی مالی):' : 'Granular Action & Financial Permissions:'}</span>
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer hover:border-indigo-300">
@@ -854,6 +869,35 @@ export const UserManagementView: React.FC = () => {
                       className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
                     />
                     <span>🟡 خروجی اکسل/بکاپ</span>
+                  </label>
+                </div>
+
+                {/* Granular Price Visibility Control */}
+                <div className="pt-2 border-t border-slate-200/80">
+                  <label className={`flex items-start gap-3 p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                    userCanViewPrices 
+                      ? 'bg-teal-50/80 border-teal-300 text-teal-950 font-medium' 
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={userCanViewPrices}
+                      onChange={(e) => setUserCanViewPrices(e.target.checked)}
+                      className="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500 mt-0.5"
+                    />
+                    <div>
+                      <span className="font-bold block text-xs flex items-center gap-1.5">
+                        <span>💰 مشاهده فی و اطلاعات مالی (کاردکس ریالی، ارزش انبار و مبالغ خرید)</span>
+                        {userCanViewPrices ? (
+                          <span className="text-[10px] bg-teal-200 text-teal-900 px-2 py-0.5 rounded font-bold">مجاز</span>
+                        ) : (
+                          <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">مسدود (صرفاً کاردکس مقداری)</span>
+                        )}
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        در صورت غیرفعال بودن، این کاربر ستون‌های فی (نرخ وارده/صادره، بهای تمام شده و ارزش ریالی مانده) را در کاردکس و موجودی انبار مشاهده نخواهد کرد و فقط گردش مقداری برای وی نمایش داده می‌شود.
+                      </p>
+                    </div>
                   </label>
                 </div>
               </div>

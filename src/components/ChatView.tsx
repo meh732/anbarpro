@@ -160,7 +160,7 @@ export const ChatView: React.FC = () => {
   }, [attachmentType, attachSearchQuery, items, purchaseRequests, transfers]);
 
   return (
-    <div id="chat-view-container" className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8.5rem)] flex flex-col md:flex-row gap-0 md:gap-4 bg-white md:bg-white/80 backdrop-blur-xl border-0 md:border md:border-slate-200/80 rounded-2xl md:rounded-3xl p-0 md:p-4 shadow-none md:shadow-sm overflow-hidden animate-fadeIn relative">
+    <div id="chat-view-container" className="h-[calc(100vh-8.5rem)] sm:h-[calc(100vh-9rem)] md:h-[calc(100vh-8.5rem)] flex flex-col md:flex-row gap-0 md:gap-4 bg-white md:bg-white/80 backdrop-blur-xl border-0 md:border md:border-slate-200/80 rounded-none md:rounded-3xl p-0 md:p-4 shadow-none md:shadow-sm overflow-hidden animate-fadeIn relative">
       
       {/* ========================================================================= */}
       {/* 1. SIDEBAR: Channels & Direct Users (Full screen on mobile if mobileView === 'list') */}

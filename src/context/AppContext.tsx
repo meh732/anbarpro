@@ -173,7 +173,17 @@ interface AppContextType {
 
   // Stock Counting / Inventory Audit
   createStockCountingSession: (session: Omit<StockCountingSession, 'id' | 'createdAt'>) => void;
-  updateStockCountItem: (sessionId: string, itemId: string, physicalQty: number, notes?: string, firstCount?: number, secondCount?: number, finalCount?: number) => void;
+  updateStockCountItem: (
+    sessionId: string, 
+    itemId: string, 
+    physicalQty: number, 
+    notes?: string, 
+    firstCount?: number, 
+    secondCount?: number, 
+    finalCount?: number,
+    thirdCount?: number,
+    tagNumber?: string
+  ) => void;
   updateStockCountingSession: (sessionId: string, updated: Partial<StockCountingSession>) => void;
   deleteStockCountingSession: (sessionId: string) => void;
   applyStockCountingAdjustments: (sessionId: string) => void;
@@ -2307,7 +2317,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notes?: string,
     firstCount?: number,
     secondCount?: number,
-    finalCount?: number
+    finalCount?: number,
+    thirdCount?: number,
+    tagNumber?: string
   ) => {
     setStockCountings(prev => prev.map(s => {
       if (s.id !== sessionId) return s;
@@ -2315,17 +2327,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (it.itemId !== itemId) return it;
         const fCount = firstCount !== undefined ? firstCount : (it.firstCount ?? physicalQty);
         const sCount = secondCount !== undefined ? secondCount : (it.secondCount ?? physicalQty);
-        const fnlCount = finalCount !== undefined ? finalCount : (it.finalCount ?? physicalQty);
+        const tCount = thirdCount !== undefined ? thirdCount : it.thirdCount;
+        const fnlCount = finalCount !== undefined ? finalCount : (tCount !== undefined ? tCount : (sCount !== undefined && sCount > 0 ? sCount : fCount));
         
         const diff = fnlCount - it.systemQuantity;
         return {
           ...it,
           firstCount: fCount,
           secondCount: sCount,
+          thirdCount: tCount,
           finalCount: fnlCount,
           physicalQuantity: fnlCount,
           difference: diff,
           variance: diff, // set both for compatibility
+          tagNumber: tagNumber !== undefined ? tagNumber : it.tagNumber,
           notes: notes !== undefined ? notes : it.notes,
         };
       });

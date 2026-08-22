@@ -12,8 +12,16 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 export const KardexView: React.FC = () => {
   const { 
-    items, itemGroups, warehouses, traceabilityEvents, inventory, language, companyName 
+    items, itemGroups, warehouses, traceabilityEvents, inventory, language, companyName, currentUser 
   } = useApp();
+
+  // Check if current user has permission to see unit price / financial ledger values
+  const userCanViewPrice = currentUser?.canViewPrices ?? (
+    currentUser?.role === 'SystemAdmin' || 
+    currentUser?.role === 'PlantManager' || 
+    currentUser?.role === 'WarehouseManager' || 
+    currentUser?.role === 'Purchasing'
+  );
 
   // State: SKU & Group Exploration
   const [selectedGroupId, setSelectedGroupId] = useState<string>('ALL');
@@ -290,21 +298,36 @@ export const KardexView: React.FC = () => {
     if (!selectedItem) return;
 
     let csvContent = '\uFEFF'; // UTF-8 BOM
-    csvContent += `گزارش کاردکس مقداری و ریالی کالا - ${companyName || 'سیستم انبارداری'}\n`;
+    csvContent += `گزارش کاردکس ${userCanViewPrice ? 'مقداری و ریالی' : 'مقداری'} کالا - ${companyName || 'سیستم انبارداری'}\n`;
     csvContent += `کد کالا: ${selectedItem.code},نام کالا: ${selectedItem.name},واحد: ${selectedItem.unit},گروه: ${selectedItem.group}\n`;
-    csvContent += `موجودی اول دوره: ${accountingLedger.initialQty} (${accountingLedger.initialValue.toLocaleString('fa-IR')} تومان)\n\n`;
     
-    csvContent += 'ردیف,تاریخ و زمان,شماره سند,نوع سند,شرح تراکنش و طرف حساب,مقدار وارده,نرخ وارده (تومان),مبلغ کل وارده,مقدار صادره,نرخ صادره (تومان),مبلغ کل صادره,مانده مقداری,نرخ میانگین,ارزش ریالی مانده,ثبت کننده\n';
+    if (userCanViewPrice) {
+      csvContent += `موجودی اول دوره: ${accountingLedger.initialQty} (${accountingLedger.initialValue.toLocaleString('fa-IR')} تومان)\n\n`;
+      csvContent += 'ردیف,تاریخ و زمان,شماره سند,نوع سند,شرح تراکنش و طرف حساب,مقدار وارده,نرخ وارده (تومان),مبلغ کل وارده,مقدار صادره,نرخ صادره (تومان),مبلغ کل صادره,مانده مقداری,نرخ میانگین,ارزش ریالی مانده,ثبت کننده\n';
+      
+      // Initial Row
+      csvContent += `-,ابتدای دوره,-,-,نقل از دوره قبل / موجودی اولیه,-,-,-,-,-,-,${accountingLedger.initialQty},${accountingLedger.avgUnitRate},${accountingLedger.initialValue},-\n`;
 
-    // Initial Row
-    csvContent += `-,ابتدای دوره,-,-,نقل از دوره قبل / موجودی اولیه,-,-,-,-,-,-,${accountingLedger.initialQty},${accountingLedger.avgUnitRate},${accountingLedger.initialValue},-\n`;
+      accountingLedger.lines.forEach((l, idx) => {
+        csvContent += `${idx + 1},"${l.dateStr}","${l.docNumber}","${l.docType}","${l.description} - ${l.referenceParty}",${l.inQty || 0},${l.inRate || 0},${l.inTotal || 0},${l.outQty || 0},${l.outRate || 0},${l.outTotal || 0},${l.balanceQty},${l.avgRate},${l.balanceValue},"${l.user}"\n`;
+      });
 
-    accountingLedger.lines.forEach((l, idx) => {
-      csvContent += `${idx + 1},"${l.dateStr}","${l.docNumber}","${l.docType}","${l.description} - ${l.referenceParty}",${l.inQty || 0},${l.inRate || 0},${l.inTotal || 0},${l.outQty || 0},${l.outRate || 0},${l.outTotal || 0},${l.balanceQty},${l.avgRate},${l.balanceValue},"${l.user}"\n`;
-    });
+      // Summary Rows
+      csvContent += `\n-,جمع گردش طی دوره,-,-,-,${accountingLedger.totalInQty},-,${accountingLedger.totalInValue},${accountingLedger.totalOutQty},-,${accountingLedger.totalOutValue},${accountingLedger.finalQty},${accountingLedger.avgUnitRate},${accountingLedger.finalValue},-\n`;
+    } else {
+      csvContent += `موجودی اول دوره: ${accountingLedger.initialQty} ${selectedItem.unit}\n\n`;
+      csvContent += 'ردیف,تاریخ و زمان,شماره سند,نوع سند,شرح تراکنش و طرف حساب,مقدار وارده,مقدار صادره,مانده مقداری,ثبت کننده\n';
+      
+      // Initial Row
+      csvContent += `-,ابتدای دوره,-,-,نقل از دوره قبل / موجودی اولیه,-,-,${accountingLedger.initialQty},-\n`;
 
-    // Summary Rows
-    csvContent += `\n-,جمع گردش طی دوره,-,-,-,${accountingLedger.totalInQty},-,${accountingLedger.totalInValue},${accountingLedger.totalOutQty},-,${accountingLedger.totalOutValue},${accountingLedger.finalQty},${accountingLedger.avgUnitRate},${accountingLedger.finalValue},-\n`;
+      accountingLedger.lines.forEach((l, idx) => {
+        csvContent += `${idx + 1},"${l.dateStr}","${l.docNumber}","${l.docType}","${l.description} - ${l.referenceParty}",${l.inQty || 0},${l.outQty || 0},${l.balanceQty},"${l.user}"\n`;
+      });
+
+      // Summary Rows
+      csvContent += `\n-,جمع گردش طی دوره,-,-,-,${accountingLedger.totalInQty},${accountingLedger.totalOutQty},${accountingLedger.finalQty},-\n`;
+    }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -471,7 +494,11 @@ export const KardexView: React.FC = () => {
                       </div>
 
                       <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
-                        <span>نرخ پایه: <strong className="text-slate-700 font-mono">{(it.unitPrice || 0).toLocaleString('fa-IR')}</strong> ت</span>
+                        {userCanViewPrice ? (
+                          <span>نرخ پایه: <strong className="text-slate-700 font-mono">{(it.unitPrice || 0).toLocaleString('fa-IR')}</strong> ت</span>
+                        ) : (
+                          <span className="text-slate-400">کاردکس مقداری</span>
+                        )}
                         <span>قفسه: <strong className="font-mono">{it.locationInRack || '-'}</strong></span>
                       </div>
                     </div>
@@ -564,14 +591,18 @@ export const KardexView: React.FC = () => {
                 <div>
                   <h3 className="text-xs font-bold text-slate-500">{companyName || 'شرکت الکترو استوک - سیستم مدیریت انبار و تولید'}</h3>
                   <h1 className="text-xl font-black text-slate-900 mt-0.5">
-                    کاردکس مقداری و ریالی کالا (Stock Ledger Card)
+                    {userCanViewPrice ? 'کاردکس مقداری و ریالی کالا (Stock Ledger Card)' : 'کاردکس مقداری کالا (Quantitative Stock Ledger)'}
                   </h1>
                 </div>
 
                 <div className="text-left font-mono text-xs text-slate-600 space-y-0.5">
                   <div>انبار: <strong className="text-slate-900">{selectedWhId === 'ALL' ? 'کل انبارها (تجمیعی)' : warehouses.find(w => w.id === selectedWhId)?.name}</strong></div>
                   <div>تاریخ گزارش: <strong className="text-slate-900">{new Date().toLocaleDateString('fa-IR')}</strong></div>
-                  <div>روش ارزش‌گذاری: <strong className="text-indigo-700">میانگین موزون (Weighted Average)</strong></div>
+                  {userCanViewPrice ? (
+                    <div>روش ارزش‌گذاری: <strong className="text-indigo-700">میانگین موزون (Weighted Average)</strong></div>
+                  ) : (
+                    <div>نوع دسترسی: <strong className="text-amber-700">کاردکس صرفاً مقداری (بدون فی)</strong></div>
+                  )}
                 </div>
               </div>
 
@@ -624,9 +655,15 @@ export const KardexView: React.FC = () => {
                 <div className="text-lg font-black text-slate-900 font-mono mt-1">
                   {accountingLedger.initialQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">{selectedItem?.unit}</span>
                 </div>
-                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                  ارزش: {accountingLedger.initialValue.toLocaleString('fa-IR')} ت
-                </div>
+                {userCanViewPrice ? (
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                    ارزش: {accountingLedger.initialValue.toLocaleString('fa-IR')} ت
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    نقل از قبل
+                  </div>
+                )}
               </div>
 
               {/* Total Inflow */}
@@ -638,9 +675,15 @@ export const KardexView: React.FC = () => {
                 <div className="text-lg font-black text-emerald-950 font-mono mt-1">
                   {accountingLedger.totalInQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-emerald-700">{selectedItem?.unit}</span>
                 </div>
-                <div className="text-[11px] text-emerald-700 font-mono mt-0.5">
-                  ارزش: {accountingLedger.totalInValue.toLocaleString('fa-IR')} ت
-                </div>
+                {userCanViewPrice ? (
+                  <div className="text-[11px] text-emerald-700 font-mono mt-0.5">
+                    ارزش: {accountingLedger.totalInValue.toLocaleString('fa-IR')} ت
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-emerald-600/70 font-mono mt-0.5">
+                    ورودی به انبار
+                  </div>
+                )}
               </div>
 
               {/* Total Outflow */}
@@ -652,9 +695,15 @@ export const KardexView: React.FC = () => {
                 <div className="text-lg font-black text-rose-950 font-mono mt-1">
                   {accountingLedger.totalOutQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-rose-700">{selectedItem?.unit}</span>
                 </div>
-                <div className="text-[11px] text-rose-700 font-mono mt-0.5">
-                  ارزش: {accountingLedger.totalOutValue.toLocaleString('fa-IR')} ت
-                </div>
+                {userCanViewPrice ? (
+                  <div className="text-[11px] text-rose-700 font-mono mt-0.5">
+                    ارزش: {accountingLedger.totalOutValue.toLocaleString('fa-IR')} ت
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-rose-600/70 font-mono mt-0.5">
+                    خروجی و مصرف
+                  </div>
+                )}
               </div>
 
               {/* Final Balance */}
@@ -663,9 +712,15 @@ export const KardexView: React.FC = () => {
                 <div className="text-lg font-black text-indigo-950 font-mono mt-1">
                   {accountingLedger.finalQty.toLocaleString('fa-IR')} <span className="text-xs font-normal text-indigo-700">{selectedItem?.unit}</span>
                 </div>
-                <div className="text-[11px] text-indigo-800 font-mono font-bold mt-0.5">
-                  ارزش: {accountingLedger.finalValue.toLocaleString('fa-IR')} تومان
-                </div>
+                {userCanViewPrice ? (
+                  <div className="text-[11px] text-indigo-800 font-mono font-bold mt-0.5">
+                    ارزش: {accountingLedger.finalValue.toLocaleString('fa-IR')} تومان
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-indigo-600/70 font-mono mt-0.5">
+                    مانده در انبار
+                  </div>
+                )}
               </div>
             </div>
 
@@ -705,9 +760,9 @@ export const KardexView: React.FC = () => {
                   {/* Super-Header Row */}
                   <tr className="bg-slate-100 text-slate-800 font-black border-b border-slate-300 text-center">
                     <th colSpan={5} className="p-2 border-l border-slate-300">مشخصات سند و تراکنش</th>
-                    <th colSpan={3} className="p-2 border-l border-slate-300 bg-emerald-100/70 text-emerald-950">وارده (Inflow / Receipts)</th>
-                    <th colSpan={3} className="p-2 border-l border-slate-300 bg-rose-100/70 text-rose-950">صادره (Outflow / Issues)</th>
-                    <th colSpan={3} className="p-2 border-l border-slate-300 bg-indigo-100/70 text-indigo-950">مانده لحظه‌ای (Running Balance)</th>
+                    <th colSpan={userCanViewPrice ? 3 : 1} className="p-2 border-l border-slate-300 bg-emerald-100/70 text-emerald-950">وارده (Inflow / Receipts)</th>
+                    <th colSpan={userCanViewPrice ? 3 : 1} className="p-2 border-l border-slate-300 bg-rose-100/70 text-rose-950">صادره (Outflow / Issues)</th>
+                    <th colSpan={userCanViewPrice ? 3 : 1} className="p-2 border-l border-slate-300 bg-indigo-100/70 text-indigo-950">مانده لحظه‌ای (Running Balance)</th>
                     <th colSpan={1} className="p-2">اقدام</th>
                   </tr>
 
@@ -721,18 +776,30 @@ export const KardexView: React.FC = () => {
 
                     {/* Inflow Columns */}
                     <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-16">مقدار</th>
-                    <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-20">نرخ (تومان)</th>
-                    <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-24">مبلغ کل</th>
+                    {userCanViewPrice && (
+                      <>
+                        <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-20">نرخ (تومان)</th>
+                        <th className="p-2 border-l border-slate-300 text-center bg-emerald-50/50 w-24">مبلغ کل</th>
+                      </>
+                    )}
 
                     {/* Outflow Columns */}
                     <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-16">مقدار</th>
-                    <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-20">نرخ (تومان)</th>
-                    <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-24">مبلغ کل</th>
+                    {userCanViewPrice && (
+                      <>
+                        <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-20">نرخ (تومان)</th>
+                        <th className="p-2 border-l border-slate-300 text-center bg-rose-50/50 w-24">مبلغ کل</th>
+                      </>
+                    )}
 
                     {/* Balance Columns */}
                     <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-16">مقدار</th>
-                    <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-20">بهای میانگین</th>
-                    <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-24">ارزش ریالی</th>
+                    {userCanViewPrice && (
+                      <>
+                        <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-20">بهای میانگین</th>
+                        <th className="p-2 border-l border-slate-300 text-center bg-indigo-50/50 w-24">ارزش ریالی</th>
+                      </>
+                    )}
 
                     <th className="p-2 text-center w-20">ثبت‌کننده</th>
                   </tr>
@@ -749,24 +816,36 @@ export const KardexView: React.FC = () => {
 
                     {/* Inflow */}
                     <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    {userCanViewPrice && (
+                      <>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                      </>
+                    )}
 
                     {/* Outflow */}
                     <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                    {userCanViewPrice && (
+                      <>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                      </>
+                    )}
 
                     {/* Balance */}
                     <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-slate-900 bg-indigo-50/40">
                       {accountingLedger.initialQty.toLocaleString('fa-IR')}
                     </td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-700 bg-indigo-50/40">
-                      {accountingLedger.avgUnitRate.toLocaleString('fa-IR')}
-                    </td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-slate-900 bg-indigo-50/40">
-                      {accountingLedger.initialValue.toLocaleString('fa-IR')}
-                    </td>
+                    {userCanViewPrice && (
+                      <>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-700 bg-indigo-50/40">
+                          {accountingLedger.avgUnitRate.toLocaleString('fa-IR')}
+                        </td>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-slate-900 bg-indigo-50/40">
+                          {accountingLedger.initialValue.toLocaleString('fa-IR')}
+                        </td>
+                      </>
+                    )}
 
                     <td className="p-2 text-center text-[10px] text-slate-400">سیستم مالی</td>
                   </tr>
@@ -787,34 +866,46 @@ export const KardexView: React.FC = () => {
                       <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-emerald-700 bg-emerald-50/20">
                         {row.inQty > 0 ? row.inQty.toLocaleString('fa-IR') : '-'}
                       </td>
-                      <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-emerald-50/20">
-                        {row.inQty > 0 ? row.inRate.toLocaleString('fa-IR') : '-'}
-                      </td>
-                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-emerald-800 bg-emerald-50/20">
-                        {row.inTotal > 0 ? row.inTotal.toLocaleString('fa-IR') : '-'}
-                      </td>
+                      {userCanViewPrice && (
+                        <>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-emerald-50/20">
+                            {row.inQty > 0 ? row.inRate.toLocaleString('fa-IR') : '-'}
+                          </td>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-emerald-800 bg-emerald-50/20">
+                            {row.inTotal > 0 ? row.inTotal.toLocaleString('fa-IR') : '-'}
+                          </td>
+                        </>
+                      )}
 
                       {/* Outflow */}
                       <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-rose-700 bg-rose-50/20">
                         {row.outQty > 0 ? row.outQty.toLocaleString('fa-IR') : '-'}
                       </td>
-                      <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-rose-50/20">
-                        {row.outQty > 0 ? row.outRate.toLocaleString('fa-IR') : '-'}
-                      </td>
-                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-rose-800 bg-rose-50/20">
-                        {row.outTotal > 0 ? row.outTotal.toLocaleString('fa-IR') : '-'}
-                      </td>
+                      {userCanViewPrice && (
+                        <>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-rose-50/20">
+                            {row.outQty > 0 ? row.outRate.toLocaleString('fa-IR') : '-'}
+                          </td>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-rose-800 bg-rose-50/20">
+                            {row.outTotal > 0 ? row.outTotal.toLocaleString('fa-IR') : '-'}
+                          </td>
+                        </>
+                      )}
 
                       {/* Running Balance */}
                       <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-slate-900 bg-indigo-50/30">
                         {row.balanceQty.toLocaleString('fa-IR')}
                       </td>
-                      <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-indigo-50/30">
-                        {row.avgRate.toLocaleString('fa-IR')}
-                      </td>
-                      <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-indigo-900 bg-indigo-50/30">
-                        {row.balanceValue.toLocaleString('fa-IR')}
-                      </td>
+                      {userCanViewPrice && (
+                        <>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono text-slate-600 bg-indigo-50/30">
+                            {row.avgRate.toLocaleString('fa-IR')}
+                          </td>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-indigo-900 bg-indigo-50/30">
+                            {row.balanceValue.toLocaleString('fa-IR')}
+                          </td>
+                        </>
+                      )}
 
                       <td className="p-2 text-center text-[10px] text-slate-500">{row.user}</td>
                     </tr>
@@ -830,30 +921,42 @@ export const KardexView: React.FC = () => {
                     <td className="p-2 border-l border-slate-300 text-center font-mono text-emerald-800 text-sm">
                       {accountingLedger.totalInQty.toLocaleString('fa-IR')}
                     </td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono text-emerald-900 font-black text-xs">
-                      {accountingLedger.totalInValue.toLocaleString('fa-IR')}
-                    </td>
+                    {userCanViewPrice && (
+                      <>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono text-emerald-900 font-black text-xs">
+                          {accountingLedger.totalInValue.toLocaleString('fa-IR')}
+                        </td>
+                      </>
+                    )}
 
                     {/* Total Out */}
                     <td className="p-2 border-l border-slate-300 text-center font-mono text-rose-800 text-sm">
                       {accountingLedger.totalOutQty.toLocaleString('fa-IR')}
                     </td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono text-rose-900 font-black text-xs">
-                      {accountingLedger.totalOutValue.toLocaleString('fa-IR')}
-                    </td>
+                    {userCanViewPrice && (
+                      <>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono">-</td>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono text-rose-900 font-black text-xs">
+                          {accountingLedger.totalOutValue.toLocaleString('fa-IR')}
+                        </td>
+                      </>
+                    )}
 
                     {/* Total Balance */}
                     <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-indigo-950 text-sm bg-indigo-100/50">
                       {accountingLedger.finalQty.toLocaleString('fa-IR')}
                     </td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono text-indigo-900 bg-indigo-100/50">
-                      {accountingLedger.avgUnitRate.toLocaleString('fa-IR')}
-                    </td>
-                    <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-indigo-950 bg-indigo-100/50">
-                      {accountingLedger.finalValue.toLocaleString('fa-IR')}
-                    </td>
+                    {userCanViewPrice && (
+                      <>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono text-indigo-900 bg-indigo-100/50">
+                          {accountingLedger.avgUnitRate.toLocaleString('fa-IR')}
+                        </td>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono font-black text-indigo-950 bg-indigo-100/50">
+                          {accountingLedger.finalValue.toLocaleString('fa-IR')}
+                        </td>
+                      </>
+                    )}
 
                     <td className="p-2 text-center text-[10px] text-slate-500">-</td>
                   </tr>
@@ -863,14 +966,14 @@ export const KardexView: React.FC = () => {
                     <td colSpan={5} className="p-2 border-l border-indigo-800 text-center text-sm">
                       مانده قطعی پایان دوره (موجودی پایان اسناد)
                     </td>
-                    <td colSpan={3} className="p-2 border-l border-indigo-800 text-center text-emerald-300 font-mono">
+                    <td colSpan={userCanViewPrice ? 3 : 1} className="p-2 border-l border-indigo-800 text-center text-emerald-300 font-mono">
                       + {accountingLedger.totalInQty} {selectedItem?.unit}
                     </td>
-                    <td colSpan={3} className="p-2 border-l border-indigo-800 text-center text-rose-300 font-mono">
+                    <td colSpan={userCanViewPrice ? 3 : 1} className="p-2 border-l border-indigo-800 text-center text-rose-300 font-mono">
                       - {accountingLedger.totalOutQty} {selectedItem?.unit}
                     </td>
-                    <td colSpan={3} className="p-2 border-l border-indigo-800 text-center text-amber-300 font-mono text-base">
-                      {accountingLedger.finalQty.toLocaleString('fa-IR')} {selectedItem?.unit} ({accountingLedger.finalValue.toLocaleString('fa-IR')} تومان)
+                    <td colSpan={userCanViewPrice ? 3 : 1} className="p-2 border-l border-indigo-800 text-center text-amber-300 font-mono text-base">
+                      {accountingLedger.finalQty.toLocaleString('fa-IR')} {selectedItem?.unit} {userCanViewPrice ? `(${accountingLedger.finalValue.toLocaleString('fa-IR')} تومان)` : ''}
                     </td>
                     <td className="p-2 text-center text-[10px] text-indigo-200">نهایی</td>
                   </tr>

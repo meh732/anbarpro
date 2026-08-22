@@ -250,3 +250,12 @@ export function evaluatePasswordStrength(password: string): {
       return { score: 4, labelFa: 'بسیار قوی و امن', labelEn: 'Strong', label: 'بسیار قوی و امن', color: 'bg-emerald-500 text-white', feedback: [] };
   }
 }
+
+/**
+ * Format Rial numbers with comma grouping and symbol
+ */
+export function formatCurrency(amount: number | undefined | null, currency = 'ریال'): string {
+  if (amount === undefined || amount === null || isNaN(amount)) return '۰ ' + currency;
+  return `${Math.round(amount).toLocaleString('fa-IR')} ${currency}`;
+}
+
