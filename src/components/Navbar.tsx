@@ -92,7 +92,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
   const currentTabInfo = tabTitles[activeTab] || { title: 'پنل مدیریت', category: 'سیستم انبار' };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/70 shadow-xs px-2.5 sm:px-6 lg:px-8 pt-[max(0.65rem,env(safe-area-inset-top))] pb-2 sm:py-3 transition-all">
+    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/70 shadow-xs px-2.5 sm:px-6 lg:px-8 pt-[max(0.65rem,env(safe-area-inset-top))] pb-2 sm:py-3 transition-all print:hidden">
       <div className="flex items-center justify-between gap-1.5 sm:gap-4">
         
         {/* Right Section (in RTL): Mobile Hamburger + Breadcrumb */}
@@ -184,7 +184,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           {/* Notifications Dropdown */}
           <div className="relative">
             <button
-              onClick={() => setShowNotifs(!showNotifs)}
+              onClick={() => {
+                const next = !showNotifs;
+                setShowNotifs(next);
+                if (next && unreadCount > 0) {
+                  markAllNotificationsAsRead();
+                }
+              }}
               className="p-1.5 sm:p-2 bg-white/80 hover:bg-white text-slate-600 border border-slate-200/70 rounded-xl relative transition-all cursor-pointer shadow-2xs active:scale-95"
               title="اعلان‌ها و کارتابل"
             >

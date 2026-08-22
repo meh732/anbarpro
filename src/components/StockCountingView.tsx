@@ -160,6 +160,20 @@ export const StockCountingView: React.FC = () => {
     setIsBlindCountInitial(false);
   };
 
+  // Handle Cancel / Delete Session
+  const handleCancelSession = () => {
+    if (!selectedSession) return;
+    if (window.confirm(`آیا از لغو و حذف دوره انبارگردانی شماره ${selectedSession.sessionNumber} (${selectedSession.warehouseName}) اطمینان دارید؟ این عمل غیرقابل بازگشت است.`)) {
+      deleteStockCountingSession(selectedSession.id);
+      const remaining = stockCountings.filter(s => s.id !== selectedSession.id);
+      setActiveSessionId(remaining[0]?.id || null);
+      setScanMessage({
+        text: `دوره انبارگردانی ${selectedSession.sessionNumber} با موفقیت لغو و حذف گردید.`,
+        type: 'info'
+      });
+    }
+  };
+
   // Handle Quick Barcode / Serial Scan Submit
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -540,6 +554,14 @@ export const StockCountingView: React.FC = () => {
                 title="خروجی اکسل / CSV"
               >
                 <Download className="w-4 h-4 text-emerald-600" />
+              </button>
+              <button
+                onClick={handleCancelSession}
+                className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95 text-xs font-bold"
+                title="لغو و حذف این دوره انبارگردانی"
+              >
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                <span>لغو انبارگردانی</span>
               </button>
             </div>
           )}

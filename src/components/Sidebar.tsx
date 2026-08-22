@@ -171,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Main Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 right-0 z-50 flex flex-col bg-white/70 backdrop-blur-2xl border-l border-white/60 shadow-2xl transition-all duration-300 ease-in-out
+        className={`fixed top-0 bottom-0 right-0 z-50 flex flex-col bg-white/70 backdrop-blur-2xl border-l border-white/60 shadow-2xl transition-all duration-300 ease-in-out print:hidden
           ${isOpenMobile ? 'translate-x-0 w-72' : 'translate-x-full lg:translate-x-0'}
           ${isCollapsed ? 'lg:w-20' : 'lg:w-72'}
         `}
