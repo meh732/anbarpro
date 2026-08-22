@@ -146,8 +146,8 @@ const MainContent: React.FC = () => {
         />
         
         {/* Scrollable View Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 custom-scrollbar">
-          <div className="max-w-[1500px] mx-auto pb-24 space-y-6">
+        <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 lg:p-8 custom-scrollbar">
+          <div className="max-w-[1500px] mx-auto pb-20 sm:pb-24 space-y-4 sm:space-y-6">
             {renderView()}
           </div>
         </main>

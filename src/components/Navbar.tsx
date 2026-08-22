@@ -92,38 +92,38 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
   const currentTabInfo = tabTitles[activeTab] || { title: 'پنل مدیریت', category: 'سیستم انبار' };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/60 backdrop-blur-xl border-b border-white/60 shadow-xs px-4 sm:px-6 lg:px-8 py-3 transition-all">
-      <div className="flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-30 bg-white/70 backdrop-blur-xl border-b border-slate-200/60 shadow-xs px-3 sm:px-6 lg:px-8 pt-[max(0.6rem,env(safe-area-inset-top))] pb-2.5 sm:py-3 transition-all">
+      <div className="flex items-center justify-between gap-2 sm:gap-4">
         
         {/* Right Section (in RTL): Mobile Hamburger + Breadcrumb */}
-        <div className="flex items-center gap-3 md:gap-4">
+        <div className="flex items-center gap-2 sm:gap-3 md:gap-4 min-w-0">
           <button
             onClick={onToggleMobileSidebar}
-            className="lg:hidden p-2.5 bg-white/80 hover:bg-white text-slate-700 rounded-xl border border-slate-200/60 shadow-xs transition-all cursor-pointer"
+            className="lg:hidden p-2 bg-white/90 hover:bg-white text-slate-700 rounded-xl border border-slate-200/70 shadow-xs transition-all cursor-pointer shrink-0 active:scale-95"
             title="باز کردن منو"
           >
             <Menu className="w-5 h-5" />
           </button>
 
-          <div>
-            <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-slate-400">
-              <span>{companyName || 'انبار هوشمند'}</span>
+          <div className="min-w-0">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-slate-400">
+              <span className="truncate">{companyName || 'انبار هوشمند'}</span>
               <span>/</span>
-              <span className="text-indigo-600 font-extrabold">{currentTabInfo.category}</span>
+              <span className="text-indigo-600 font-extrabold shrink-0">{currentTabInfo.category}</span>
             </div>
-            <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-black text-slate-900 tracking-tight line-clamp-1 max-w-[130px] sm:max-w-none">
+            <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-black text-slate-900 tracking-tight truncate max-w-[150px] sm:max-w-none">
               {currentTabInfo.title}
             </h1>
           </div>
         </div>
 
         {/* Left Section (in RTL): Action buttons & User profile */}
-        <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 shrink-0">
           
           {/* Central Linux Server Sync Status Badge & Dialog Trigger */}
           <button
             onClick={() => setShowServerModal(true)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-xs ${
+            className={`flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 ${
               serverSyncStatus === 'connected'
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100/80'
                 : serverSyncStatus === 'syncing'
@@ -132,7 +132,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
             }`}
             title="وضعیت اتصال به سرور مرکزی لینوکس"
           >
-            <span className="relative flex h-2 w-2">
+            <span className="relative flex h-2 w-2 shrink-0">
               {serverSyncStatus === 'connected' && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               )}
@@ -140,45 +140,45 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                 serverSyncStatus === 'connected' ? 'bg-emerald-500' : serverSyncStatus === 'syncing' ? 'bg-amber-500' : 'bg-rose-500'
               }`}></span>
             </span>
-            <Server className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline text-[11px]">
-              {serverSyncStatus === 'connected' ? 'سرور لینوکس متصل' : serverSyncStatus === 'syncing' ? 'در حال همگام‌سازی...' : 'سرور آفلاین'}
+            <Server className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden md:inline text-[11px]">
+              {serverSyncStatus === 'connected' ? 'سرور لینوکس' : serverSyncStatus === 'syncing' ? 'همگام‌سازی...' : 'آفلاین'}
             </span>
           </button>
 
-          {/* Quick Scanner */}
+          {/* Quick Scanner (Tablet / Desktop) */}
           <button
             onClick={() => setIsScannerOpen(true)}
-            className="hidden sm:flex bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-2 rounded-xl font-bold text-xs items-center gap-1.5 transition-all shadow-md shadow-indigo-500/15 hover:shadow-indigo-500/25 cursor-pointer active:scale-98"
+            className="hidden md:flex bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-1.5 rounded-xl font-bold text-xs items-center gap-1.5 transition-all shadow-md shadow-indigo-500/15 hover:shadow-indigo-500/25 cursor-pointer active:scale-95"
           >
             <QrCode className="w-3.5 h-3.5" />
-            <span>اسکن بارکد</span>
+            <span>اسکن</span>
           </button>
 
           {/* Lite Mode Toggle */}
           <button
             onClick={() => setLiteMode(!liteMode)}
-            className={`flex items-center gap-1 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-black text-[10px] sm:text-xs transition-all cursor-pointer active:scale-95 shadow-xs ${
+            className={`p-2 sm:px-2.5 sm:py-1.5 rounded-xl font-black text-[10px] sm:text-xs transition-all cursor-pointer active:scale-95 shadow-xs border flex items-center gap-1 ${
               liteMode 
                 ? 'bg-amber-50 text-amber-700 border-amber-300' 
-                : 'bg-white/70 hover:bg-white text-indigo-700 border-indigo-200/60'
+                : 'bg-white/80 hover:bg-white text-indigo-700 border-indigo-200/60'
             }`}
-            title={liteMode ? "سوییچ به حالت پوسته شیشه‌ای" : "سوییچ به حالت ساده و پرسرعت"}
+            title={liteMode ? "سوییچ به پوسته شیشه‌ای" : "سوییچ به حالت ساده و کم‌مصرف"}
           >
-            <Zap className={`w-3.5 h-3.5 ${liteMode ? 'text-amber-600 fill-amber-500 animate-bounce' : 'text-indigo-500'}`} />
-            <span>{liteMode ? 'حالت ساده' : 'حالت شیشه‌ای'}</span>
+            <Zap className={`w-3.5 h-3.5 ${liteMode ? 'text-amber-600 fill-amber-500' : 'text-indigo-500'}`} />
+            <span className="hidden sm:inline">{liteMode ? 'ساده' : 'شیشه‌ای'}</span>
           </button>
 
           {/* Notifications Dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowNotifs(!showNotifs)}
-              className="p-2.5 bg-white/70 hover:bg-white text-slate-600 border border-slate-200/60 rounded-xl relative transition-all cursor-pointer shadow-xs"
+              className="p-2 sm:p-2.5 bg-white/80 hover:bg-white text-slate-600 border border-slate-200/70 rounded-xl relative transition-all cursor-pointer shadow-xs active:scale-95"
               title="اعلان‌ها و کارتابل"
             >
-              <Bell className="w-5 h-5" />
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full border-2 border-white flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-rose-500 text-white text-[9px] sm:text-[10px] font-black rounded-full border-2 border-white flex items-center justify-center animate-pulse">
                   {unreadCount}
                 </span>
               )}

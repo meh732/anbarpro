@@ -5,7 +5,8 @@ import {
   MessageSquare, Send, Paperclip, Smile, Hash, Users, Search, 
   Trash2, Reply, Check, CheckCheck, Sparkles, X, Plus, Package, 
   FileText, ArrowLeftRight, Bell, Volume2, VolumeX, ShieldAlert,
-  ChevronDown, ExternalLink, CornerDownLeft
+  ChevronDown, ExternalLink, CornerDownLeft, ArrowRight, Phone,
+  Info, Sparkle, UserCheck
 } from 'lucide-react';
 import { soundEngine } from '../utils/browserNotifications';
 
@@ -31,6 +32,10 @@ export const ChatView: React.FC = () => {
   // Active channel or recipient
   const [activeChannelId, setActiveChannelId] = useState<string>('general');
   const [activeDirectUserId, setActiveDirectUserId] = useState<string | null>(null);
+
+  // Mobile state: 'list' (shows channel/user list) or 'chat' (shows active thread)
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  const [activeTabFilter, setActiveTabFilter] = useState<'channels' | 'direct'>('channels');
 
   // Message input state
   const [inputText, setInputText] = useState('');
@@ -69,7 +74,7 @@ export const ChatView: React.FC = () => {
   // Auto scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [filteredMessages.length, activeChannelId, activeDirectUserId]);
+  }, [filteredMessages.length, activeChannelId, activeDirectUserId, mobileView]);
 
   // Handle Send Message
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -80,7 +85,7 @@ export const ChatView: React.FC = () => {
     const attachments = [...selectedAttachments];
     const replyId = replyingTo?.id;
 
-    // Reset input immediately for responsiveness
+    // Reset input immediately for snappy responsiveness
     setInputText('');
     setSelectedAttachments([]);
     setReplyingTo(null);
@@ -155,53 +160,83 @@ export const ChatView: React.FC = () => {
   }, [attachmentType, attachSearchQuery, items, purchaseRequests, transfers]);
 
   return (
-    <div id="chat-view-container" className="h-[calc(100vh-8.5rem)] flex flex-col md:flex-row gap-4 bg-white/70 backdrop-blur-xl border border-slate-200/80 rounded-3xl p-3 sm:p-4 shadow-sm overflow-hidden animate-fadeIn">
+    <div id="chat-view-container" className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8.5rem)] flex flex-col md:flex-row gap-0 md:gap-4 bg-white md:bg-white/80 backdrop-blur-xl border-0 md:border md:border-slate-200/80 rounded-2xl md:rounded-3xl p-0 md:p-4 shadow-none md:shadow-sm overflow-hidden animate-fadeIn relative">
       
       {/* ========================================================================= */}
-      {/* 1. LEFT SIDEBAR: Channels & Direct Users (in RTL: Right side) */}
+      {/* 1. SIDEBAR: Channels & Direct Users (Full screen on mobile if mobileView === 'list') */}
       {/* ========================================================================= */}
-      <div className="w-full md:w-80 flex flex-col bg-slate-50/80 border border-slate-200/70 rounded-2xl p-3 shrink-0">
+      <div className={`w-full md:w-80 flex flex-col bg-slate-50/90 md:bg-slate-50/80 border-b md:border md:border-slate-200/70 rounded-none md:rounded-2xl p-3 shrink-0 h-full ${
+        mobileView === 'chat' ? 'hidden md:flex' : 'flex'
+      }`}>
         
         {/* Header & Status Indicator */}
         <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-200/80">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-              <MessageSquare className="w-4 h-4" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+              <MessageSquare className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black text-slate-800">گفتگوی سازمانی</h2>
-              <p className="text-[11px] text-slate-500 font-medium">پیام‌رسان آنی و اعلان‌ها</p>
+              <h2 className="text-sm font-black text-slate-900">گفتگو و هماهنگی</h2>
+              <p className="text-[11px] text-slate-500 font-medium">ارتباط فوری پرسنل و انبار</p>
             </div>
           </div>
 
           {/* Quick Notification Permission Status / Sound toggle */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => setSoundEnabled(!soundEnabled)}
-              className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+              className={`p-2 rounded-xl border text-xs transition-colors cursor-pointer active:scale-95 ${
                 soundEnabled 
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
                   : 'bg-slate-200 text-slate-500 border-slate-300 hover:bg-slate-300'
               }`}
               title={soundEnabled ? 'صدای اعلان فعال است' : 'صدا قطع است'}
             >
-              {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </button>
 
             {browserNotificationPermission !== 'granted' && (
               <button
                 onClick={requestNotificationPermission}
-                className="flex items-center gap-1 text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-300 px-2 py-1 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer animate-pulse"
+                className="flex items-center gap-1 text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-300 px-2.5 py-1.5 rounded-xl hover:bg-amber-100 transition-colors cursor-pointer animate-pulse"
                 title="فعال‌سازی اعلان در مرورگر"
               >
-                <Bell className="w-3 h-3" />
+                <Bell className="w-3.5 h-3.5" />
                 <span>نوتیف</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Search */}
+        {/* Mobile Tab Switcher (Channels vs Direct) */}
+        <div className="flex md:hidden bg-slate-200/80 p-1 rounded-xl mb-3 text-xs font-black">
+          <button
+            onClick={() => setActiveTabFilter('channels')}
+            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              activeTabFilter === 'channels' 
+                ? 'bg-white text-indigo-700 shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Hash className="w-3.5 h-3.5" />
+            <span>کانال‌ها</span>
+            <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.2 rounded-full font-mono">{channels.length}</span>
+          </button>
+          <button
+            onClick={() => setActiveTabFilter('direct')}
+            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              activeTabFilter === 'direct' 
+                ? 'bg-white text-indigo-700 shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>همکاران</span>
+            <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.2 rounded-full font-mono">{users.length - 1}</span>
+          </button>
+        </div>
+
+        {/* Search Input */}
         <div className="relative mb-3">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
           <input
@@ -209,7 +244,7 @@ export const ChatView: React.FC = () => {
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             placeholder="جستجوی کانال یا همکار..."
-            className="w-full text-xs pr-8 pl-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-hidden focus:border-indigo-500 transition-all"
+            className="w-full text-xs pr-8 pl-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-hidden focus:border-indigo-500 transition-all shadow-2xs"
           />
           {searchFilter && (
             <button onClick={() => setSearchFilter('')} className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600">
@@ -219,10 +254,10 @@ export const ChatView: React.FC = () => {
         </div>
 
         {/* Channels & Direct Messages List */}
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs custom-scrollbar">
           
-          {/* Public Channels */}
-          <div>
+          {/* Public Channels (Always shown on Desktop, or when activeTabFilter === 'channels' on mobile) */}
+          <div className={`${activeTabFilter === 'channels' ? 'block' : 'hidden md:block'}`}>
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-1.5 px-2">
               <span className="flex items-center gap-1.5">
                 <Hash className="w-3 h-3" /> کانال‌های عمومی
@@ -246,26 +281,31 @@ export const ChatView: React.FC = () => {
                       onClick={() => {
                         setActiveChannelId(channel.id);
                         setActiveDirectUserId(null);
+                        setMobileView('chat');
                       }}
-                      className={`w-full text-right p-2 rounded-xl transition-all flex items-center justify-between cursor-pointer ${
+                      className={`w-full text-right p-2.5 rounded-xl transition-all flex items-center justify-between cursor-pointer active:scale-98 ${
                         isActive 
                           ? 'bg-indigo-600 text-white shadow-xs font-bold' 
-                          : 'bg-white/70 hover:bg-white text-slate-700 border border-slate-100 hover:border-slate-200'
+                          : 'bg-white/80 hover:bg-white text-slate-700 border border-slate-200/60 hover:border-slate-300'
                       }`}
                     >
-                      <div className="flex items-center gap-2 truncate">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                          isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                      <div className="flex items-center gap-2.5 truncate">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          isActive ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'
                         }`}>
-                          <Hash className="w-3.5 h-3.5" />
+                          <Hash className="w-4 h-4" />
                         </div>
                         <div className="truncate">
-                          <p className={`truncate text-xs ${isActive ? 'text-white' : 'text-slate-800 font-semibold'}`}>
+                          <p className={`truncate text-xs ${isActive ? 'text-white' : 'text-slate-900 font-bold'}`}>
                             {channel.name}
                           </p>
-                          {lastMsg && (
+                          {lastMsg ? (
                             <p className={`text-[10px] truncate ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
                               {lastMsg.senderName}: {lastMsg.message}
+                            </p>
+                          ) : (
+                            <p className={`text-[10px] truncate ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>
+                              {channel.description}
                             </p>
                           )}
                         </div>
@@ -282,13 +322,13 @@ export const ChatView: React.FC = () => {
           </div>
 
           {/* Direct Messages (Personnel) */}
-          <div>
+          <div className={`${activeTabFilter === 'direct' ? 'block' : 'hidden md:block'}`}>
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-1.5 px-2">
               <span className="flex items-center gap-1.5">
                 <Users className="w-3 h-3" /> پیام مستقیم به همکاران
               </span>
               <span className="bg-slate-200 text-slate-600 px-1.5 py-0.2 rounded-md text-[10px]">
-                {users.length}
+                {users.length - 1}
               </span>
             </div>
 
@@ -310,28 +350,36 @@ export const ChatView: React.FC = () => {
                       key={user.id}
                       onClick={() => {
                         setActiveDirectUserId(user.id);
+                        setMobileView('chat');
                       }}
-                      className={`w-full text-right p-2 rounded-xl transition-all flex items-center justify-between cursor-pointer ${
+                      className={`w-full text-right p-2.5 rounded-xl transition-all flex items-center justify-between cursor-pointer active:scale-98 ${
                         isActive 
                           ? 'bg-indigo-600 text-white shadow-xs font-bold' 
-                          : 'bg-white/70 hover:bg-white text-slate-700 border border-slate-100 hover:border-slate-200'
+                          : 'bg-white/80 hover:bg-white text-slate-700 border border-slate-200/60 hover:border-slate-300'
                       }`}
                     >
-                      <div className="flex items-center gap-2 truncate">
+                      <div className="flex items-center gap-2.5 truncate">
                         <div className="relative shrink-0">
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
-                            isActive ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${
+                            isActive ? 'bg-white/20 text-white' : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
                           }`}>
                             {user.fullName.charAt(0)}
                           </div>
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 absolute -bottom-0.5 -right-0.5 border border-white" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute -bottom-0.5 -right-0.5 border-2 border-white" />
                         </div>
                         <div className="truncate">
-                          <p className={`truncate text-xs ${isActive ? 'text-white' : 'text-slate-800 font-semibold'}`}>
-                            {user.fullName}
-                          </p>
-                          <p className={`text-[10px] truncate ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
-                            {roleInfo.label} {lastMsg ? `• ${lastMsg.message}` : ''}
+                          <div className="flex items-center gap-1.5">
+                            <p className={`truncate text-xs ${isActive ? 'text-white' : 'text-slate-900 font-bold'}`}>
+                              {user.fullName}
+                            </p>
+                            <span className={`text-[9px] px-1 py-0.2 rounded border font-medium ${
+                              isActive ? 'bg-white/20 text-white border-white/30' : roleInfo.color
+                            }`}>
+                              {roleInfo.label}
+                            </span>
+                          </div>
+                          <p className={`text-[10px] truncate mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            {lastMsg ? `${lastMsg.senderName === currentUser.fullName ? 'شما: ' : ''}${lastMsg.message}` : `واحد: ${user.department || 'سازمان'}`}
                           </p>
                         </div>
                       </div>
@@ -351,64 +399,77 @@ export const ChatView: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. MAIN CHAT WORKSPACE (Right: in RTL left side) */}
+      {/* 2. MAIN CHAT WORKSPACE (Shown on mobile if mobileView === 'chat') */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+      <div className={`flex-1 flex flex-col bg-white md:rounded-2xl border-0 md:border md:border-slate-200/80 overflow-hidden shadow-none md:shadow-xs h-full ${
+        mobileView === 'list' ? 'hidden md:flex' : 'flex'
+      }`}>
         
-        {/* Workspace Top Header */}
-        <div className="px-4 py-3 bg-slate-50/90 border-b border-slate-200/80 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+        {/* Workspace Top Header (Mobile has back button to switch to list) */}
+        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 bg-slate-50/95 border-b border-slate-200/80 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            
+            {/* Mobile Back Button */}
+            <button
+              onClick={() => setMobileView('list')}
+              className="md:hidden p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 rounded-xl transition-colors cursor-pointer shrink-0"
+              title="بازگشت به لیست گفتگوها"
+            >
+              <ArrowRight className="w-5 h-5" />
+            </button>
+
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold shrink-0">
               {activeDirectUser ? (
                 activeDirectUser.fullName.charAt(0)
               ) : (
                 <Hash className="w-5 h-5" />
               )}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-black text-slate-800 text-sm">
+            
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h3 className="font-black text-slate-900 text-xs sm:text-sm truncate">
                   {activeDirectUser ? activeDirectUser.fullName : currentChannel?.name}
                 </h3>
                 {activeDirectUser && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${getRoleBadge(activeDirectUser.role).color}`}>
+                  <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded-md border shrink-0 ${getRoleBadge(activeDirectUser.role).color}`}>
                     {getRoleBadge(activeDirectUser.role).label}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 font-medium">
+              <p className="text-[11px] text-slate-500 font-medium truncate">
                 {activeDirectUser 
-                  ? `گفتگوی خصوصی دوطرفه • واحد ${activeDirectUser.department || 'سازمان'}`
+                  ? `گفتگوی خصوصی • ${activeDirectUser.department || 'پرسنل'}`
                   : currentChannel?.description || 'کانال هماهنگی پرسنل'
                 }
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
+            <span className="flex items-center gap-1.5 bg-white border border-slate-200 px-2 py-1 rounded-lg text-[11px]">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-slate-600 font-medium">{filteredMessages.length} پیام</span>
+              <span className="text-slate-600 font-bold">{filteredMessages.length} پیام</span>
             </span>
           </div>
         </div>
 
         {/* Message Bubbles Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-slate-50/30 to-white">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3.5 bg-gradient-to-b from-slate-50/40 to-white custom-scrollbar">
           {filteredMessages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
-              <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center shadow-xs">
-                <MessageSquare className="w-7 h-7" />
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center shadow-xs">
+                <MessageSquare className="w-6 h-6 sm:w-7 sm:h-7" />
               </div>
               <div>
                 <h4 className="font-bold text-slate-800 text-sm">هنوز پیامی در این بخش ثبت نشده است</h4>
                 <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                  با ارسال اولین پیام، هماهنگی یا اشتراک‌گذاری اطلاعات قطعات و درخواست‌ها گفتگو را آغاز فرمایید.
+                  با ارسال پیام، ثبت حواله یا پیوست درخواست گفتگو را آغاز نمایید.
                 </p>
               </div>
             </div>
           ) : (
-            filteredMessages.map((msg, idx) => {
+            filteredMessages.map((msg) => {
               const isMine = msg.senderId === currentUser.id;
               const roleBadge = getRoleBadge(msg.senderRole);
               const repliedMessage = msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null;
@@ -417,28 +478,28 @@ export const ChatView: React.FC = () => {
                 <div
                   key={msg.id}
                   id={`chat-msg-${msg.id}`}
-                  className={`flex gap-2.5 group ${isMine ? 'flex-row-reverse' : 'flex-row'}`}
+                  className={`flex gap-2 sm:gap-2.5 group ${isMine ? 'flex-row-reverse' : 'flex-row'}`}
                 >
                   {/* Sender Avatar */}
-                  <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
                     {msg.senderName.charAt(0)}
                   </div>
 
                   {/* Bubble Container */}
-                  <div className={`max-w-[85%] md:max-w-[70%] space-y-1 ${isMine ? 'items-end text-right' : 'items-start text-right'}`}>
+                  <div className={`max-w-[88%] sm:max-w-[75%] md:max-w-[70%] space-y-1 ${isMine ? 'items-end text-right' : 'items-start text-right'}`}>
                     
                     {/* Header: Sender Name, Role & Time */}
-                    <div className={`flex items-center gap-2 text-[11px] ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`flex items-center gap-1.5 text-[10px] sm:text-[11px] ${isMine ? 'justify-end' : 'justify-start'}`}>
                       <span className="font-bold text-slate-700">{msg.senderName}</span>
-                      <span className={`text-[9px] px-1.5 py-0.2 rounded border font-medium ${roleBadge.color}`}>
+                      <span className={`text-[8px] sm:text-[9px] px-1 py-0.2 rounded border font-medium ${roleBadge.color}`}>
                         {roleBadge.label}
                       </span>
-                      <span className="text-slate-400">{msg.timestamp}</span>
+                      <span className="text-slate-400 font-mono">{msg.timestamp}</span>
                     </div>
 
                     {/* Replied Context */}
                     {repliedMessage && (
-                      <div className="bg-slate-100/90 border-r-2 border-indigo-500 rounded-lg p-1.5 text-[11px] text-slate-600 mb-1 max-w-md">
+                      <div className="bg-slate-100/90 border-r-2 border-indigo-500 rounded-lg p-1.5 text-[10px] sm:text-[11px] text-slate-600 mb-1 max-w-md">
                         <div className="flex items-center gap-1 font-bold text-indigo-700 text-[10px]">
                           <Reply className="w-2.5 h-2.5" /> پاسخ به {repliedMessage.senderName}:
                         </div>
@@ -447,7 +508,7 @@ export const ChatView: React.FC = () => {
                     )}
 
                     {/* Main Bubble */}
-                    <div className={`p-3 rounded-2xl text-xs leading-relaxed shadow-xs relative ${
+                    <div className={`p-2.5 sm:p-3 rounded-2xl text-xs leading-relaxed shadow-xs relative ${
                       isMine 
                         ? 'bg-indigo-600 text-white rounded-tr-none' 
                         : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
@@ -456,7 +517,7 @@ export const ChatView: React.FC = () => {
 
                       {/* Attachments Card */}
                       {msg.attachments && msg.attachments.length > 0 && (
-                        <div className="mt-2.5 pt-2 border-t border-indigo-400/30 space-y-1.5">
+                        <div className="mt-2 pt-2 border-t border-indigo-400/30 space-y-1.5">
                           {msg.attachments.map((att, i) => (
                             <div
                               key={i}
@@ -477,7 +538,7 @@ export const ChatView: React.FC = () => {
                                 {att.type === 'transfer' && <ArrowLeftRight className="w-4 h-4 text-emerald-400 shrink-0" />}
                                 <div className="truncate text-right">
                                   <p className="font-bold text-[11px] truncate">{att.title}</p>
-                                  {att.code && <p className="text-[9px] opacity-80">{att.code}</p>}
+                                  {att.code && <p className="text-[9px] opacity-80 font-mono">{att.code}</p>}
                                 </div>
                               </div>
                               <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" />
@@ -498,7 +559,7 @@ export const ChatView: React.FC = () => {
                           <button
                             key={emoji}
                             onClick={() => handleToggleReaction(msg.id, emoji)}
-                            className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                            className={`flex items-center gap-1 text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
                               hasReacted 
                                 ? 'bg-indigo-50 border-indigo-300 text-indigo-800 font-bold' 
                                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -510,13 +571,13 @@ export const ChatView: React.FC = () => {
                         );
                       })}
 
-                      {/* Quick Emoji Reaction Buttons on Hover */}
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white border border-slate-200 rounded-full px-1 py-0.5 shadow-xs">
+                      {/* Quick Emoji Reaction Buttons on Hover / Tap */}
+                      <div className="opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white border border-slate-200 rounded-full px-1 py-0.5 shadow-2xs">
                         {['👍', '❤️', '✅', '📦'].map(em => (
                           <button
                             key={em}
                             onClick={() => handleToggleReaction(msg.id, em)}
-                            className="p-1 hover:bg-slate-100 rounded-full text-xs transition-colors cursor-pointer"
+                            className="p-1 hover:bg-slate-100 rounded-full text-xs transition-colors cursor-pointer active:scale-90"
                             title={`ثبت واکنش ${em}`}
                           >
                             {em}
@@ -553,15 +614,15 @@ export const ChatView: React.FC = () => {
         </div>
 
         {/* Quick Phrase Suggestion Chips */}
-        <div className="px-4 py-2 bg-slate-50/80 border-t border-slate-200/60 overflow-x-auto whitespace-nowrap flex items-center gap-1.5 shrink-0 scrollbar-none">
-          <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+        <div className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-50/80 border-t border-slate-200/60 overflow-x-auto whitespace-nowrap flex items-center gap-1.5 shrink-0 custom-scrollbar">
+          <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 shrink-0">
             <Sparkles className="w-3 h-3 text-amber-500" /> پاسخ سریع:
           </span>
           {quickPhrases.map((phrase, idx) => (
             <button
               key={idx}
               onClick={() => handleSelectQuickText(phrase)}
-              className="text-[11px] bg-white hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 text-slate-600 border border-slate-200/80 px-2.5 py-1 rounded-lg transition-all cursor-pointer shrink-0 active:scale-95"
+              className="text-[10px] sm:text-[11px] bg-white hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 text-slate-600 border border-slate-200/80 px-2.5 py-1 rounded-lg transition-all cursor-pointer shrink-0 active:scale-95"
             >
               {phrase}
             </button>
@@ -570,7 +631,7 @@ export const ChatView: React.FC = () => {
 
         {/* Reply To Preview Bar */}
         {replyingTo && (
-          <div className="px-4 py-2 bg-indigo-50/90 border-t border-indigo-100 flex items-center justify-between shrink-0">
+          <div className="px-3 py-1.5 sm:px-4 sm:py-2 bg-indigo-50/90 border-t border-indigo-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2 text-xs truncate">
               <CornerDownLeft className="w-4 h-4 text-indigo-600 shrink-0" />
               <div className="truncate">
@@ -589,7 +650,7 @@ export const ChatView: React.FC = () => {
 
         {/* Selected Attachments Preview */}
         {selectedAttachments.length > 0 && (
-          <div className="px-4 py-2 bg-slate-100 border-t border-slate-200 flex flex-wrap gap-2 shrink-0">
+          <div className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-100 border-t border-slate-200 flex flex-wrap gap-2 shrink-0">
             {selectedAttachments.map((att, idx) => (
               <div
                 key={idx}
@@ -609,24 +670,24 @@ export const ChatView: React.FC = () => {
         )}
 
         {/* Input Bar Form */}
-        <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-slate-200/80 flex items-center gap-2 shrink-0">
+        <form onSubmit={handleSendMessage} className="p-2 sm:p-3 bg-white border-t border-slate-200/80 flex items-center gap-1.5 sm:gap-2 shrink-0">
           
           {/* Attach Resource Button */}
           <button
             type="button"
             onClick={() => setShowAttachmentModal(true)}
-            className="p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+            className="p-2 sm:p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-200 transition-colors cursor-pointer shrink-0 active:scale-95"
             title="الصاق کالا، حواله یا درخواست خرید"
           >
             <Paperclip className="w-4 h-4" />
           </button>
 
           {/* Emoji Picker Button */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="p-2.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl border border-slate-200 transition-colors cursor-pointer active:scale-95"
               title="شکلک و ایموجی"
             >
               <Smile className="w-4 h-4" />
@@ -660,19 +721,19 @@ export const ChatView: React.FC = () => {
             onChange={(e) => setInputText(e.target.value)}
             placeholder={
               activeDirectUser 
-                ? `ارسال پیام مستقیم به ${activeDirectUser.fullName}...` 
-                : `پیام در کانال #${currentChannel?.name || 'عمومی'}...`
+                ? `ارسال پیام به ${activeDirectUser.fullName}...` 
+                : `پیام در #${currentChannel?.name || 'عمومی'}...`
             }
-            className="flex-1 text-xs px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all text-slate-800 placeholder:text-slate-400"
+            className="flex-1 text-xs px-3 py-2 sm:px-3.5 sm:py-2.5 bg-slate-50 rounded-xl border border-slate-200 focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all text-slate-800 placeholder:text-slate-400"
           />
 
           {/* Send Button */}
           <button
             type="submit"
             disabled={!inputText.trim() && selectedAttachments.length === 0}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
           >
-            <span>ارسال</span>
+            <span className="hidden sm:inline">ارسال</span>
             <Send className="w-3.5 h-3.5 rotate-180" />
           </button>
 
@@ -685,7 +746,7 @@ export const ChatView: React.FC = () => {
       {/* ========================================================================= */}
       {showAttachmentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4">
             
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-slate-800 font-bold text-base">
@@ -738,7 +799,7 @@ export const ChatView: React.FC = () => {
             </div>
 
             {/* Results List */}
-            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
               {attachmentType === 'item' && (attachableItems as typeof items).map(it => (
                 <div
                   key={it.id}
@@ -769,7 +830,7 @@ export const ChatView: React.FC = () => {
                     id: pr.id,
                     code: pr.requestNumber,
                     title: `درخواست خرید ${pr.requestNumber}`,
-                    subtitle: `درخواست‌کننده: ${pr.requesterName} • اولویت: ${pr.priority}`
+                    subtitle: `درخواست‌کننده: ${pr.requesterName}`
                   })}
                   className="p-2.5 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 border border-slate-100 rounded-xl flex items-center justify-between cursor-pointer transition-all text-xs"
                 >

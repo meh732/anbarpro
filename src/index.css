@@ -260,7 +260,22 @@
     inset 0 1.5px 1px rgba(255, 255, 255, 0.9);
 }
 
-/* Custom organic button click feedback */
+/* PWA & Mobile Safe Area Utilities */
+.safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+.safe-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+.safe-bottom-nav {
+  padding-bottom: max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem));
+}
+
+html, body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .ios-press {
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.25s, box-shadow 0.25s;
   position: relative;
