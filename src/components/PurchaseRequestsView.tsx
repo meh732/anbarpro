@@ -3,12 +3,13 @@ import { useApp } from '../context/AppContext';
 import { PurchaseRequest, PurchaseRequestStatus } from '../types';
 import { 
   FileCheck, Plus, CheckCircle2, ShoppingCart, 
-  Clock, AlertTriangle, ArrowDown, X, Pencil, Trash2 
+  Clock, AlertTriangle, ArrowDown, X, Pencil, Trash2, Printer, Eye 
 } from 'lucide-react';
+import { OfficialDocumentViewerModal, OfficialDocData } from './OfficialDocumentViewerModal';
 
 export const PurchaseRequestsView: React.FC = () => {
   const { 
-    purchaseRequests, items, inventory, currentUser, 
+    purchaseRequests, items, inventory, warehouses, currentUser, companyName,
     createPurchaseRequest, updatePurchaseRequest, updatePurchaseRequestStatus, deletePurchaseRequest,
     hasActionPermission
   } = useApp();
@@ -19,6 +20,9 @@ export const PurchaseRequestsView: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReq, setEditingReq] = useState<PurchaseRequest | null>(null);
+
+  // Official Document Modal
+  const [activeOfficialDoc, setActiveOfficialDoc] = useState<OfficialDocData | null>(null);
 
   // Form State
   const [requestNumber, setRequestNumber] = useState(`REQ-2026-${Math.floor(100 + Math.random() * 900)}`);
@@ -31,6 +35,42 @@ export const PurchaseRequestsView: React.FC = () => {
     { itemId: items[0]?.id || '', quantity: 100, reason: 'کسر قطعه در پروژه جاری' }
   ]);
 
+  const statusBadges: Record<PurchaseRequestStatus, { label: string; style: string }> = {
+    Pending: { label: 'در انتظار بررسی انبار', style: 'bg-amber-50 text-amber-700 border-amber-200' },
+    Approved_InStock: { label: 'موجود در انبار (آماده تحویل)', style: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    Purchase_Needed: { label: 'ارجاع به واحد خرید (خارجی)', style: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    Manufacturing_Needed: { label: 'ارجاع به برنامه تولید', style: 'bg-purple-50 text-purple-700 border-purple-200' },
+    Fulfilled: { label: 'تحویل داده شده', style: 'bg-slate-100 text-slate-700 border-slate-200' },
+    Rejected: { label: 'رد شده', style: 'bg-rose-50 text-rose-700 border-rose-200' },
+  };
+
+  const handleOpenOfficialDoc = (req: PurchaseRequest) => {
+    const docData: OfficialDocData = {
+      type: 'PURCHASE_REQUEST',
+      docNumber: req.requestNumber,
+      date: req.date,
+      status: statusBadges[req.status]?.label || req.status,
+      partyName: req.requestingUnit,
+      requesterName: req.requesterName || 'کارشناس متقاضی',
+      issuerName: 'واحد مهندسی و برنامه‌ریزی',
+      urgency: req.urgency === 'Immediate' ? 'خیلی فوری (توقف خط)' : req.urgency === 'High' ? 'فوری' : 'عادی',
+      notes: req.notes || 'درخواست رسمی تامین قطعات از موجودی انبار یا واحد خرید خارجی',
+      items: req.items.map(it => {
+        const itemObj = items.find(i => i.id === it.itemId || i.code === it.itemId);
+        return {
+          itemId: it.itemId,
+          itemCode: itemObj?.code || it.itemId,
+          itemName: itemObj?.name || 'کالای درخواستی',
+          unit: itemObj?.unit || 'عدد',
+          quantity: it.quantity,
+          unitPrice: itemObj?.unitPrice || 0,
+          reason: it.reason || 'تامین خط تولید',
+        };
+      }),
+    };
+    setActiveOfficialDoc(docData);
+  };
+
   const handleOpenNew = () => {
     setEditingReq(null);
     setRequestNumber(`REQ-2026-${Math.floor(100 + Math.random() * 900)}`);
@@ -42,7 +82,8 @@ export const PurchaseRequestsView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = (req: PurchaseRequest) => {
+  const handleOpenEdit = (req: PurchaseRequest, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setEditingReq(req);
     setRequestNumber(req.requestNumber);
     setRequestingUnit(req.requestingUnit);
@@ -53,7 +94,8 @@ export const PurchaseRequestsView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (req: PurchaseRequest) => {
+  const handleDelete = (req: PurchaseRequest, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (confirm(`آیا از حذف درخواست کالا "${req.requestNumber}" اطمینان دارید؟`)) {
       deletePurchaseRequest(req.id);
     }
@@ -87,15 +129,6 @@ export const PurchaseRequestsView: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  const statusBadges: Record<PurchaseRequestStatus, { label: string; style: string }> = {
-    Pending: { label: 'در انتظار بررسی انبار', style: 'bg-amber-50 text-amber-700 border-amber-200' },
-    Approved_InStock: { label: 'موجود در انبار (آماده تحویل)', style: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    Purchase_Needed: { label: 'ارجاع به واحد خرید (خارجی)', style: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-    Manufacturing_Needed: { label: 'ارجاع به برنامه تولید', style: 'bg-purple-50 text-purple-700 border-purple-200' },
-    Fulfilled: { label: 'تحویل داده شده', style: 'bg-slate-100 text-slate-700 border-slate-200' },
-    Rejected: { label: 'رد شده', style: 'bg-rose-50 text-rose-700 border-rose-200' },
-  };
-
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header Banner */}
@@ -113,7 +146,7 @@ export const PurchaseRequestsView: React.FC = () => {
         {canAdd && (
           <button
             onClick={handleOpenNew}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             ثبت درخواست کالا / قطعه
@@ -134,6 +167,7 @@ export const PurchaseRequestsView: React.FC = () => {
                 <th className="whitespace-nowrap p-3.5">اقلام و دلایل</th>
                 <th className="whitespace-nowrap p-3.5">اولویـت</th>
                 <th className="whitespace-nowrap p-3.5">وضعیت گردش</th>
+                <th className="whitespace-nowrap p-3.5 text-center">مشاهده و چاپ فرم</th>
                 <th className="whitespace-nowrap p-3.5 text-center">اقدام مدیریت انبار / خرید</th>
                 <th className="whitespace-nowrap p-3.5 text-center">عملیات</th>
               </tr>
@@ -141,7 +175,7 @@ export const PurchaseRequestsView: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {purchaseRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400">
+                  <td colSpan={10} className="p-8 text-center text-slate-400">
                     هیچ درخواستی ثبت نشده است.
                   </td>
                 </tr>
@@ -149,20 +183,27 @@ export const PurchaseRequestsView: React.FC = () => {
                 purchaseRequests.map(req => {
                   const badge = statusBadges[req.status];
                   return (
-                    <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="whitespace-nowrap p-3.5 font-mono font-bold text-indigo-600">{req.requestNumber}</td>
+                    <tr 
+                      key={req.id} 
+                      onClick={() => handleOpenOfficialDoc(req)}
+                      className="hover:bg-indigo-50/40 transition-colors cursor-pointer"
+                    >
+                      <td className="whitespace-nowrap p-3.5 font-mono font-bold text-indigo-600 flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-slate-400" />
+                        {req.requestNumber}
+                      </td>
                       <td className="whitespace-nowrap p-3.5 font-mono text-slate-500">{req.date}</td>
                       <td className="whitespace-nowrap p-3.5 font-bold text-slate-800">{req.requestingUnit}</td>
                       <td className="whitespace-nowrap p-3.5 text-slate-600">{req.requesterName}</td>
                       <td className="whitespace-nowrap p-3.5">
                         {req.items.map((it, i) => {
-                          const itemObj = items.find(x => x.id === it.itemId);
-                          const totalQtyInWh = inventory.filter(x => x.itemId === it.itemId).reduce((s, c) => s + c.quantity, 0);
+                          const itemObj = items.find(x => x.id === it.itemId || x.code === it.itemId);
+                          const totalQtyInWh = inventory.filter(x => x.itemId === it.itemId || (itemObj && x.itemId === itemObj.code)).reduce((s, c) => s + c.quantity, 0);
                           return (
                             <div key={i} className="text-[11px] mb-1">
                               <span className="font-bold text-slate-800">{itemObj?.name || it.itemId}: </span>
-                              <strong className="text-indigo-600 font-mono">{it.quantity} {itemObj?.unit}</strong>
-                              <span className="text-[10px] text-slate-400 mr-2">(موجودی انبارها: {totalQtyInWh})</span>
+                              <strong className="text-indigo-600 font-mono">{it.quantity} {itemObj?.unit || 'عدد'}</strong>
+                              <span className="text-[10px] text-slate-400 mr-2">(موجودی کل انبارها: {totalQtyInWh})</span>
                             </div>
                           );
                         })}
@@ -181,7 +222,17 @@ export const PurchaseRequestsView: React.FC = () => {
                           {badge.label}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap p-3.5 text-center">
+                      <td className="whitespace-nowrap p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleOpenOfficialDoc(req)}
+                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg border border-indigo-300 shadow-2xs text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                          title="مشاهده و چاپ فرم رسمی درخواست کالا"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>چاپ فرم</span>
+                        </button>
+                      </td>
+                      <td className="whitespace-nowrap p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-wrap items-center justify-center gap-1">
                           {req.status === 'Pending' && (
                             canEdit ? (
@@ -211,7 +262,7 @@ export const PurchaseRequestsView: React.FC = () => {
                                 onClick={() => updatePurchaseRequestStatus(req.id, 'Fulfilled')}
                                 className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-medium border border-slate-200"
                               >
-                                علامت‌گذاری تحویل نهایی
+                                تحویل نهایی
                               </button>
                             ) : (
                               <span className="text-[10px] text-slate-400">فاقد دسترسی ویرایش</span>
@@ -219,13 +270,13 @@ export const PurchaseRequestsView: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td className="whitespace-nowrap p-3.5 text-center">
+                      <td className="whitespace-nowrap p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         {(canEdit || canDelete) ? (
                           <div className="flex items-center justify-center gap-1">
                             {canEdit && (
                               <button
                                 type="button"
-                                onClick={() => handleOpenEdit(req)}
+                                onClick={(e) => handleOpenEdit(req, e)}
                                 className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                                 title="ویرایش درخواست"
                               >
@@ -235,7 +286,7 @@ export const PurchaseRequestsView: React.FC = () => {
                             {canDelete && (
                               <button
                                 type="button"
-                                onClick={() => handleDelete(req)}
+                                onClick={(e) => handleDelete(req, e)}
                                 className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                                 title="حذف درخواست"
                               >
@@ -255,6 +306,7 @@ export const PurchaseRequestsView: React.FC = () => {
           </table>
         </div>
       </div>
+
 
       {/* Modal New / Edit Request */}
       {isModalOpen && (
@@ -382,6 +434,18 @@ export const PurchaseRequestsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Official Printable Document Viewer Modal */}
+      {activeOfficialDoc && (
+        <OfficialDocumentViewerModal
+          doc={activeOfficialDoc}
+          allItems={items}
+          allWarehouses={warehouses}
+          companyName={companyName}
+          onClose={() => setActiveOfficialDoc(null)}
+        />
+      )}
     </div>
   );
 };
+

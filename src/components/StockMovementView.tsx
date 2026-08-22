@@ -3,12 +3,13 @@ import { useApp } from '../context/AppContext';
 import { StockInType, StockOutType, StockInDoc, StockOutDoc } from '../types';
 import { 
   ArrowDownUp, ArrowDownLeft, ArrowUpRight, Plus, 
-  Search, Printer, CheckCircle2, FileText, Trash2, Pencil, X 
+  Search, Printer, CheckCircle2, FileText, Trash2, Pencil, X, Eye, Hash 
 } from 'lucide-react';
+import { OfficialDocumentViewerModal, OfficialDocData } from './OfficialDocumentViewerModal';
 
 export const StockMovementView: React.FC = () => {
   const { 
-    stockInDocs, stockOutDocs, warehouses, items, currentUser, 
+    stockInDocs, stockOutDocs, warehouses, items, currentUser, companyName,
     createStockInDoc, updateStockInDoc, deleteStockInDoc,
     createStockOutDoc, updateStockOutDoc, deleteStockOutDoc 
   } = useApp();
@@ -18,6 +19,9 @@ export const StockMovementView: React.FC = () => {
   const [searchFilter, setSearchFilter] = useState('');
   const [editingInDoc, setEditingInDoc] = useState<StockInDoc | null>(null);
   const [editingOutDoc, setEditingOutDoc] = useState<StockOutDoc | null>(null);
+
+  // Official Printable Document Modal State
+  const [activeOfficialDoc, setActiveOfficialDoc] = useState<OfficialDocData | null>(null);
 
   // Form State for new Document
   const [docType, setDocType] = useState<'IN' | 'OUT'>('IN');
@@ -48,6 +52,63 @@ export const StockMovementView: React.FC = () => {
     Scrap: 'ضایعات و سوخته',
     StockAdjustment: 'اصلاح موجودی (کاهشی)',
   };
+
+  // Open Official Document Viewer for Stock In
+  const handleViewOfficialInDoc = (doc: StockInDoc) => {
+    const wh = warehouses.find(w => w.id === doc.warehouseId);
+    const docData: OfficialDocData = {
+      type: 'STOCK_IN',
+      docNumber: doc.docNumber,
+      date: doc.date,
+      status: 'تاییدشده و قطعی',
+      partyName: doc.supplier || 'تامین‌کننده معتبر',
+      targetWarehouseName: wh?.name || 'انبار مقصد',
+      issuerName: doc.registeredBy || 'کارشناس انبار',
+      notes: doc.notes || `رسید ورود کالا از نوع ${stockInTypeLabels[doc.entryType]}`,
+      items: doc.items.map(it => {
+        const itemObj = items.find(i => i.id === it.itemId || i.code === it.itemId);
+        return {
+          itemId: it.itemId,
+          itemCode: itemObj?.code || it.itemId,
+          itemName: itemObj?.name || 'قطعه انبار',
+          unit: itemObj?.unit || 'عدد',
+          quantity: it.quantity,
+          unitPrice: it.unitPrice || itemObj?.unitPrice || 0,
+          notes: it.notes,
+        };
+      }),
+    };
+    setActiveOfficialDoc(docData);
+  };
+
+  // Open Official Document Viewer for Stock Out
+  const handleViewOfficialOutDoc = (doc: StockOutDoc) => {
+    const wh = warehouses.find(w => w.id === doc.warehouseId);
+    const docData: OfficialDocData = {
+      type: 'STOCK_OUT',
+      docNumber: doc.docNumber,
+      date: doc.date,
+      status: 'تاییدشده و تحویل‌شده',
+      partyName: doc.recipient || 'واحد متقاضی / پروژه',
+      sourceWarehouseName: wh?.name || 'انبار مبدا',
+      issuerName: doc.registeredBy || 'انباردار رسمی',
+      notes: doc.notes || `حواله خروج کالا به منظور ${stockOutTypeLabels[doc.exitType]}`,
+      items: doc.items.map(it => {
+        const itemObj = items.find(i => i.id === it.itemId || i.code === it.itemId);
+        return {
+          itemId: it.itemId,
+          itemCode: itemObj?.code || it.itemId,
+          itemName: itemObj?.name || 'کالای خروجی',
+          unit: itemObj?.unit || 'عدد',
+          quantity: it.quantity,
+          unitPrice: itemObj?.unitPrice || 0,
+          reason: it.notes,
+        };
+      }),
+    };
+    setActiveOfficialDoc(docData);
+  };
+
 
   const handleOpenNewDoc = (type: 'IN' | 'OUT') => {
     setDocType(type);
@@ -247,10 +308,10 @@ export const StockMovementView: React.FC = () => {
                   <th className="whitespace-nowrap p-3.5">نوع ورود</th>
                   <th className="whitespace-nowrap p-3.5">تامین‌کننده / مبدا</th>
                   <th className="whitespace-nowrap p-3.5">انبار مقصد</th>
-                  <th className="whitespace-nowrap p-3.5">تعداد اقلام</th>
+                  <th className="whitespace-nowrap p-3.5 text-center">تعداد اقلام</th>
                   <th className="whitespace-nowrap p-3.5">کاربر ثبت‌کننده</th>
                   <th className="whitespace-nowrap p-3.5">وضعیت</th>
-                  <th className="whitespace-nowrap p-3.5 text-center">چاپ سند</th>
+                  <th className="whitespace-nowrap p-3.5 text-center">مشاهده و چاپ رسمی</th>
                   <th className="whitespace-nowrap p-3.5 text-center">عملیات</th>
                 </tr>
               </thead>
@@ -265,8 +326,15 @@ export const StockMovementView: React.FC = () => {
                   stockInDocs.map(doc => {
                     const wh = warehouses.find(w => w.id === doc.warehouseId);
                     return (
-                      <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="whitespace-nowrap p-3.5 font-mono font-bold text-emerald-600">{doc.docNumber}</td>
+                      <tr 
+                        key={doc.id} 
+                        onClick={() => handleViewOfficialInDoc(doc)}
+                        className="hover:bg-indigo-50/40 transition-colors cursor-pointer"
+                      >
+                        <td className="whitespace-nowrap p-3.5 font-mono font-bold text-emerald-600 flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          {doc.docNumber}
+                        </td>
                         <td className="whitespace-nowrap p-3.5 font-mono text-slate-500">{doc.date}</td>
                         <td className="whitespace-nowrap p-3.5">
                           <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
@@ -275,7 +343,7 @@ export const StockMovementView: React.FC = () => {
                         </td>
                         <td className="whitespace-nowrap p-3.5 font-bold text-slate-800">{doc.supplier}</td>
                         <td className="whitespace-nowrap p-3.5 text-slate-600">{wh?.name}</td>
-                        <td className="whitespace-nowrap p-3.5 font-mono font-bold">{doc.items.length} قلم</td>
+                        <td className="whitespace-nowrap p-3.5 font-mono font-bold text-center">{doc.items.length} قلم</td>
                         <td className="whitespace-nowrap p-3.5 text-slate-500">{doc.registeredBy}</td>
                         <td className="whitespace-nowrap p-3.5">
                           <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium flex items-center gap-1 w-fit">
@@ -283,16 +351,17 @@ export const StockMovementView: React.FC = () => {
                             تاییدشده
                           </span>
                         </td>
-                        <td className="whitespace-nowrap p-3.5 text-center">
+                        <td className="whitespace-nowrap p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={() => window.print()}
-                            className="p-1.5 bg-white hover:bg-slate-50 text-slate-600 rounded-lg border border-slate-200 shadow-2xs"
-                            title="چاپ رسید رسمس انبار"
+                            onClick={() => handleViewOfficialInDoc(doc)}
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg border border-emerald-300 shadow-2xs text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                            title="مشاهده و چاپ رسید رسمی ورود انبار"
                           >
                             <Printer className="w-3.5 h-3.5" />
+                            <span>چاپ سند</span>
                           </button>
                         </td>
-                        <td className="whitespace-nowrap p-3.5 text-center">
+                        <td className="whitespace-nowrap p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
@@ -327,10 +396,10 @@ export const StockMovementView: React.FC = () => {
                   <th className="whitespace-nowrap p-3.5">نوع خروج</th>
                   <th className="whitespace-nowrap p-3.5">تحویل‌گیرنده / پروژه</th>
                   <th className="whitespace-nowrap p-3.5">انبار مبدا</th>
-                  <th className="whitespace-nowrap p-3.5">تعداد اقلام</th>
+                  <th className="whitespace-nowrap p-3.5 text-center">تعداد اقلام</th>
                   <th className="whitespace-nowrap p-3.5">کاربر ثبت‌کننده</th>
                   <th className="whitespace-nowrap p-3.5">وضعیت</th>
-                  <th className="whitespace-nowrap p-3.5 text-center">چاپ سند</th>
+                  <th className="whitespace-nowrap p-3.5 text-center">مشاهده و چاپ رسمی</th>
                   <th className="whitespace-nowrap p-3.5 text-center">عملیات</th>
                 </tr>
               </thead>
@@ -345,8 +414,15 @@ export const StockMovementView: React.FC = () => {
                   stockOutDocs.map(doc => {
                     const wh = warehouses.find(w => w.id === doc.warehouseId);
                     return (
-                      <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="whitespace-nowrap p-3.5 font-mono font-bold text-rose-600">{doc.docNumber}</td>
+                      <tr 
+                        key={doc.id} 
+                        onClick={() => handleViewOfficialOutDoc(doc)}
+                        className="hover:bg-rose-50/40 transition-colors cursor-pointer"
+                      >
+                        <td className="whitespace-nowrap p-3.5 font-mono font-bold text-rose-600 flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          {doc.docNumber}
+                        </td>
                         <td className="whitespace-nowrap p-3.5 font-mono text-slate-500">{doc.date}</td>
                         <td className="whitespace-nowrap p-3.5">
                           <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-medium">
@@ -355,7 +431,7 @@ export const StockMovementView: React.FC = () => {
                         </td>
                         <td className="whitespace-nowrap p-3.5 font-bold text-slate-800">{doc.recipient}</td>
                         <td className="whitespace-nowrap p-3.5 text-slate-600">{wh?.name}</td>
-                        <td className="whitespace-nowrap p-3.5 font-mono font-bold">{doc.items.length} قلم</td>
+                        <td className="whitespace-nowrap p-3.5 font-mono font-bold text-center">{doc.items.length} قلم</td>
                         <td className="whitespace-nowrap p-3.5 text-slate-500">{doc.registeredBy}</td>
                         <td className="whitespace-nowrap p-3.5">
                           <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-medium flex items-center gap-1 w-fit">
@@ -363,16 +439,17 @@ export const StockMovementView: React.FC = () => {
                             تاییدشده
                           </span>
                         </td>
-                        <td className="whitespace-nowrap p-3.5 text-center">
+                        <td className="whitespace-nowrap p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={() => window.print()}
-                            className="p-1.5 bg-white hover:bg-slate-50 text-slate-600 rounded-lg border border-slate-200 shadow-2xs"
-                            title="چاپ حواله رسمی خروج"
+                            onClick={() => handleViewOfficialOutDoc(doc)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-300 shadow-2xs text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                            title="مشاهده و چاپ حواله رسمی خروج انبار"
                           >
                             <Printer className="w-3.5 h-3.5" />
+                            <span>چاپ سند</span>
                           </button>
                         </td>
-                        <td className="whitespace-nowrap p-3.5 text-center">
+                        <td className="whitespace-nowrap p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
@@ -632,6 +709,18 @@ export const StockMovementView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Official Printable Document Viewer Modal */}
+      {activeOfficialDoc && (
+        <OfficialDocumentViewerModal
+          doc={activeOfficialDoc}
+          allItems={items}
+          allWarehouses={warehouses}
+          companyName={companyName}
+          onClose={() => setActiveOfficialDoc(null)}
+        />
+      )}
     </div>
   );
 };
+

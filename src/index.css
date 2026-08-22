@@ -351,3 +351,66 @@ body.lite-mode-active .backdrop-blur-xl {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+
+/* ========================================================================= */
+/* Official Iranian Corporate Print Rules (A4 Portrait & Clean Form Output) */
+/* ========================================================================= */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm 8mm 10mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    background-image: none !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide background liquid blobs, floating droplets, web navigation, sidebars and headers */
+  .liquid-blob-1,
+  .liquid-blob-2,
+  .liquid-blob-3,
+  .glass-droplet,
+  aside,
+  nav,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Ensure modal is cleanly positioned on top of the page without fixed black overlays */
+  .fixed.inset-0 {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  #printable-official-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    page-break-inside: avoid;
+  }
+
+  /* Preserve sharp borders and readable dark colors for laser printers */
+  table, tr, td, th {
+    page-break-inside: avoid !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+

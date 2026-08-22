@@ -16,7 +16,7 @@ export const DashboardView: React.FC = () => {
     setActiveTab, hasTabPermission, items, purchaseRequests, 
     inventory, stockInDocs, stockOutDocs, transfers, 
     stockCountings, projects, currentUser, updatePurchaseRequestStatus,
-    hasActionPermission
+    hasActionPermission, boms
   } = useApp();
 
   const [selectedWorkflowFilter, setSelectedWorkflowFilter] = useState<'all' | 'purchase' | 'transfer' | 'docs' | 'production'>('all');
@@ -91,10 +91,24 @@ export const DashboardView: React.FC = () => {
   // 6. Low stock items
   const lowStockItems = useMemo(() => {
     return items.filter(it => {
-      const totalQty = inventory.filter(i => i.itemId === it.id).reduce((s, c) => s + c.quantity, 0);
+      const totalQty = inventory.filter(i => i.itemId === it.id || i.itemId === it.code).reduce((s, c) => s + c.quantity, 0);
       return totalQty <= it.minStock;
     });
   }, [items, inventory]);
+
+  // 7. BOMs with critical component shortages
+  const bomsWithShortage = useMemo(() => {
+    return boms.filter(bom => {
+      return bom.items.some(bi => {
+        const itemObj = items.find(i => i.id === bi.itemId || i.code === bi.itemId);
+        const itemBalances = inventory.filter(inv => inv.itemId === bi.itemId || (itemObj && inv.itemId === itemObj.code));
+        const totalStock = itemBalances.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
+        const reservedQty = itemBalances.reduce((acc, curr) => acc + (curr.reservedQuantity || 0), 0);
+        const freeStock = Math.max(0, totalStock - reservedQty);
+        return freeStock < (bi.quantityNeeded + (bi.scrapAllowanceQty || 0));
+      });
+    });
+  }, [boms, items, inventory]);
 
   // Total items requiring immediate action across the entire workflow
   const totalPendingActionCount = 
@@ -103,7 +117,9 @@ export const DashboardView: React.FC = () => {
     inTransitTransfers.length + 
     totalDraftDocsCount + 
     activeStockCountings.length +
-    pendingProductionSteps.length;
+    pendingProductionSteps.length +
+    bomsWithShortage.length;
+
 
   // ==========================================
   // Quick 1-Click Action Handler on Dashboard
@@ -127,7 +143,7 @@ export const DashboardView: React.FC = () => {
   // ==========================================
   const activeWorkflowTiles = useMemo(() => {
     const tiles: Array<{
-      id: 'purchase' | 'transfer' | 'docs' | 'counting' | 'production' | 'my_requests';
+      id: 'purchase' | 'transfer' | 'docs' | 'counting' | 'production' | 'my_requests' | 'bom';
       tab: string;
       title: string;
       subtitle: string;
@@ -228,7 +244,25 @@ export const DashboardView: React.FC = () => {
       });
     }
 
-    // 6. My Active Requests
+    // 6. BOMs with component shortage
+    if (bomsWithShortage.length > 0) {
+      tiles.push({
+        id: 'bom',
+        tab: 'bom',
+        title: 'کسری قطعات فرمول ساخت (BOM)',
+        subtitle: `${bomsWithShortage.length} محصول دارای کسری موجودی قطعات خط تولید`,
+        count: bomsWithShortage.length,
+        badgeText: `${bomsWithShortage.length} کسری فرمول`,
+        actionText: 'مشاهده فرمول‌ها و رفع کسری',
+        icon: Cpu,
+        iconBg: 'bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-violet-500/30',
+        cardBg: 'bg-gradient-to-b from-violet-500/10 via-white to-white border-violet-200 hover:border-violet-400',
+        textColor: 'text-violet-700 hover:text-violet-800',
+        isUrgent: true,
+      });
+    }
+
+    // 7. My Active Requests
     const myPendingReqs = mySubmittedRequests.filter(r => r.status === 'Pending' || r.status === 'Purchase_Needed');
     if (myPendingReqs.length > 0) {
       tiles.push({
@@ -251,8 +285,9 @@ export const DashboardView: React.FC = () => {
     pendingPurchaseReqs, urgentPurchaseReqsCount, pendingTransfers, 
     inTransitTransfers, totalDraftDocsCount, draftStockInDocs, 
     draftStockOutDocs, activeStockCountings, pendingProductionSteps, 
-    mySubmittedRequests
+    bomsWithShortage, mySubmittedRequests
   ]);
+
 
   // Static standard module tiles
   const standardTiles = [
