@@ -7,9 +7,16 @@ import {
   Trash2, ArrowUp, ArrowDown, Cpu, ArrowRightLeft, AlertTriangle, Layers,
   Boxes, Warehouse, Check, FileCheck, ShieldAlert, Sparkles,
   PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3,
-  Pencil, Edit, Eye, Calculator, Zap
+  Pencil, Edit, Eye, Calculator, Zap, Home, Archive, LayoutGrid, List,
+  SlidersHorizontal, CheckSquare, Package, TrendingUp, FileSpreadsheet
 } from 'lucide-react';
 import { SmartStageScalingModal } from './SmartStageScalingModal';
+import { ProjectBOMEditor, BOMRowItem, StepBOMConfig } from './ProjectBOMEditor';
+import { 
+  StepMaterialHandoverModal, 
+  StepOutputReceiptModal, 
+  ProjectStageProgressReportModal 
+} from './ProjectStageModals';
 
 // Helper Component for True 2D Graphical Organizational Tree Diagram with Connecting Branch Lines
 const GraphicalOrgTreeNode: React.FC<{
@@ -233,237 +240,501 @@ const GraphicalOrgTreeNode: React.FC<{
   );
 };
 
-// Helper Recursive Component for Unlimited Depth Step Tree Rendering with Expand/Collapse Triangle
-const RecursiveStepCard: React.FC<{
+// Linear Step Card Component: Sleek horizontal row in collapsed state, smoothly expands when clicked to reveal details & stage-specific BOM
+const LinearStepCard: React.FC<{
   step: ProjectStep;
   projectId: string;
+  project?: Project;
   depth?: number;
   stepCodeStr?: string;
   items: any[];
   boms: any[];
   contractors: any[];
+  targetQuantity?: number;
   updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
   setAddingSubStepTo: (val: { projectId: string; parentStepId: string } | null) => void;
   onEditStep?: (step: ProjectStep, projectId: string) => void;
   onDeleteStep?: (stepId: string, projectId: string) => void;
+  onHandoverStep?: (step: ProjectStep, project?: Project) => void;
+  onRecordOutput?: (step: ProjectStep, project?: Project) => void;
   canAddSubStep?: boolean;
 }> = ({
   step,
   projectId,
+  project,
   depth = 0,
   stepCodeStr = '1',
   items,
   boms,
   contractors,
+  targetQuantity = 100,
   updateProjectStep,
   setAddingSubStepTo,
   onEditStep,
   onDeleteStep,
+  onHandoverStep,
+  onRecordOutput,
   canAddSubStep = true,
 }) => {
-  const [isExpanded, setIsExpanded] = useState<boolean>(true);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
   const outputItem = items.find(i => i.id === step.outputItemId);
-  const matchedBom = boms.find(b => b.finishedItemId === step.outputItemId && b.isActive);
+  const contractor = contractors.find(c => c.id === step.contractorId);
   const hasSubSteps = Boolean(step.subSteps && step.subSteps.length > 0);
+  const stepBomItems = step.bomItems || [];
+
+  const stepTarget = step.outputQuantity || step.targetQuantity || targetQuantity || 1;
+  const stepCompleted = step.completedQuantity || (step.status === 'Completed' ? stepTarget : 0);
+  const stepScrap = step.scrapQuantity || 0;
+  const stepProgress = step.status === 'Completed' ? 100 : (step.progressPercent !== undefined ? step.progressPercent : Math.min(100, Math.round((stepCompleted / stepTarget) * 100)));
 
   return (
-    <div className={`p-3 sm:p-3.5 rounded-2xl border space-y-2.5 transition-all relative ${
-      depth > 0 ? 'mr-2 sm:mr-3 border-r-2 border-indigo-500/40 bg-slate-50/90 shadow-2xs' : ''
+    <div className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+      depth > 0 ? 'mr-3 sm:mr-4 border-r-4 border-indigo-400/80 bg-slate-50/90 shadow-2xs my-2' : 'shadow-2xs my-1'
     } ${
-      step.status === 'Completed' 
-        ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900' 
+      step.status === 'Completed'
+        ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
         : step.status === 'InProgress'
-        ? 'bg-indigo-50/90 border-indigo-200 text-indigo-900 shadow-xs ring-1 ring-indigo-300'
-        : 'bg-white border-slate-200 text-slate-700'
+        ? 'border-indigo-200 bg-indigo-50/40 hover:border-indigo-300 ring-1 ring-indigo-200/50'
+        : 'border-slate-200/90 bg-white hover:border-slate-300'
     }`}>
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-            مرحله {stepCodeStr}
+      {/* Linear Header Row (Click to toggle expansion) */}
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer select-none transition-colors group"
+      >
+        {/* Right side: Step code, Name, Badges */}
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-mono font-black text-xs shrink-0 shadow-2xs border ${
+            step.status === 'Completed'
+              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+              : step.status === 'InProgress'
+              ? 'bg-indigo-600 text-white border-indigo-600'
+              : 'bg-slate-100 text-slate-700 border-slate-200'
+          }`}>
+            {stepCodeStr}
           </span>
-          {hasSubSteps && (
-            <button
-              type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1 hover:bg-slate-200/70 rounded-md transition-all text-indigo-700 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
-              title={isExpanded ? 'بستن زیرمراحل' : 'مشاهده زیرمراحل'}
-            >
-              <span 
-                className={`inline-block transform transition-transform duration-200 text-[10px] ${
-                  isExpanded ? 'rotate-90 text-indigo-600' : 'rotate-0 text-slate-500'
-                }`}
-              >
-                ▶
-              </span>
-              <span className="text-[10px] text-slate-500 font-mono">({step.subSteps?.length})</span>
-            </button>
-          )}
+
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                {step.name || step.title}
+              </h4>
+
+              {/* Badges */}
+              {step.isOutsourced || step.contractorId ? (
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1 shrink-0">
+                  <Building2 className="w-3 h-3 text-amber-600" />
+                  <span>پیمانکار: {step.contractorName || contractor?.name || 'برون‌سپاری'}</span>
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
+                  اپراتور: {step.lastHandoverOperator || step.assignedOperators?.join(', ') || 'داخلی'}
+                </span>
+              )}
+
+              {step.lastHandoverDate && (
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1 shrink-0">
+                  <Package className="w-3 h-3 text-emerald-600" />
+                  <span>تحویل مواد: {step.lastHandoverDate}</span>
+                </span>
+              )}
+
+              {outputItem && (
+                <span className="text-[10px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200 flex items-center gap-1 shrink-0">
+                  <Boxes className="w-3 h-3 text-purple-600" />
+                  <span>{outputItem.name}</span>
+                </span>
+              )}
+
+              {stepBomItems.length > 0 && (
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 font-mono shrink-0">
+                  {stepBomItems.length} قلم BOM
+                </span>
+              )}
+
+              {hasSubSteps && (
+                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200 font-mono shrink-0">
+                  {step.subSteps?.length} زیرمرحله
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        {/* Left side: Mini Progress Bar, Status badge, quick action buttons, and Chevron */}
+        <div className="flex items-center justify-between md:justify-end gap-2.5 shrink-0 pt-1 md:pt-0 border-t md:border-t-0 border-slate-100" onClick={e => e.stopPropagation()}>
+          {/* Mini Progress Bar */}
+          <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-white/80 rounded-xl border border-slate-200/80 min-w-[130px] shadow-2xs">
+            <div className="flex-1 space-y-0.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-slate-500 font-bold">{stepCompleted}/{stepTarget}</span>
+                <span className="font-bold text-indigo-700">{stepProgress}%</span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                <div 
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    stepProgress === 100 ? 'bg-emerald-500' : stepProgress > 0 ? 'bg-indigo-600' : 'bg-slate-300'
+                  }`} 
+                  style={{ width: `${stepProgress}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Status Indicator Pill */}
           {step.status === 'Completed' ? (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/90 px-2.5 py-1 rounded-xl border border-emerald-200">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               تکمیل شد
             </span>
           ) : step.status === 'InProgress' ? (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-100/90 px-2.5 py-1 rounded-xl border border-indigo-200">
               <Clock className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
               در حال انجام
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
               <PlayCircle className="w-3.5 h-3.5 text-slate-400" />
               در انتظار
             </span>
           )}
 
-          {onEditStep && (
+          {/* Action Button: Handover / Output Direct Launchers */}
+          {onHandoverStep && (
             <button
               type="button"
-              onClick={() => onEditStep(step, projectId)}
-              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-              title="ویرایش مرحله"
+              onClick={() => onHandoverStep(step, project)}
+              title="تحویل قطعات و شروع مرحله"
+              className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1 cursor-pointer transition-colors"
             >
-              <Pencil className="w-3.5 h-3.5" />
+              <Package className="w-3 h-3" />
+              <span className="hidden sm:inline">تحویل قطعات</span>
             </button>
           )}
 
-          {onDeleteStep && (
+          {onRecordOutput && (
             <button
               type="button"
-              onClick={() => onDeleteStep(step.id, projectId)}
-              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-              title="حذف مرحله"
+              onClick={() => onRecordOutput(step, project)}
+              title="ثبت دریافت محصول نیمه‌ساخته / خروجی مرحله"
+              className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-1 cursor-pointer transition-colors"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Boxes className="w-3 h-3" />
+              <span className="hidden sm:inline">ثبت خروجی</span>
             </button>
           )}
+
+          {/* Quick inline status switch */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              title="تغییر به در حال انجام"
+              onClick={() => updateProjectStep(projectId, step.id, 'InProgress')}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                step.status === 'InProgress' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              اجرا
+            </button>
+            <button
+              type="button"
+              title="تغییر به تکمیل شده"
+              onClick={() => updateProjectStep(projectId, step.id, 'Completed')}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                step.status === 'Completed' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              تکمیل
+            </button>
+          </div>
+
+          {/* Expand / Collapse Chevron Button */}
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="p-1.5 hover:bg-slate-100 text-slate-500 rounded-xl transition-all cursor-pointer"
+            title={isOpen ? 'بستن جزئیات' : 'مشاهده جزئیات مرحله'}
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180 text-indigo-600' : 'text-slate-400'}`} />
+          </button>
         </div>
       </div>
 
-      {/* Step Title */}
-      <div className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">
-        {step.name || step.title}
-      </div>
-
-      {/* Details & Output Item / BOM */}
-      <div className="text-[11px] space-y-1.5 pt-1">
-        {step.isOutsourced || step.contractorId ? (
-          <div className="text-amber-800 font-bold flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 text-[10px]">
-            <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span>پیمانکار برون‌سپاری: <strong>{step.contractorName || contractors.find(c => c.id === step.contractorId)?.name || 'پیمانکار مجری'}</strong></span>
-          </div>
-        ) : (
-          <div className="text-slate-500 text-[10px]">
-            مجری / اپراتور: <span className="font-semibold text-slate-800">{step.assignedOperators?.join(', ') || 'داخلی کارخانه'}</span>
-          </div>
-        )}
-
-        {/* Output Item & Linked BOM status */}
-        {outputItem && (
-          <div className="p-2 bg-amber-50/80 text-amber-900 border border-amber-200/90 rounded-xl space-y-1 text-[10px]">
-            <div className="font-bold flex items-center gap-1.5">
-              <Boxes className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>خروجی نیمه‌ساخته/قطعه: <strong className="text-amber-950">{outputItem.name}</strong></span>
-              {step.outputQuantity && <span className="font-mono text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded font-bold">({step.outputQuantity} {outputItem.unit})</span>}
-            </div>
-            {matchedBom && Array.isArray(matchedBom.items) ? (
-              <div className="text-[10px] text-emerald-800 font-bold flex items-center gap-1 bg-emerald-100/60 p-1 rounded-md">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>فرمول ساخت BOM فعال ({matchedBom.items.length} قلم قطعه)</span>
+      {/* Expanded Accordion Body */}
+      {isOpen && (
+        <div className="p-4 sm:p-5 bg-slate-50/80 border-t border-slate-200/90 space-y-4 animate-fadeIn">
+          {/* Automated Stage Progress & Handover Banner */}
+          <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-4 rounded-2xl shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <span className="font-bold text-xs">وضعیت خودکار مرحله و پیشرفت کار</span>
               </div>
-            ) : (
-              <div className="text-[10px] text-amber-800 font-medium flex items-center gap-1 bg-amber-100/60 p-1 rounded-md">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>فرمول BOM ثبت نشده است</span>
+              <div className="flex items-center gap-2">
+                {onHandoverStep && (
+                  <button
+                    type="button"
+                    onClick={() => onHandoverStep(step, project)}
+                    className="px-3 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Package className="w-3.5 h-3.5" />
+                    <span>📦 تحویل قطعات و شروع کار</span>
+                  </button>
+                )}
+                {onRecordOutput && (
+                  <button
+                    type="button"
+                    onClick={() => onRecordOutput(step, project)}
+                    className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Boxes className="w-3.5 h-3.5" />
+                    <span>📥 ثبت دریافت خروجی مرحله</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center font-mono">
+              <div className="bg-white/10 p-2 rounded-xl">
+                <span className="text-[10px] text-slate-300 block">تیراژ هدف مرحله:</span>
+                <strong className="text-sm font-bold text-white">{stepTarget.toLocaleString('fa-IR')}</strong>
+              </div>
+              <div className="bg-white/10 p-2 rounded-xl">
+                <span className="text-[10px] text-emerald-300 block">دریافت/تولید شده:</span>
+                <strong className="text-sm font-bold text-emerald-300">{stepCompleted.toLocaleString('fa-IR')}</strong>
+              </div>
+              <div className="bg-white/10 p-2 rounded-xl">
+                <span className="text-[10px] text-amber-300 block">ضایعات ثبت‌شده:</span>
+                <strong className="text-sm font-bold text-amber-300">{stepScrap.toLocaleString('fa-IR')}</strong>
+              </div>
+              <div className="bg-white/10 p-2 rounded-xl">
+                <span className="text-[10px] text-indigo-200 block">درصد پیشرفت مرحله:</span>
+                <strong className="text-sm font-bold text-indigo-300">{stepProgress}٪</strong>
+              </div>
+            </div>
+
+            {step.lastHandoverDate && (
+              <div className="text-[11px] text-indigo-200 bg-white/5 p-2 rounded-xl flex items-center justify-between">
+                <span>آخرین تحویل قطعات: <strong>{step.lastHandoverOperator}</strong> ({step.lastHandoverDate})</span>
+                {step.lastHandoverDocNumber && <span className="font-mono text-slate-400">سند: {step.lastHandoverDocNumber}</span>}
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {/* Recursive SubSteps Render with Expand/Collapse Triangle Toggle */}
-      {hasSubSteps && (
-        <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100/80 px-2 py-1 rounded-lg border border-indigo-200 transition-all cursor-pointer select-none"
-            >
-              <span 
-                className={`inline-block transform transition-transform duration-200 text-[10px] ${
-                  isExpanded ? 'rotate-90 text-indigo-600' : 'rotate-0 text-slate-400'
-                }`}
-              >
-                ▶
-              </span>
-              <span>{isExpanded ? 'بستن زیرمراحل' : 'مشاهده زیرمراحل'}</span>
-              <span className="font-mono text-[10px] bg-indigo-200/70 text-indigo-900 px-1.5 py-0.2 rounded-full font-bold">
-                {step.subSteps?.length}
-              </span>
-            </button>
+          {/* Details Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+            {/* Operator or Contractor */}
+            <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1 shadow-2xs">
+              <div className="text-slate-500 text-[11px] font-medium flex items-center gap-1">
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                <span>عامل اجرایی مرحله:</span>
+              </div>
+              {step.isOutsourced || step.contractorId ? (
+                <div className="space-y-0.5">
+                  <div className="font-bold text-amber-900">
+                    پیمانکار: {step.contractorName || contractor?.name || 'برون‌سپاری'}
+                  </div>
+                  {contractor?.phone && (
+                    <div className="text-[11px] text-slate-500 font-mono">تماس: {contractor.phone}</div>
+                  )}
+                  {step.outsourcingCost ? (
+                    <div className="text-[11px] text-emerald-700 font-mono font-bold">هزینه: {step.outsourcingCost.toLocaleString('fa-IR')} تومان</div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="font-bold text-slate-800">
+                  {step.lastHandoverOperator || step.assignedOperators?.join(', ') || 'پرسنل خط تولید داخلی'}
+                </div>
+              )}
+            </div>
+
+            {/* Output Product / Semi-Finished */}
+            <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1 shadow-2xs">
+              <div className="text-slate-500 text-[11px] font-medium flex items-center gap-1">
+                <Boxes className="w-3.5 h-3.5 text-purple-600" />
+                <span>خروجی تولیدی این مرحله:</span>
+              </div>
+              {outputItem ? (
+                <div className="space-y-0.5">
+                  <div className="font-bold text-purple-950">{outputItem.name}</div>
+                  <div className="text-[11px] text-slate-500 font-mono">
+                    کد: {outputItem.code} | تیراژ: {step.outputQuantity || 1} {outputItem.unit}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-slate-400 text-[11px]">بدون خروجی انبارپذیر مجزا (مرحله فرآیندی)</div>
+              )}
+            </div>
+
+            {/* Quality & Scrap Allowance */}
+            <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1 shadow-2xs">
+              <div className="text-slate-500 text-[11px] font-medium flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                <span>پارامترهای کیفیت و ضایعات:</span>
+              </div>
+              <div className="font-medium text-slate-700">
+                ضایعات مجاز این مرحله: <strong className="font-mono text-amber-800 font-bold">{step.scrapAllowancePercent || 0}٪</strong>
+              </div>
+              {step.description && (
+                <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{step.description}</p>
+              )}
+            </div>
           </div>
 
-          {isExpanded && (
-            <div className="space-y-2 pr-1">
-              {step.subSteps?.map((sub, sIdx) => (
-                <RecursiveStepCard
-                  key={sub.id}
-                  step={sub}
-                  projectId={projectId}
-                  depth={depth + 1}
-                  stepCodeStr={`${stepCodeStr}.${sIdx + 1}`}
-                  items={items}
-                  boms={boms}
-                  contractors={contractors}
-                  updateProjectStep={updateProjectStep}
-                  setAddingSubStepTo={setAddingSubStepTo}
-                  onEditStep={onEditStep}
-                  onDeleteStep={onDeleteStep}
-                />
-              ))}
+          {/* Step-Specific BOM Items Section */}
+          {stepBomItems.length > 0 && (
+            <div className="bg-white border border-indigo-100 rounded-xl p-3.5 space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <h5 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>مواد اولیه و قطعات مصرفی فرمول ساخت (BOM) این مرحله:</span>
+                </h5>
+                <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-mono font-bold">
+                  {stepBomItems.length} قلم قطعه
+                </span>
+              </div>
+
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                    <tr>
+                      <th className="p-2 w-8 text-center">#</th>
+                      <th className="p-2">نام قطعه / ماده اولیه</th>
+                      <th className="p-2 w-24 text-center">مصرف در ۱ واحد</th>
+                      <th className="p-2 w-16 text-center">واحد</th>
+                      <th className="p-2 w-20 text-center">ضایعات (٪)</th>
+                      <th className="p-2 w-28 text-center bg-indigo-50/60 text-indigo-950">کل مصرف پروژه</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {stepBomItems.map((bomIt, bIdx) => {
+                      const selIt = items.find(i => i.id === bomIt.itemId);
+                      const totalReq = Math.ceil((bomIt.quantityNeeded || 0) * targetQuantity * (1 + (bomIt.scrapAllowancePercent || 0) / 100));
+                      return (
+                        <tr key={bIdx} className="hover:bg-slate-50/70">
+                          <td className="p-2 text-center text-slate-400 font-mono text-[10px]">{bIdx + 1}</td>
+                          <td className="p-2">
+                            <div className="font-bold text-slate-800">{selIt?.name || bomIt.itemId}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{selIt?.code}</div>
+                          </td>
+                          <td className="p-2 text-center font-mono font-bold text-slate-800">{bomIt.quantityNeeded}</td>
+                          <td className="p-2 text-center text-slate-600 text-[11px]">{selIt?.unit || bomIt.unit}</td>
+                          <td className="p-2 text-center font-mono text-amber-700">{bomIt.scrapAllowancePercent || 0}٪</td>
+                          <td className="p-2 text-center bg-indigo-50/30 font-mono font-bold text-indigo-700">
+                            {totalReq.toLocaleString('fa-IR')} {selIt?.unit || bomIt.unit}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
+
+          {/* SubSteps Rendering */}
+          {hasSubSteps && (
+            <div className="pt-2 border-t border-slate-200/80 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-indigo-900">
+                <span className="flex items-center gap-1.5">
+                  <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>زیرمراحل این بخش ({step.subSteps?.length} زیرمرحله):</span>
+                </span>
+              </div>
+
+              <div className="space-y-2 pr-2">
+                {step.subSteps?.map((sub, sIdx) => (
+                  <LinearStepCard
+                    key={sub.id}
+                    step={sub}
+                    projectId={projectId}
+                    depth={depth + 1}
+                    stepCodeStr={`${stepCodeStr}.${sIdx + 1}`}
+                    items={items}
+                    boms={boms}
+                    contractors={contractors}
+                    targetQuantity={targetQuantity}
+                    updateProjectStep={updateProjectStep}
+                    setAddingSubStepTo={setAddingSubStepTo}
+                    onEditStep={onEditStep}
+                    onDeleteStep={onDeleteStep}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom Action Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => updateProjectStep(projectId, step.id, 'InProgress')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  step.status === 'InProgress' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>تعیین وضعیت: در حال اجرا</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => updateProjectStep(projectId, step.id, 'Completed')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  step.status === 'Completed' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>تکمیل این مرحله</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => updateProjectStep(projectId, step.id, 'Pending')}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+              >
+                بازگشت به انتظار
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {canAddSubStep && (
+                <button
+                  type="button"
+                  onClick={() => setAddingSubStepTo({ projectId, parentStepId: step.id })}
+                  className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center gap-1 border border-indigo-200 transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>افزودن زیرمرحله</span>
+                </button>
+              )}
+
+              {onEditStep && (
+                <button
+                  type="button"
+                  onClick={() => onEditStep(step, projectId)}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-200 transition-all cursor-pointer"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>ویرایش مرحله</span>
+                </button>
+              )}
+
+              {onDeleteStep && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteStep(step.id, projectId)}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-transparent hover:border-rose-200 transition-all cursor-pointer"
+                  title="حذف مرحله"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Action Bar */}
-      <div className="pt-2 flex flex-col gap-1.5">
-        <div className="flex gap-1.5">
-          <button
-            type="button"
-            onClick={() => updateProjectStep(projectId, step.id, 'InProgress')}
-            className={`flex-1 py-1.5 rounded-xl text-[10px] font-bold transition-all active:scale-95 ${
-              step.status === 'InProgress' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            در حال اجرا
-          </button>
-          <button
-            type="button"
-            onClick={() => updateProjectStep(projectId, step.id, 'Completed')}
-            className={`flex-1 py-1.5 rounded-xl text-[10px] font-bold transition-all active:scale-95 ${
-              step.status === 'Completed' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            تکمیل شد
-          </button>
-        </div>
-        
-        {canAddSubStep && (
-          <button
-            type="button"
-            onClick={() => setAddingSubStepTo({ projectId, parentStepId: step.id })}
-            className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all border border-indigo-200 active:scale-95"
-          >
-            <Plus className="w-3.5 h-3.5 text-indigo-600" />
-            <span>افزودن زیرمرحله جدید</span>
-          </button>
-        )}
-      </div>
     </div>
   );
 };
@@ -473,7 +744,8 @@ export const ProjectsView: React.FC = () => {
     projects, items, boms, warehouses, inventory, contractors, 
     addProject, updateProject, deleteProject, updateProjectStep, 
     updateProjectStepDetails, addProjectSubStep, deleteProjectStep, 
-    createTransfer, language, hasActionPermission, liteMode
+    createTransfer, language, hasActionPermission, liteMode,
+    addBOM, updateBOM
   } = useApp();
 
   const isFa = language === 'fa';
@@ -482,9 +754,22 @@ export const ProjectsView: React.FC = () => {
   const canDelete = hasActionPermission('delete');
   const canExport = hasActionPermission('export');
 
+  // Search & Filter & View mode state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Completed' | 'Paused' | 'Archived'>('all');
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
+
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(projects[0]?.id || null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [addingSubStepTo, setAddingSubStepTo] = useState<{ projectId: string; parentStepId: string } | null>(null);
+
+  // BOM definitions in Add / Edit modals
+  const [bomRows, setBomRows] = useState<BOMRowItem[]>([]);
+  const [editBomRows, setEditBomRows] = useState<BOMRowItem[]>([]);
+  const [stepBoms, setStepBoms] = useState<StepBOMConfig[]>([]);
+  const [editStepBoms, setEditStepBoms] = useState<StepBOMConfig[]>([]);
+  const [showBOMSectionInAdd, setShowBOMSectionInAdd] = useState(true);
+  const [showBOMSectionInEdit, setShowBOMSectionInEdit] = useState(true);
 
   // Edit Project Modal state
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -526,6 +811,25 @@ export const ProjectsView: React.FC = () => {
   const [treeTypeFilter, setTreeTypeFilter] = useState<'all' | 'outsourced' | 'internal'>('all');
   const [treeZoom, setTreeZoom] = useState<number>(1);
 
+  // Automated Stage Tracking Modals State
+  const [handoverModalData, setHandoverModalData] = useState<{ project: Project; step: ProjectStep } | null>(null);
+  const [outputReceiptModalData, setOutputReceiptModalData] = useState<{ project: Project; step: ProjectStep } | null>(null);
+  const [progressReportProject, setProgressReportProject] = useState<Project | null>(null);
+
+  const handleOpenHandover = (step: ProjectStep, project?: Project) => {
+    const proj = project || projects.find(p => p.id === expandedProjectId) || projects[0];
+    if (proj) {
+      setHandoverModalData({ project: proj, step });
+    }
+  };
+
+  const handleOpenOutputReceipt = (step: ProjectStep, project?: Project) => {
+    const proj = project || projects.find(p => p.id === expandedProjectId) || projects[0];
+    if (proj) {
+      setOutputReceiptModalData({ project: proj, step });
+    }
+  };
+
   const flattenProjectSteps = (steps: ProjectStep[] = [], prefix = '1', depth = 0): Array<{ step: ProjectStep; code: string; depth: number }> => {
     let list: Array<{ step: ProjectStep; code: string; depth: number }> = [];
     if (!steps || !Array.isArray(steps)) return list;
@@ -558,6 +862,112 @@ export const ProjectsView: React.FC = () => {
   const [targetQuantity, setTargetQuantity] = useState(100);
   const [scrapAllowancePercent, setScrapAllowancePercent] = useState<number>(0);
   const [description, setDescription] = useState('');
+
+  // Helper to load BOM rows & Stage-by-Stage BOM configs when selecting a target finished item in Add Modal
+  const initializeBOMRowsForAdd = (itemId: string, stepsToUse = customSteps) => {
+    const matched = boms.find(b => b.finishedItemId === itemId && b.isActive);
+    let rows: BOMRowItem[] = [];
+
+    if (matched && Array.isArray(matched.items) && matched.items.length > 0) {
+      rows = matched.items.map(it => ({
+        itemId: it.itemId,
+        quantityNeeded: it.quantityNeeded || 1,
+        unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+        scrapAllowancePercent: it.scrapAllowancePercent ?? 2,
+      }));
+    } else {
+      const defaultMaterials = items.filter(i => i.id !== itemId && (i.itemType === 'RawMaterial' || i.itemType === 'Component')).slice(0, 4);
+      if (defaultMaterials.length > 0) {
+        rows = defaultMaterials.map(m => ({
+          itemId: m.id,
+          quantityNeeded: 1,
+          unit: m.unit || 'عدد',
+          scrapAllowancePercent: 2,
+        }));
+      }
+    }
+    setBomRows(rows);
+
+    // Build stage-by-stage BOMs
+    const builtStepBoms: StepBOMConfig[] = stepsToUse.map((st, idx) => {
+      let stageItems: BOMRowItem[] = [];
+      if (st.outputItemId) {
+        const stepBom = boms.find(b => b.finishedItemId === st.outputItemId && b.isActive);
+        if (stepBom && Array.isArray(stepBom.items) && stepBom.items.length > 0) {
+          stageItems = stepBom.items.map(it => ({
+            itemId: it.itemId,
+            quantityNeeded: it.quantityNeeded || 1,
+            unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+            scrapAllowancePercent: it.scrapAllowancePercent ?? (st.scrapAllowancePercent || 0),
+          }));
+        }
+      }
+
+      if (stageItems.length === 0 && rows.length > 0) {
+        if (idx === 1) {
+          stageItems = rows.slice(0, Math.ceil(rows.length / 2));
+        } else if (idx === stepsToUse.length - 1 && rows.length > 1) {
+          stageItems = rows.slice(Math.ceil(rows.length / 2));
+        }
+      }
+
+      return {
+        stepId: st.id,
+        stepNumber: idx + 1,
+        stepName: st.name || `مرحله ${idx + 1}`,
+        outputItemId: st.outputItemId,
+        items: stageItems,
+      };
+    });
+    setStepBoms(builtStepBoms);
+  };
+
+  // Helper to load BOM rows & Stage-by-Stage BOM configs in Edit Modal
+  const initializeBOMRowsForEdit = (proj: Project) => {
+    const matched = boms.find(b => b.finishedItemId === proj.targetFinishedItemId && b.isActive);
+    let rows: BOMRowItem[] = [];
+
+    if (matched && Array.isArray(matched.items) && matched.items.length > 0) {
+      rows = matched.items.map(it => ({
+        itemId: it.itemId,
+        quantityNeeded: it.quantityNeeded || 1,
+        unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+        scrapAllowancePercent: it.scrapAllowancePercent ?? 2,
+      }));
+    }
+    setEditBomRows(rows);
+
+    const builtStepBoms: StepBOMConfig[] = (proj.steps || []).map((st, idx) => {
+      let stageItems: BOMRowItem[] = [];
+      if (st.bomItems && Array.isArray(st.bomItems) && st.bomItems.length > 0) {
+        stageItems = st.bomItems.map(it => ({
+          itemId: it.itemId,
+          quantityNeeded: it.quantityNeeded || 1,
+          unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+          scrapAllowancePercent: it.scrapAllowancePercent ?? (st.scrapAllowancePercent || 0),
+        }));
+      } else if (st.outputItemId) {
+        const stepBom = boms.find(b => b.finishedItemId === st.outputItemId && b.isActive);
+        if (stepBom && Array.isArray(stepBom.items) && stepBom.items.length > 0) {
+          stageItems = stepBom.items.map(it => ({
+            itemId: it.itemId,
+            quantityNeeded: it.quantityNeeded || 1,
+            unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+            scrapAllowancePercent: it.scrapAllowancePercent ?? (st.scrapAllowancePercent || 0),
+          }));
+        }
+      }
+
+      return {
+        stepId: st.id,
+        stepNumber: st.stepNumber || idx + 1,
+        stepName: st.name || st.title || `مرحله ${idx + 1}`,
+        outputItemId: st.outputItemId,
+        items: stageItems,
+      };
+    });
+    setEditStepBoms(builtStepBoms);
+  };
 
   // Custom Steps Form State (With Output Items & Default Step 1: Material Transfer)
   const defaultInitialSteps = [
@@ -602,9 +1012,10 @@ export const ProjectsView: React.FC = () => {
     setClient('');
     setScrapAllowancePercent(0);
     const semiItem = items.find(i => i.itemType === 'SemiFinished')?.id || '';
-    const finItem = targetFinishedItemId || items.find(i => i.itemType === 'Finished')?.id || '';
+    const finItem = targetFinishedItemId || items.find(i => i.itemType === 'Finished')?.id || items[0]?.id || '';
+    setTargetFinishedItemId(finItem);
 
-    setCustomSteps([
+    const initialSteps = [
       { 
         id: `step-${Date.now()}-1`, 
         name: 'تحویل و تخصیص قطعات از انبار مرکزی به قفسه پروژه در خط تولید', 
@@ -637,7 +1048,10 @@ export const ProjectsView: React.FC = () => {
         outputItemId: finItem,
         scrapAllowancePercent: 1
       },
-    ]);
+    ];
+
+    setCustomSteps(initialSteps);
+    initializeBOMRowsForAdd(finItem, initialSteps);
     setIsModalOpen(true);
   };
 
@@ -656,11 +1070,28 @@ export const ProjectsView: React.FC = () => {
     setEditProjDescription(proj.description || '');
     setEditProjTargetItemId(proj.targetFinishedItemId || '');
     setEditProjScrapPercent(proj.scrapAllowancePercent || 0);
+
+    initializeBOMRowsForEdit(proj);
   };
 
   const handleSaveEditProject = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProject) return;
+
+    // Map editStepBoms into the project steps
+    const updatedSteps = (editingProject.steps || []).map((st, idx) => {
+      const stepBomConfig = editStepBoms.find(sb => sb.stepId === st.id || sb.stepNumber === (st.stepNumber || idx + 1));
+      if (stepBomConfig && stepBomConfig.items && stepBomConfig.items.length > 0) {
+        const stepItems = stepBomConfig.items.map(it => ({
+          itemId: it.itemId,
+          quantityNeeded: Number(it.quantityNeeded) || 1,
+          unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+          scrapAllowancePercent: Number(it.scrapAllowancePercent) || 0,
+        })).filter(it => it.itemId);
+        return { ...st, bomItems: stepItems };
+      }
+      return st;
+    });
 
     updateProject(editingProject.id, {
       name: editProjName,
@@ -675,7 +1106,51 @@ export const ProjectsView: React.FC = () => {
       description: editProjDescription,
       targetFinishedItemId: editProjTargetItemId,
       scrapAllowancePercent: Number(editProjScrapPercent) || 0,
+      steps: updatedSteps,
     });
+
+    // Aggregate items across all steps to sync with product BOM
+    const allStepItems: BOMRowItem[] = [];
+    editStepBoms.forEach(sb => {
+      (sb.items || []).forEach(it => {
+        if (!it.itemId) return;
+        const exist = allStepItems.find(x => x.itemId === it.itemId);
+        if (exist) {
+          exist.quantityNeeded = (exist.quantityNeeded || 0) + (it.quantityNeeded || 0);
+        } else {
+          allStepItems.push({ ...it });
+        }
+      });
+    });
+
+    const itemsToSave = allStepItems.length > 0 ? allStepItems : editBomRows;
+
+    // Persist BOM changes if any rows are configured
+    if (itemsToSave.length > 0 && editProjTargetItemId) {
+      const matched = boms.find(b => b.finishedItemId === editProjTargetItemId && b.isActive);
+      const cleanedItems = itemsToSave.map(r => ({
+        itemId: r.itemId,
+        quantityNeeded: Number(r.quantityNeeded) || 0,
+        unit: r.unit || items.find(i => i.id === r.itemId)?.unit || 'عدد',
+        scrapAllowancePercent: Number(r.scrapAllowancePercent) || 0,
+      })).filter(r => r.itemId);
+
+      if (cleanedItems.length > 0) {
+        if (matched) {
+          updateBOM(matched.id, { items: cleanedItems });
+        } else {
+          const finishedItemObj = items.find(i => i.id === editProjTargetItemId);
+          addBOM({
+            finishedItemId: editProjTargetItemId,
+            name: `فرمول ساخت ${finishedItemObj?.name || editProjName}`,
+            version: 'v1.0',
+            items: cleanedItems,
+            isActive: true,
+            description: `فرمول تعریف‌شده هنگام ویرایش پروژه ${editProjName}`
+          });
+        }
+      }
+    }
 
     setEditingProject(null);
   };
@@ -732,15 +1207,31 @@ export const ProjectsView: React.FC = () => {
   };
 
   const handleAddStepRow = () => {
-    setCustomSteps(prev => [
-      ...prev,
-      {
-        id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        name: '',
-        operator: 'اپراتور خط',
-        isOutsourced: false,
-      }
-    ]);
+    const newStepId = `step-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+    setCustomSteps(prev => {
+      const nextSteps = [
+        ...prev,
+        {
+          id: newStepId,
+          name: '',
+          operator: 'اپراتور خط',
+          isOutsourced: false,
+          outputItemId: '',
+          scrapAllowancePercent: 0
+        }
+      ];
+      setStepBoms(sPrev => [
+        ...sPrev,
+        {
+          stepId: newStepId,
+          stepNumber: nextSteps.length,
+          stepName: `مرحله ${nextSteps.length}`,
+          outputItemId: '',
+          items: []
+        }
+      ]);
+      return nextSteps;
+    });
   };
 
   const handleRemoveStepRow = (id: string) => {
@@ -748,14 +1239,31 @@ export const ProjectsView: React.FC = () => {
       alert('پروژه باید حداقل دارای ۱ مرحله باشد.');
       return;
     }
-    setCustomSteps(prev => prev.filter(s => s.id !== id));
+    setCustomSteps(prev => {
+      const nextSteps = prev.filter(s => s.id !== id);
+      setStepBoms(sPrev => sPrev.filter(s => s.stepId !== id).map((s, idx) => ({ ...s, stepNumber: idx + 1 })));
+      return nextSteps;
+    });
   };
 
   const handleUpdateStepRow = (id: string, field: string, value: any) => {
-    setCustomSteps(prev => prev.map(s => {
-      if (s.id !== id) return s;
-      return { ...s, [field]: value };
-    }));
+    setCustomSteps(prev => {
+      const nextSteps = prev.map(s => {
+        if (s.id !== id) return s;
+        return { ...s, [field]: value };
+      });
+      if (field === 'name' || field === 'outputItemId') {
+        setStepBoms(sPrev => sPrev.map(sb => {
+          if (sb.stepId !== id) return sb;
+          return {
+            ...sb,
+            stepName: field === 'name' ? (value || sb.stepName) : sb.stepName,
+            outputItemId: field === 'outputItemId' ? value : sb.outputItemId,
+          };
+        }));
+      }
+      return nextSteps;
+    });
   };
 
   const handleMoveStepRow = (index: number, direction: 'up' | 'down') => {
@@ -766,6 +1274,16 @@ export const ProjectsView: React.FC = () => {
     newSteps[index] = newSteps[targetIdx];
     newSteps[targetIdx] = temp;
     setCustomSteps(newSteps);
+
+    setStepBoms(sPrev => {
+      const newSb = [...sPrev];
+      if (newSb[index] && newSb[targetIdx]) {
+        const tSb = newSb[index];
+        newSb[index] = newSb[targetIdx];
+        newSb[targetIdx] = tSb;
+      }
+      return newSb.map((s, idx) => ({ ...s, stepNumber: idx + 1 }));
+    });
   };
 
   const handleAddSubStep = (e: React.FormEvent) => {
@@ -811,6 +1329,14 @@ export const ProjectsView: React.FC = () => {
     const stepsToSave = customSteps.map((st, idx) => {
       const selectedCont = contractors.find(c => c.id === st.contractorId);
       const isOut = st.isOutsourced;
+      const stepBomConfig = stepBoms.find(sb => sb.stepId === st.id || sb.stepNumber === idx + 1);
+      const stepItems = stepBomConfig?.items?.map(it => ({
+        itemId: it.itemId,
+        quantityNeeded: Number(it.quantityNeeded) || 1,
+        unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+        scrapAllowancePercent: Number(it.scrapAllowancePercent) || 0,
+      })).filter(it => it.itemId) || [];
+
       return {
         id: `s-${Date.now()}-${idx + 1}`,
         stepNumber: idx + 1,
@@ -825,6 +1351,7 @@ export const ProjectsView: React.FC = () => {
         outsourcingCost: st.outsourcingCost,
         outputItemId: st.outputItemId || undefined,
         scrapAllowancePercent: Number(st.scrapAllowancePercent) || 0,
+        bomItems: stepItems,
       };
     });
 
@@ -845,7 +1372,50 @@ export const ProjectsView: React.FC = () => {
       steps: stepsToSave,
     });
 
-    alert(`پروژه جدید با ${stepsToSave.length} مرحله سفارشی با موفقیت تعریف گردید.`);
+    // Aggregate items across all steps to sync with product BOM
+    const allStepItems: BOMRowItem[] = [];
+    stepBoms.forEach(sb => {
+      (sb.items || []).forEach(it => {
+        if (!it.itemId) return;
+        const exist = allStepItems.find(x => x.itemId === it.itemId);
+        if (exist) {
+          exist.quantityNeeded = (exist.quantityNeeded || 0) + (it.quantityNeeded || 0);
+        } else {
+          allStepItems.push({ ...it });
+        }
+      });
+    });
+
+    const itemsToSave = allStepItems.length > 0 ? allStepItems : bomRows;
+
+    // Persist BOM definition directly if user added/customized BOM rows
+    if (itemsToSave.length > 0 && targetFinishedItemId) {
+      const matched = boms.find(b => b.finishedItemId === targetFinishedItemId && b.isActive);
+      const cleanedItems = itemsToSave.map(r => ({
+        itemId: r.itemId,
+        quantityNeeded: Number(r.quantityNeeded) || 0,
+        unit: r.unit || items.find(i => i.id === r.itemId)?.unit || 'عدد',
+        scrapAllowancePercent: Number(r.scrapAllowancePercent) || 0,
+      })).filter(r => r.itemId);
+
+      if (cleanedItems.length > 0) {
+        if (matched) {
+          updateBOM(matched.id, { items: cleanedItems });
+        } else {
+          const finishedItemObj = items.find(i => i.id === targetFinishedItemId);
+          addBOM({
+            finishedItemId: targetFinishedItemId,
+            name: `فرمول ساخت ${finishedItemObj?.name || name}`,
+            version: 'v1.0',
+            items: cleanedItems,
+            isActive: true,
+            description: `فرمول تعریف‌شده همزمان با ثبت پروژه ${name}`
+          });
+        }
+      }
+    }
+
+    alert(`پروژه جدید با ${stepsToSave.length} مرحله سفارشی و فرمول ساخت (BOM) مرحله‌به‌مرحله با موفقیت تعریف گردید.`);
     setIsModalOpen(false);
   };
 
@@ -974,199 +1544,536 @@ export const ProjectsView: React.FC = () => {
     Cancelled: { label: 'لغو شده', style: 'bg-rose-50 text-rose-700 border-rose-200' },
   };
 
+  const filteredProjects = projects.filter(p => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = !q || 
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.code && p.code.toLowerCase().includes(q)) ||
+      (p.client && p.client.toLowerCase().includes(q)) ||
+      (p.projectManager && p.projectManager.toLowerCase().includes(q));
+
+    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-slate-100 shadow-sm p-5 rounded-2xl shadow-2xs">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <Factory className="w-5 h-5 text-indigo-600" />
-            پروژه‌های ساخت و کنترل مراحل ۵گانه خط تولید
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            تعریف پروژه‌های سفارش مشتری، مدیریت درصد پیشرفت لحظه‌ای و گردش مراحل از مونتاژ SMD تا بسته‌بندی
-          </p>
+      {/* Top Header Bar Matching Requested Design */}
+      <div className="bg-white border border-slate-100/90 shadow-sm p-4 sm:p-5 rounded-3xl shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Right Section: Breadcrumb & Title */}
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center font-bold shrink-0 shadow-2xs">
+            <Building2 className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                پرونده‌های پروژه‌های ساخت
+              </h2>
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-200/60">
+                <Home className="w-3 h-3 text-slate-400" />
+                <span>خانه / پروژه‌ها</span>
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              مدیریت سفارشات تولید، فرمول‌های ساخت (BOM) و گردش مراحل ۵گانه خط تولید
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Center Section: Search Bar */}
+        <div className="flex-1 max-w-md">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="جستجو در پروژه‌ها (نام، کد، کارفرما، مدیر)..."
+              className="w-full pl-9 pr-10 py-2.5 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200/80 rounded-2xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Left Section: Actions, Filters, View Mode */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          >
+            <option value="all">همه وضعیت‌ها</option>
+            <option value="Active">در حال تولید (فعال)</option>
+            <option value="Completed">تکمیل و مختومه</option>
+            <option value="Paused">متوقف‌شده</option>
+            <option value="Planning">برنامه‌ریزی</option>
+          </select>
+
+          {/* View Mode Toggle */}
+          <div className="bg-slate-100 p-1 rounded-2xl flex items-center gap-0.5 border border-slate-200/60">
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`p-1.5 rounded-xl transition-all ${viewMode === 'cards' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-500 hover:text-slate-800'}`}
+              title="نمای کارتی"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-xl transition-all ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-500 hover:text-slate-800'}`}
+              title="نمای جدولی / خطی"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Org Tree Report Button */}
           <button
             type="button"
             onClick={() => setTreeReportProject(projects[0] || null)}
-            className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold rounded-xl text-xs flex items-center justify-center gap-2 border border-indigo-200 transition-all shadow-2xs active:scale-95 shrink-0"
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200/80 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-center gap-1.5 border border-slate-200/60 transition-all shadow-2xs active:scale-95 shrink-0 cursor-pointer"
+            title="نمودار درختی و گزارش‌های مدیریتی WBS"
           >
             <FolderTree className="w-4 h-4 text-indigo-600" />
-            <span>نمودار شاخه درختی و گزارش‌های مدیریتی</span>
+            <span className="hidden sm:inline">گزارشات</span>
           </button>
 
+          {/* Add Project Primary Button */}
           {canAdd && (
             <button
               type="button"
               onClick={handleOpenAdd}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 shrink-0"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs active:scale-95 shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>تعریف پروژه جدید</span>
+              <span>+ جدید</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Projects List */}
-      <div className="space-y-4">
-        {projects.map(proj => {
-          const isExpanded = expandedProjectId === proj.id;
-          const finishedItem = items.find(i => i.id === proj.targetFinishedItemId);
-          const badge = statusBadges[proj.status];
-
-          return (
-            <div 
-              key={proj.id}
-              className="bg-white border border-slate-100 shadow-sm rounded-2xl overflow-hidden shadow-2xs transition-all"
+      {/* Projects Display Area */}
+      {filteredProjects.length === 0 ? (
+        <div className="bg-white rounded-3xl p-12 border border-slate-100 text-center space-y-3 shadow-sm">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mx-auto">
+            <Building2 className="w-7 h-7" />
+          </div>
+          <h3 className="font-bold text-slate-800 text-sm">هیچ پروژه‌ای با مشخصات جستجویافته پیدا نشد</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            می‌توانید عبارت جستجو را پاک کنید یا با کلیک بر روی دکمه «+ جدید» پروژه ساخت جدیدی تعریف فرمایید.
+          </p>
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-200"
             >
-              {/* Project Main Header Bar */}
-              <div 
-                onClick={() => setExpandedProjectId(isExpanded ? null : proj.id)}
-                className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/80 transition-colors"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                      {proj.code}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badge.style}`}>
-                      {badge.label}
-                    </span>
-                    {(proj.scrapAllowancePercent !== undefined && proj.scrapAllowancePercent > 0) && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-50 text-amber-800 border border-amber-300">
-                        ضایعات مجاز: {proj.scrapAllowancePercent}٪
+              پاک کردن فیلتر جستجو
+            </button>
+          )}
+        </div>
+      ) : viewMode === 'cards' ? (
+        /* Cards Grid View (Matching image.png Layout) */
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+            {filteredProjects.map(proj => {
+              const isExpanded = expandedProjectId === proj.id;
+              const finishedItem = items.find(i => i.id === proj.targetFinishedItemId);
+              const badge = statusBadges[proj.status] || { label: proj.status, style: 'bg-slate-100 text-slate-600' };
+
+              return (
+                <div
+                  key={proj.id}
+                  onClick={() => setExpandedProjectId(isExpanded ? null : proj.id)}
+                  className={`bg-white rounded-3xl p-5 sm:p-6 border transition-all duration-300 relative group flex flex-col justify-between min-h-[210px] cursor-pointer ${
+                    isExpanded 
+                      ? 'border-indigo-500 shadow-lg ring-2 ring-indigo-500/20 bg-indigo-50/15' 
+                      : 'border-slate-100/90 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-slate-200'
+                  }`}
+                >
+                  {/* Top Row: Left building icon badge, Right count/status pill */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100/90 text-slate-700 border border-slate-200/60 font-mono">
+                        {proj.steps?.length || 4} مرحله
                       </span>
-                    )}
-                  </div>
-                  <h3 className="font-bold text-base text-slate-900">{proj.name}</h3>
-                  <div className="text-xs text-slate-500 flex flex-wrap items-center gap-4">
-                    <span>مشتری: <strong className="text-slate-800">{proj.client}</strong></span>
-                    <span>مدیر پروژه: <strong className="text-slate-800">{proj.projectManager}</strong></span>
-                    <span>محصول: <strong className="text-indigo-600">{finishedItem?.name || proj.targetFinishedItemId}</strong></span>
-                  </div>
-                </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${badge.style}`}>
+                        {badge.label}
+                      </span>
+                    </div>
 
-                {/* Progress & Output Stats */}
-                <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-                  <div className="text-right">
-                    <div className="text-xs text-slate-500">تیراژ تولید شده</div>
-                    <div className="font-mono font-bold text-sm text-slate-900">
-                      <span className="text-emerald-600">{proj.producedQuantity}</span> / {proj.targetQuantity} {finishedItem?.unit || 'دستگاه'}
+                    <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0 shadow-2xs group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300">
+                      <Building2 className="w-5 h-5" />
                     </div>
                   </div>
 
-                  <div className="w-28 sm:w-32 space-y-1">
-                    <div className="flex justify-between text-[11px] font-mono">
-                      <span className="text-slate-500">پیشرفت:</span>
-                      <strong className="text-indigo-600">{proj.progressPercent}%</strong>
+                  {/* Middle Content */}
+                  <div className="my-3 space-y-1.5">
+                    <h3 className="font-black text-base sm:text-lg text-slate-900 line-clamp-1 group-hover:text-indigo-600 transition-colors">
+                      {proj.name}
+                    </h3>
+                    <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+                      <span className="font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md text-[11px]">
+                        {proj.code}
+                      </span>
+                      <span>•</span>
+                      <span className="line-clamp-1 text-slate-600 font-medium">{proj.client}</span>
                     </div>
-                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                      <div 
-                        className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-500" 
-                        style={{ width: `${proj.progressPercent}%` }}
-                      ></div>
+
+                    {/* Production Progress Bar */}
+                    <div className="pt-2 space-y-1">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-500 font-medium">تیراژ: <strong className="text-slate-700 font-mono">{proj.producedQuantity} / {proj.targetQuantity}</strong></span>
+                        <span className="font-mono font-bold text-indigo-600">{proj.progressPercent}%</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                        <div 
+                          className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 rounded-full transition-all duration-500"
+                          style={{ width: `${proj.progressPercent}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  {/* Actions: Edit & Delete buttons */}
-                  {(canEdit || canDelete) && (
-                    <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-1" onClick={e => e.stopPropagation()}>
+                  {/* Bottom Row */}
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-slate-400 group-hover:text-indigo-600 transition-colors font-medium flex items-center gap-1 text-[11px]">
+                      کلیک برای مشاهده جزئیات
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-indigo-600' : ''}`} />
+                    </span>
+
+                    {/* Quick Action Tools */}
+                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                       {canEdit && (
                         <button
                           type="button"
                           onClick={(e) => handleOpenEditProject(proj, e)}
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                          title="ویرایش پروژه"
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="ویرایش پروژه و فرمول ساخت (BOM)"
                         >
-                          <Pencil className="w-4 h-4" />
+                          <Pencil className="w-3.5 h-3.5" />
                         </button>
                       )}
                       {canDelete && (
                         <button
                           type="button"
                           onClick={(e) => handleDeleteProject(proj.id, e)}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                           title="حذف پروژه"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
-                  )}
-
-                  {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                  </div>
                 </div>
-              </div>
+              );
+            })}
+          </div>
 
-              {/* Project Step Workflow Drawer */}
-              {isExpanded && (
-                <div className="p-5 bg-slate-50 border-t border-slate-200 space-y-4">
-                  <div className="text-xs font-bold text-slate-800 flex flex-wrap items-center justify-between gap-2">
+          {/* Active Expanded Project Detailed 5-Stage Workflow Drawer */}
+          {expandedProjectId && (() => {
+            const activeProj = projects.find(p => p.id === expandedProjectId);
+            if (!activeProj) return null;
+            const finishedItem = items.find(i => i.id === activeProj.targetFinishedItemId);
+
+            return (
+              <div className="bg-white border border-indigo-100 rounded-3xl p-5 sm:p-6 shadow-md space-y-5 animate-fadeIn">
+                {/* Active Project Header & Toolbar */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <GitBranch className="w-4 h-4 text-indigo-600" />
-                      <span>گردش و مراحل ۵ گانه تولید پروژه:</span>
+                      <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-200">
+                        {activeProj.code}
+                      </span>
+                      <h3 className="font-black text-lg text-slate-900">
+                        {activeProj.name}
+                      </h3>
+                      <span className="text-xs text-slate-500 font-medium">
+                        (کارفرما: <strong className="text-slate-800">{activeProj.client}</strong>)
+                      </span>
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSmartScalingProject(proj)}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
-                        title="محاسبه و تنظیم خودکار اهداف مراحل و قطعات نیمه‌ساخته بر اساس درخت فرمول ساخت BOM"
-                      >
-                        <Calculator className="w-4 h-4 text-amber-100" />
-                        <span>محاسبه فرمول ساخت اهداف مراحل (BOM)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setTreeReportProject(proj)}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
-                      >
-                        <FolderTree className="w-4 h-4" />
-                        <span>نمودار درختی و گزارش مدیریتی</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setBomExplosionProject(proj)}
-                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                      >
-                        <Boxes className="w-4 h-4" />
-                        <span>آنالیز قطعات و حواله به قفسه (BOM Explosion)</span>
-                      </button>
+                    <div className="text-xs text-slate-500 flex flex-wrap items-center gap-4">
+                      <span>محصول خروجی: <strong className="text-indigo-600">{finishedItem?.name || activeProj.targetFinishedItemId}</strong></span>
+                      <span>مدیر پروژه: <strong className="text-slate-800">{activeProj.projectManager}</strong></span>
+                      <span>تیراژ هدف: <strong className="text-slate-800 font-mono">{activeProj.targetQuantity} {finishedItem?.unit || 'عدد'}</strong></span>
+                      <span>پیشرفت کل: <strong className="text-emerald-600 font-mono">{activeProj.progressPercent}%</strong></span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
-                    {proj.steps.map((step, idx) => (
-                      <RecursiveStepCard
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setProgressReportProject(activeProj)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                      title="مشاهده ماتریس تفصیلی درصد پیشرفت، تحویل قطعات و دریافت خروجی تمامی مراحل"
+                    >
+                      <TrendingUp className="w-4 h-4" />
+                      <span>گزارش هوشمند پیشرفت مراحل</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSmartScalingProject(activeProj)}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                      title="محاسبه و تنظیم خودکار اهداف مراحل و قطعات نیمه‌ساخته بر اساس درخت فرمول ساخت BOM"
+                    >
+                      <Calculator className="w-4 h-4 text-amber-100" />
+                      <span>محاسبه فرمول ساخت اهداف مراحل (BOM)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTreeReportProject(activeProj)}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      <FolderTree className="w-4 h-4" />
+                      <span>نمودار درختی و گزارش مدیریتی</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setBomExplosionProject(activeProj)}
+                      className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                    >
+                      <Boxes className="w-4 h-4" />
+                      <span>آنالیز قطعات و حواله به قفسه (BOM Explosion)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setExpandedProjectId(null)}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"
+                      title="بستن جزئیات"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Linear Stages Display */}
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <GitBranch className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs font-bold text-slate-800">مراحل گردش کار و خط تولید این پروژه ({activeProj.steps.length} مرحله خطی):</span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      جهت مشاهده جزئیات، تحویل قطعات و ثبت خروجی نیمه‌ساخته، روی هر ردیف کلیک کنید
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {activeProj.steps.map((step, idx) => (
+                      <LinearStepCard
                         key={step.id}
                         step={step}
-                        projectId={proj.id}
+                        projectId={activeProj.id}
+                        project={activeProj}
                         depth={0}
                         stepCodeStr={`${step.stepNumber || idx + 1}`}
                         items={items}
                         boms={boms}
                         contractors={contractors}
+                        targetQuantity={activeProj.targetQuantity}
                         updateProjectStep={updateProjectStep}
                         setAddingSubStepTo={setAddingSubStepTo}
                         onEditStep={canEdit ? handleOpenEditStep : undefined}
                         onDeleteStep={canDelete ? handleDeleteStep : undefined}
+                        onHandoverStep={handleOpenHandover}
+                        onRecordOutput={handleOpenOutputReceipt}
                         canAddSubStep={canAdd}
                       />
                     ))}
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              </div>
+            );
+          })()}
+        </div>
+      ) : (
+        /* Linear / List View */
+        <div className="space-y-4">
+          {filteredProjects.map(proj => {
+            const isExpanded = expandedProjectId === proj.id;
+            const finishedItem = items.find(i => i.id === proj.targetFinishedItemId);
+            const badge = statusBadges[proj.status] || { label: proj.status, style: 'bg-slate-100 text-slate-600' };
+
+            return (
+              <div 
+                key={proj.id}
+                className="bg-white border border-slate-100 shadow-sm rounded-2xl overflow-hidden shadow-2xs transition-all"
+              >
+                {/* Project Main Header Bar */}
+                <div 
+                  onClick={() => setExpandedProjectId(isExpanded ? null : proj.id)}
+                  className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/80 transition-colors"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                        {proj.code}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badge.style}`}>
+                        {badge.label}
+                      </span>
+                      {(proj.scrapAllowancePercent !== undefined && proj.scrapAllowancePercent > 0) && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-50 text-amber-800 border border-amber-300">
+                          ضایعات مجاز: {proj.scrapAllowancePercent}٪
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-bold text-base text-slate-900">{proj.name}</h3>
+                    <div className="text-xs text-slate-500 flex flex-wrap items-center gap-4">
+                      <span>مشتری: <strong className="text-slate-800">{proj.client}</strong></span>
+                      <span>مدیر پروژه: <strong className="text-slate-800">{proj.projectManager}</strong></span>
+                      <span>محصول: <strong className="text-indigo-600">{finishedItem?.name || proj.targetFinishedItemId}</strong></span>
+                    </div>
+                  </div>
+
+                  {/* Progress & Output Stats */}
+                  <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+                    <div className="text-right">
+                      <div className="text-xs text-slate-500">تیراژ تولید شده</div>
+                      <div className="font-mono font-bold text-sm text-slate-900">
+                        <span className="text-emerald-600">{proj.producedQuantity}</span> / {proj.targetQuantity} {finishedItem?.unit || 'دستگاه'}
+                      </div>
+                    </div>
+
+                    <div className="w-28 sm:w-32 space-y-1">
+                      <div className="flex justify-between text-[11px] font-mono">
+                        <span className="text-slate-500">پیشرفت:</span>
+                        <strong className="text-indigo-600">{proj.progressPercent}%</strong>
+                      </div>
+                      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                        <div 
+                          className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-500" 
+                          style={{ width: `${proj.progressPercent}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    {/* Actions: Edit & Delete buttons */}
+                    {(canEdit || canDelete) && (
+                      <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-1" onClick={e => e.stopPropagation()}>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleOpenEditProject(proj, e)}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            title="ویرایش پروژه و فرمول ساخت"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteProject(proj.id, e)}
+                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="حذف پروژه"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                  </div>
+                </div>
+
+                {/* Project Step Workflow Drawer */}
+                {isExpanded && (
+                  <div className="p-5 bg-slate-50 border-t border-slate-200 space-y-4">
+                    <div className="text-xs font-bold text-slate-800 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <GitBranch className="w-4 h-4 text-indigo-600" />
+                        <span>گردش و مراحل ۵ گانه تولید پروژه:</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setProgressReportProject(proj)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                          title="مشاهده ماتریس تفصیلی درصد پیشرفت، تحویل قطعات و دریافت خروجی تمامی مراحل"
+                        >
+                          <TrendingUp className="w-4 h-4" />
+                          <span>گزارش هوشمند پیشرفت مراحل</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSmartScalingProject(proj)}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                          title="محاسبه و تنظیم خودکار اهداف مراحل و قطعات نیمه‌ساخته بر اساس درخت فرمول ساخت BOM"
+                        >
+                          <Calculator className="w-4 h-4 text-amber-100" />
+                          <span>محاسبه فرمول ساخت اهداف مراحل (BOM)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setTreeReportProject(proj)}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                        >
+                          <FolderTree className="w-4 h-4" />
+                          <span>نمودار درختی و گزارش مدیریتی</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setBomExplosionProject(proj)}
+                          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                        >
+                          <Boxes className="w-4 h-4" />
+                          <span>آنالیز قطعات و حواله به قفسه (BOM Explosion)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {proj.steps.map((step, idx) => (
+                        <LinearStepCard
+                          key={step.id}
+                          step={step}
+                          projectId={proj.id}
+                          project={proj}
+                          depth={0}
+                          stepCodeStr={`${step.stepNumber || idx + 1}`}
+                          items={items}
+                          boms={boms}
+                          contractors={contractors}
+                          targetQuantity={proj.targetQuantity || 1}
+                          updateProjectStep={updateProjectStep}
+                          setAddingSubStepTo={setAddingSubStepTo}
+                          onEditStep={canEdit ? handleOpenEditStep : undefined}
+                          onDeleteStep={canDelete ? handleDeleteStep : undefined}
+                          onHandoverStep={handleOpenHandover}
+                          onRecordOutput={handleOpenOutputReceipt}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Modal Add Project */}
       {isModalOpen && (
@@ -1238,7 +2145,10 @@ export const ProjectsView: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 mb-1">محصول هدف پروژه*</label>
                   <select
                     value={targetFinishedItemId}
-                    onChange={(e) => setTargetFinishedItemId(e.target.value)}
+                    onChange={(e) => {
+                      setTargetFinishedItemId(e.target.value);
+                      initializeBOMRowsForAdd(e.target.value);
+                    }}
                     className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
                   >
                     {items.map(i => (
@@ -1270,30 +2180,6 @@ export const ProjectsView: React.FC = () => {
                     className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 font-mono focus:bg-white focus:border-indigo-500"
                   />
                 </div>
-
-                {/* BOM Auto-link status indicator */}
-                {(() => {
-                  const selectedItemObj = items.find(i => i.id === targetFinishedItemId);
-                  const matchedBom = boms.find(b => b.finishedItemId === targetFinishedItemId && b.isActive);
-                  if (matchedBom) {
-                    return (
-                      <div className="sm:col-span-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between shadow-2xs">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>فرمول ساخت (BOM) برای محصول «{selectedItemObj?.name}» فعال است ({matchedBom.items.length} قلم قطعه).</span>
-                        </div>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full shrink-0">ارتباط اتوماتیک برقرار است</span>
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div className="sm:col-span-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2 shadow-2xs">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>فرمول ساخت (BOM) این محصول هنوز ثبت نشده است. می‌توانید پروژه را تعریف کنید و هر زمان BOM در تب "فرمول‌های ساخت" ایجاد شد، پروژه خودکار از آن استفاده خواهد کرد.</span>
-                      </div>
-                    );
-                  }
-                })()}
               </div>
 
               <div>
@@ -1455,6 +2341,39 @@ export const ProjectsView: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Direct Integrated Stage-by-Stage BOM Editor in Add Modal */}
+              <div className="border border-indigo-100 bg-white rounded-2xl overflow-hidden shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setShowBOMSectionInAdd(!showBOMSectionInAdd)}
+                  className="w-full p-3 bg-indigo-50/70 hover:bg-indigo-50 flex items-center justify-between text-xs font-bold text-indigo-900 border-b border-indigo-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Boxes className="w-4 h-4 text-indigo-600" />
+                    <span>تعریف و تنظیم فرمول ساخت (BOM) برای مراحل پروژه</span>
+                    <span className="text-[10px] bg-indigo-200 text-indigo-800 font-mono px-2 py-0.5 rounded-full">
+                      {stepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0)} قلم قطعه در مراحل
+                    </span>
+                  </div>
+                  {showBOMSectionInAdd ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4 text-indigo-600" />}
+                </button>
+
+                {showBOMSectionInAdd && (
+                  <div className="p-3 bg-white">
+                    <ProjectBOMEditor
+                      targetItemId={targetFinishedItemId}
+                      items={items}
+                      bomRows={bomRows}
+                      setBomRows={setBomRows}
+                      stepBoms={stepBoms}
+                      setStepBoms={setStepBoms}
+                      existingBom={boms.find(b => b.finishedItemId === targetFinishedItemId && b.isActive)}
+                      targetQuantity={targetQuantity}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="sticky bottom-0 bg-white pt-3 pb-1 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
@@ -1753,7 +2672,10 @@ export const ProjectsView: React.FC = () => {
                   <label className="block text-slate-700 font-semibold mb-1">محصول خروجی نهایی پروژه</label>
                   <select
                     value={editProjTargetItemId}
-                    onChange={(e) => setEditProjTargetItemId(e.target.value)}
+                    onChange={(e) => {
+                      setEditProjTargetItemId(e.target.value);
+                      initializeBOMRowsForEdit(e.target.value);
+                    }}
                     className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="">-- بدون انتخاب --</option>
@@ -1776,6 +2698,39 @@ export const ProjectsView: React.FC = () => {
                     className="w-full p-2.5 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Direct Integrated Stage-by-Stage BOM Editor in Edit Modal */}
+              <div className="border border-indigo-100 bg-white rounded-2xl overflow-hidden shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setShowBOMSectionInEdit(!showBOMSectionInEdit)}
+                  className="w-full p-3 bg-indigo-50/70 hover:bg-indigo-50 flex items-center justify-between text-xs font-bold text-indigo-900 border-b border-indigo-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Boxes className="w-4 h-4 text-indigo-600" />
+                    <span>تعریف و ویرایش فرمول ساخت (BOM) مراحل پروژه</span>
+                    <span className="text-[10px] bg-indigo-200 text-indigo-800 font-mono px-2 py-0.5 rounded-full">
+                      {editStepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0)} قلم قطعه در مراحل
+                    </span>
+                  </div>
+                  {showBOMSectionInEdit ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4 text-indigo-600" />}
+                </button>
+
+                {showBOMSectionInEdit && (
+                  <div className="p-3 bg-white">
+                    <ProjectBOMEditor
+                      targetItemId={editProjTargetItemId}
+                      items={items}
+                      bomRows={editBomRows}
+                      setBomRows={setEditBomRows}
+                      stepBoms={editStepBoms}
+                      setStepBoms={setEditStepBoms}
+                      existingBom={boms.find(b => b.finishedItemId === editProjTargetItemId && b.isActive)}
+                      targetQuantity={editProjTargetQty}
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -2871,6 +3826,37 @@ export const ProjectsView: React.FC = () => {
           project={smartScalingProject}
           isOpen={!!smartScalingProject}
           onClose={() => setSmartScalingProject(null)}
+        />
+      )}
+
+      {/* Material Handover & Stage Start Modal */}
+      {handoverModalData && (
+        <StepMaterialHandoverModal
+          isOpen={!!handoverModalData}
+          onClose={() => setHandoverModalData(null)}
+          project={handoverModalData.project}
+          step={handoverModalData.step}
+        />
+      )}
+
+      {/* Production Output / Semi-finished Receipt Modal */}
+      {outputReceiptModalData && (
+        <StepOutputReceiptModal
+          isOpen={!!outputReceiptModalData}
+          onClose={() => setOutputReceiptModalData(null)}
+          project={outputReceiptModalData.project}
+          step={outputReceiptModalData.step}
+        />
+      )}
+
+      {/* Project Stage Matrix & Progress Report Modal */}
+      {progressReportProject && (
+        <ProjectStageProgressReportModal
+          isOpen={!!progressReportProject}
+          onClose={() => setProgressReportProject(null)}
+          project={progressReportProject}
+          onOpenHandover={(st) => handleOpenHandover(st, progressReportProject)}
+          onOpenOutputReceipt={(st) => handleOpenOutputReceipt(st, progressReportProject)}
         />
       )}
     </div>

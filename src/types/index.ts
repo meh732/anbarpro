@@ -187,10 +187,17 @@ export interface ProjectStep {
   outsourcingCost?: number;
   outputItemId?: string; // کد یا شناسه کالای نیمه‌ساخته خروجی این مرحله
   outputQuantity?: number; // تعداد تولید شده نیمه‌ساخته
+  targetQuantity?: number; // تیراژ هدف تعیین شده برای این مرحله
   scrapAllowancePercent?: number; // درصد ضایعات پیش‌بینی شده مختص این مرحله
   targetWarehouseId?: string; // انبار مقصد پس از اتمام این مرحله
   completedQuantity?: number;
+  scrapQuantity?: number;
+  progressPercent?: number;
   completedDate?: string;
+  lastHandoverDate?: string;
+  lastHandoverOperator?: string;
+  lastHandoverDocNumber?: string;
+  bomItems?: BOMItem[]; // اقلام و قطعات مصرفی فرمول ساخت مختص این مرحله
   subSteps?: ProjectStep[];
   children?: ProjectStep[];
 }

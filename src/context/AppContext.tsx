@@ -79,8 +79,49 @@ interface AppContextType {
   importInitialStockBatch: (rows: InitialStockParsedRow[]) => { count: number; docNumber: string };
   importBOMsBatch: (newBoms: Omit<BOM, 'id' | 'createdAt'>[]) => { count: number };
   
-  // Multi-Level Project Stage Auto-Calculation
+  // Multi-Level Project Stage Auto-Calculation & Automated Progress Engine
   applySmartStageTargetsToProject: (projectId: string, customOverrides?: { projectScrap?: number; stepScraps?: Record<string, number> }) => { success: boolean; message: string; count: number };
+  handoverStepMaterials: (data: {
+    projectId: string;
+    stepId: string;
+    operatorId: string;
+    operatorName: string;
+    supervisorName?: string;
+    sourceWarehouseId: string;
+    items: { itemId: string; quantity: number; notes?: string }[];
+    salonName?: string;
+    machineCode?: string;
+    notes?: string;
+  }) => { success: boolean; message: string; docNumber: string };
+  recordStepOutputReceipt: (data: {
+    projectId: string;
+    stepId: string;
+    quantityProduced: number;
+    quantityScrapped?: number;
+    operatorId: string;
+    operatorName: string;
+    shift?: 'Morning' | 'Evening' | 'Night';
+    targetWarehouseId: string;
+    sourceWarehouseId?: string;
+    machineCode?: string;
+    notes?: string;
+  }) => { success: boolean; message: string; newStepProgress: number; newProjectProgress: number; isCompleted: boolean };
+  calculateProjectProgressSummary: (project: Project) => {
+    totalSteps: number;
+    completedSteps: number;
+    inProgressSteps: number;
+    pendingSteps: number;
+    averageProgressPercent: number;
+    stepsSummary: {
+      stepId: string;
+      stepName: string;
+      targetQuantity: number;
+      completedQuantity: number;
+      scrapQuantity: number;
+      progressPercent: number;
+      status: 'Pending' | 'InProgress' | 'Completed';
+    }[];
+  };
   
   addProject: (proj: Omit<Project, 'id'>) => void;
   updateProject: (id: string, updated: Partial<Project>) => void;
@@ -841,6 +882,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString().substring(0, 10),
     };
     setMaterialHandovers(prev => [newHandover, ...prev]);
+
+    // Automatically transition the step to InProgress and project to Active!
+    if (handoverData.projectId && handoverData.stepId) {
+      setProjects(prev => prev.map(p => {
+        if (p.id !== handoverData.projectId) return p;
+        const updateStepRec = (steps: ProjectStep[]): ProjectStep[] => {
+          return steps.map(s => {
+            if (s.id === handoverData.stepId) {
+              return {
+                ...s,
+                status: s.status === 'Completed' ? 'Completed' : 'InProgress',
+                lastHandoverDate: handoverData.date || new Date().toLocaleDateString('fa-IR'),
+                lastHandoverOperator: handoverData.operatorName,
+                lastHandoverDocNumber: handoverData.docNumber
+              };
+            }
+            if (s.subSteps && s.subSteps.length > 0) {
+              return { ...s, subSteps: updateStepRec(s.subSteps) };
+            }
+            return s;
+          });
+        };
+        const updatedSteps = updateStepRec(p.steps);
+        return {
+          ...p,
+          steps: updatedSteps,
+          status: p.status === 'Planning' ? 'Active' : p.status
+        };
+      }));
+    }
+
     addAudit('ثبت برگه تحویل قطعات به اپراتور', 'MaterialHandover', newHandover.docNumber, `تحویل قطعات به اپراتور ${newHandover.operatorName} توسط ${newHandover.shiftSupervisor}`);
   };
 
@@ -1264,48 +1336,424 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('حذف مرحله پروژه', 'ProjectStep', stepId, 'حذف مرحله از پروژه');
   };
 
-  const updateProjectStep = (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => {
-    const updateStepStatusRecursively = (steps: ProjectStep[], targetStepId: string, newStatus: 'Pending' | 'InProgress' | 'Completed'): ProjectStep[] => {
-      return steps.map(s => {
-        if (s.id === targetStepId) {
-          return { ...s, status: newStatus };
-        }
-        if (s.subSteps && s.subSteps.length > 0) {
-          return { ...s, subSteps: updateStepStatusRecursively(s.subSteps, targetStepId, newStatus) };
-        }
-        return s;
-      });
-    };
+  // Calculate complete project progress summary
+  const calculateProjectProgressSummary = (project: Project) => {
+    let totalSteps = 0;
+    let completedSteps = 0;
+    let inProgressSteps = 0;
+    let pendingSteps = 0;
+    let progressSum = 0;
+    const stepsSummary: {
+      stepId: string;
+      stepName: string;
+      targetQuantity: number;
+      completedQuantity: number;
+      scrapQuantity: number;
+      progressPercent: number;
+      status: 'Pending' | 'InProgress' | 'Completed';
+    }[] = [];
 
-    const countStepsAndCompleted = (steps: ProjectStep[]): { total: number; completed: number } => {
-      let total = 0;
-      let completed = 0;
+    const analyzeStepsRec = (steps: ProjectStep[]) => {
       steps.forEach(s => {
-        total += 1;
-        if (s.status === 'Completed') completed += 1;
+        totalSteps += 1;
+        const stepTarget = s.outputQuantity || s.targetQuantity || project.targetQuantity || 1;
+        const stepCompleted = s.completedQuantity || (s.status === 'Completed' ? stepTarget : 0);
+        const stepScrap = s.scrapQuantity || 0;
+        let stepProgress = s.status === 'Completed' ? 100 : (s.progressPercent !== undefined ? s.progressPercent : Math.min(100, Math.round((stepCompleted / stepTarget) * 100)));
+        if (s.status === 'InProgress' && stepProgress === 0) stepProgress = 15; // In progress initial estimate
+
+        if (s.status === 'Completed') completedSteps += 1;
+        else if (s.status === 'InProgress') inProgressSteps += 1;
+        else pendingSteps += 1;
+
+        progressSum += stepProgress;
+        stepsSummary.push({
+          stepId: s.id,
+          stepName: s.name || s.title || `مرحله ${s.stepNumber}`,
+          targetQuantity: stepTarget,
+          completedQuantity: stepCompleted,
+          scrapQuantity: stepScrap,
+          progressPercent: stepProgress,
+          status: s.status,
+        });
+
         if (s.subSteps && s.subSteps.length > 0) {
-          const subRes = countStepsAndCompleted(s.subSteps);
-          total += subRes.total;
-          completed += subRes.completed;
+          analyzeStepsRec(s.subSteps);
         }
       });
-      return { total, completed };
     };
 
+    if (project.steps && project.steps.length > 0) {
+      analyzeStepsRec(project.steps);
+    }
+
+    const averageProgressPercent = totalSteps > 0 ? Math.round(progressSum / totalSteps) : (project.progressPercent || 0);
+
+    return {
+      totalSteps,
+      completedSteps,
+      inProgressSteps,
+      pendingSteps,
+      averageProgressPercent,
+      stepsSummary,
+    };
+  };
+
+  const updateProjectStep = (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => {
+    const today = new Date().toLocaleDateString('fa-IR');
+    
     setProjects(prev => prev.map(p => {
       if (p.id !== projectId) return p;
-      const updatedSteps = updateStepStatusRecursively(p.steps, stepId, status);
-      const { total, completed } = countStepsAndCompleted(updatedSteps);
-      const calcProgress = total > 0 ? Math.round((completed / total) * 100) : 0;
-      const newProjStatus = calcProgress === 100 ? 'Completed' : p.status;
+
+      const updateStepStatusRecursively = (steps: ProjectStep[]): ProjectStep[] => {
+        return steps.map(s => {
+          if (s.id === stepId) {
+            const stepTarget = s.outputQuantity || s.targetQuantity || p.targetQuantity || 1;
+            const newCompleted = status === 'Completed' ? (s.completedQuantity && s.completedQuantity > 0 ? s.completedQuantity : stepTarget) : (status === 'Pending' ? 0 : (s.completedQuantity || 0));
+            const newProgress = status === 'Completed' ? 100 : (status === 'Pending' ? 0 : (s.progressPercent || 25));
+            return {
+              ...s,
+              status,
+              completedQuantity: newCompleted,
+              progressPercent: newProgress,
+              completedDate: status === 'Completed' ? (s.completedDate || today) : undefined,
+            };
+          }
+          if (s.subSteps && s.subSteps.length > 0) {
+            return { ...s, subSteps: updateStepStatusRecursively(s.subSteps) };
+          }
+          return s;
+        });
+      };
+
+      const updatedSteps = updateStepStatusRecursively(p.steps);
+      
+      // Calculate overall progress across all steps
+      const collectStepProgresses = (steps: ProjectStep[]): number[] => {
+        let list: number[] = [];
+        steps.forEach(s => {
+          const stepTarget = s.outputQuantity || s.targetQuantity || p.targetQuantity || 1;
+          const done = s.completedQuantity || (s.status === 'Completed' ? stepTarget : 0);
+          const prg = s.status === 'Completed' ? 100 : (s.progressPercent !== undefined ? s.progressPercent : Math.min(100, Math.round((done / stepTarget) * 100)));
+          list.push(prg);
+          if (s.subSteps && s.subSteps.length > 0) {
+            list = list.concat(collectStepProgresses(s.subSteps));
+          }
+        });
+        return list;
+      };
+
+      const allProgresses = collectStepProgresses(updatedSteps);
+      const avgProgress = allProgresses.length > 0
+        ? Math.round(allProgresses.reduce((a, b) => a + b, 0) / allProgresses.length)
+        : 0;
+
+      const isAllDone = allProgresses.length > 0 && allProgresses.every(prg => prg === 100);
+      const newProjStatus = isAllDone ? 'Completed' : (avgProgress > 0 && p.status === 'Planning' ? 'Active' : p.status);
+
       return {
         ...p,
         steps: updatedSteps,
-        progressPercent: calcProgress,
+        progressPercent: avgProgress,
         status: newProjStatus,
       };
     }));
     addAudit('تغییر وضعیت مرحله پروژه', 'ProjectStep', stepId, `تغییر وضعیت مرحله به ${status}`);
+  };
+
+  // Direct Handover of Stage Materials to Operator with Automatic Stage Transition
+  const handoverStepMaterials = (data: {
+    projectId: string;
+    stepId: string;
+    operatorId: string;
+    operatorName: string;
+    supervisorName?: string;
+    sourceWarehouseId: string;
+    items: { itemId: string; quantity: number; notes?: string }[];
+    salonName?: string;
+    machineCode?: string;
+    notes?: string;
+  }) => {
+    const today = new Date().toLocaleDateString('fa-IR');
+    const time = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const docNumber = `HND-1404-${Math.floor(100 + Math.random() * 900)}`;
+
+    // 1. Deduct stock from source warehouse and log traceability
+    data.items.forEach(it => {
+      adjustStock(it.itemId, data.sourceWarehouseId, -it.quantity);
+
+      const itemObj = items.find(i => i.id === it.itemId);
+      const trace: TraceabilityEvent = {
+        id: `trc-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        itemId: it.itemId,
+        timestamp: `${today} ${time}`,
+        eventType: 'ProjectConsumption',
+        sourceWarehouseId: data.sourceWarehouseId,
+        projectId: data.projectId,
+        operatorName: data.operatorName,
+        quantity: it.quantity,
+        docNumber: docNumber,
+        details: `تحویل مستقیم مواد اولیه/قطعات به اپراتور (${it.quantity} ${itemObj?.unit || 'عدد'}) جهت شروع مرحله`,
+        performedBy: data.supervisorName || currentUser.fullName,
+      };
+      setTraceabilityEvents(t => [trace, ...t]);
+    });
+
+    const itemsFormatted = data.items.map(it => {
+      const itemObj = items.find(i => i.id === it.itemId);
+      return {
+        itemId: it.itemId,
+        itemCode: itemObj?.code || '',
+        itemName: itemObj?.name || 'قطعه',
+        unit: itemObj?.unit || 'عدد',
+        quantity: it.quantity,
+        notes: it.notes
+      };
+    });
+
+    // 2. Save Material Handover Record
+    const newHandover: MaterialHandover = {
+      id: `hnd-${Date.now()}`,
+      docNumber,
+      shiftSupervisor: data.supervisorName || currentUser.fullName,
+      salonName: data.salonName || 'سالن مونتاژ و تولید',
+      operatorId: data.operatorId,
+      operatorName: data.operatorName,
+      projectId: data.projectId,
+      stepId: data.stepId,
+      machineCode: data.machineCode || 'LINE-01',
+      date: today,
+      startTime: time,
+      sourceWarehouseId: data.sourceWarehouseId,
+      items: itemsFormatted,
+      notes: data.notes,
+      createdAt: new Date().toISOString().substring(0, 10),
+    };
+    setMaterialHandovers(prev => [newHandover, ...prev]);
+
+    // 3. Automatically transition stage status to InProgress & project to Active
+    setProjects(prev => prev.map(p => {
+      if (p.id !== data.projectId) return p;
+
+      const updateStepRec = (steps: ProjectStep[]): ProjectStep[] => {
+        return steps.map(s => {
+          if (s.id === data.stepId) {
+            return {
+              ...s,
+              status: s.status === 'Completed' ? 'Completed' : 'InProgress',
+              lastHandoverDate: today,
+              lastHandoverOperator: data.operatorName,
+              lastHandoverDocNumber: docNumber,
+              progressPercent: s.progressPercent && s.progressPercent > 0 ? s.progressPercent : 15,
+            };
+          }
+          if (s.subSteps && s.subSteps.length > 0) {
+            return { ...s, subSteps: updateStepRec(s.subSteps) };
+          }
+          return s;
+        });
+      };
+
+      const updatedSteps = updateStepRec(p.steps);
+      return {
+        ...p,
+        steps: updatedSteps,
+        status: p.status === 'Planning' ? 'Active' : p.status,
+      };
+    }));
+
+    addAudit('تحویل قطعات و شروع مرحله پروژه', 'ProjectStep', data.stepId, `تحویل قطعات مرحله به اپراتور ${data.operatorName} (سند ${docNumber})`);
+
+    return {
+      success: true,
+      message: `قطعات با موفقیت از انبار کسر و به اپراتور تحویل داده شد. وضعیت مرحله به «در حال انجام» تغییر یافت.`,
+      docNumber
+    };
+  };
+
+  // Direct Recording of Semi-Finished / Stage Output with Auto-Progress Computation
+  const recordStepOutputReceipt = (data: {
+    projectId: string;
+    stepId: string;
+    quantityProduced: number;
+    quantityScrapped?: number;
+    operatorId: string;
+    operatorName: string;
+    shift?: 'Morning' | 'Evening' | 'Night';
+    targetWarehouseId: string;
+    sourceWarehouseId?: string;
+    machineCode?: string;
+    notes?: string;
+  }) => {
+    const proj = projects.find(p => p.id === data.projectId);
+    if (!proj) return { success: false, message: 'پروژه یافت نشد.', newStepProgress: 0, newProjectProgress: 0, isCompleted: false };
+
+    const findStepRec = (steps: ProjectStep[]): ProjectStep | undefined => {
+      for (const s of steps) {
+        if (s.id === data.stepId) return s;
+        if (s.subSteps && s.subSteps.length > 0) {
+          const found = findStepRec(s.subSteps);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+
+    const targetStep = findStepRec(proj.steps);
+    if (!targetStep) return { success: false, message: 'مرحله پروژه یافت نشد.', newStepProgress: 0, newProjectProgress: 0, isCompleted: false };
+
+    const outputItemId = targetStep.outputItemId || proj.targetFinishedItemId;
+    const outputItem = items.find(i => i.id === outputItemId);
+
+    const today = new Date().toLocaleDateString('fa-IR');
+    const time = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const qtyScrap = Number(data.quantityScrapped || 0);
+    const qtyProd = Number(data.quantityProduced || 0);
+
+    // 1. Add produced item to targetWarehouseId
+    if (outputItemId) {
+      adjustStock(outputItemId, data.targetWarehouseId, qtyProd);
+      if (qtyScrap > 0) {
+        const scrapWh = warehouses.find(w => w.isScrap) || warehouses[0];
+        adjustStock(outputItemId, scrapWh.id, qtyScrap);
+      }
+
+      // Traceability
+      const trace: TraceabilityEvent = {
+        id: `trc-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        itemId: outputItemId,
+        timestamp: `${today} ${time}`,
+        eventType: 'ProductionOutput',
+        sourceWarehouseId: data.sourceWarehouseId,
+        targetWarehouseId: data.targetWarehouseId,
+        projectId: data.projectId,
+        operatorName: data.operatorName,
+        quantity: qtyProd,
+        details: `دریافت خروجی مرحله «${targetStep.name}» (${qtyProd} سالم / ${qtyScrap} ضایعات)`,
+        performedBy: currentUser.fullName,
+      };
+      setTraceabilityEvents(t => [trace, ...t]);
+    }
+
+    // 2. Create ProductionLog
+    const prodLog: ProductionLog = {
+      id: `prod-${Date.now()}`,
+      operatorId: data.operatorId,
+      operatorName: data.operatorName,
+      shift: data.shift || 'Morning',
+      projectId: data.projectId,
+      stepId: data.stepId,
+      finishedItemId: outputItemId || '',
+      quantityProduced: qtyProd,
+      quantityScrapped: qtyScrap,
+      date: today,
+      time: time,
+      machineCode: data.machineCode || 'LINE-PROD',
+      sourceWarehouseId: data.sourceWarehouseId || warehouses[0]?.id || '',
+      targetWarehouseId: data.targetWarehouseId,
+      notes: data.notes,
+      registeredBy: currentUser.fullName,
+      createdAt: new Date().toISOString().substring(0, 10),
+    };
+    setProductionLogs(prev => [prodLog, ...prev]);
+
+    // 3. Update Operator Stats
+    if (data.operatorId) {
+      setOperators(prev => prev.map(op => op.id === data.operatorId ? {
+        ...op,
+        totalProducedPieces: (op.totalProducedPieces || 0) + qtyProd
+      } : op));
+    }
+
+    // 4. Update Step Completed Qty, Step Progress %, Step Status & Overall Project Progress %
+    let computedStepProgress = 0;
+    let computedProjectProgress = 0;
+    let isStepComplete = false;
+
+    setProjects(prev => prev.map(p => {
+      if (p.id !== data.projectId) return p;
+
+      const updateStepProgressRec = (steps: ProjectStep[]): ProjectStep[] => {
+        return steps.map(s => {
+          if (s.id === data.stepId) {
+            const currentDone = (s.completedQuantity || 0) + qtyProd;
+            const currentScrap = (s.scrapQuantity || 0) + qtyScrap;
+            const targetQty = s.outputQuantity || s.targetQuantity || p.targetQuantity || 1;
+            const progress = Math.min(100, Math.round((currentDone / targetQty) * 100));
+            const isCompleted = currentDone >= targetQty;
+            isStepComplete = isCompleted;
+            computedStepProgress = progress;
+
+            return {
+              ...s,
+              completedQuantity: currentDone,
+              scrapQuantity: currentScrap,
+              progressPercent: progress,
+              status: isCompleted ? 'Completed' : 'InProgress',
+              completedDate: isCompleted ? (s.completedDate || today) : s.completedDate,
+            };
+          }
+          if (s.subSteps && s.subSteps.length > 0) {
+            return { ...s, subSteps: updateStepProgressRec(s.subSteps) };
+          }
+          return s;
+        });
+      };
+
+      const updatedSteps = updateStepProgressRec(p.steps);
+
+      // Calculate total project progress from all steps
+      const collectStepProgresses = (steps: ProjectStep[]): number[] => {
+        let list: number[] = [];
+        steps.forEach(s => {
+          const stepTarget = s.outputQuantity || s.targetQuantity || p.targetQuantity || 1;
+          const done = s.completedQuantity || (s.status === 'Completed' ? stepTarget : 0);
+          const prg = s.status === 'Completed' ? 100 : (s.progressPercent !== undefined ? s.progressPercent : Math.min(100, Math.round((done / stepTarget) * 100)));
+          list.push(prg);
+          if (s.subSteps && s.subSteps.length > 0) {
+            list = list.concat(collectStepProgresses(s.subSteps));
+          }
+        });
+        return list;
+      };
+
+      const allProgresses = collectStepProgresses(updatedSteps);
+      const avgProgress = allProgresses.length > 0
+        ? Math.round(allProgresses.reduce((a, b) => a + b, 0) / allProgresses.length)
+        : 0;
+
+      computedProjectProgress = avgProgress;
+      const isAllDone = allProgresses.length > 0 && allProgresses.every(prg => prg === 100);
+      const newProjStatus = isAllDone ? 'Completed' : (avgProgress > 0 && p.status === 'Planning' ? 'Active' : p.status);
+
+      // If output is finished product, also increase producedQuantity
+      const lastStep = updatedSteps[updatedSteps.length - 1];
+      const isLastStep = lastStep?.id === data.stepId;
+      const newProduced = isLastStep ? ((p.producedQuantity || 0) + qtyProd) : p.producedQuantity;
+
+      return {
+        ...p,
+        steps: updatedSteps,
+        producedQuantity: newProduced,
+        progressPercent: avgProgress,
+        status: newProjStatus
+      };
+    }));
+
+    addAudit(
+      'ثبت دریافت خروجی مرحله پروژه',
+      'ProjectStep',
+      data.stepId,
+      `دریافت ${qtyProd} عدد خروجی مرحله «${targetStep.name}» (پیشرفت مرحله: ${computedStepProgress}٪ | پیشرفت کل پروژه: ${computedProjectProgress}٪)`
+    );
+
+    return {
+      success: true,
+      message: `دریافت ${qtyProd} عدد محصول با موفقیت ثبت شد. درصد پیشرفت این مرحله به ${computedStepProgress}٪ و درصد پیشرفت کل پروژه به ${computedProjectProgress}٪ رسید.`,
+      newStepProgress: computedStepProgress,
+      newProjectProgress: computedProjectProgress,
+      isCompleted: isStepComplete,
+    };
   };
 
   const addProjectSubStep = (projectId: string, parentStepId: string, subStepData: Omit<ProjectStep, 'id'>) => {
@@ -1887,16 +2335,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return op;
     }));
 
-    // Update Project Progress & Output
+    // Update Project Progress & Output & Step completedQuantity
     setProjects(prev => prev.map(p => {
       if (p.id === data.projectId) {
+        const updateStepRec = (steps: ProjectStep[]): ProjectStep[] => {
+          return steps.map(s => {
+            if (s.id === data.stepId) {
+              const currentDone = (s.completedQuantity || 0) + data.quantityProduced;
+              const currentScrap = (s.scrapQuantity || 0) + data.quantityScrapped;
+              const targetQty = s.outputQuantity || s.targetQuantity || p.targetQuantity || 1;
+              const progress = Math.min(100, Math.round((currentDone / targetQty) * 100));
+              const isCompleted = currentDone >= targetQty;
+              return {
+                ...s,
+                completedQuantity: currentDone,
+                scrapQuantity: currentScrap,
+                progressPercent: progress,
+                status: isCompleted ? 'Completed' : 'InProgress',
+                completedDate: isCompleted ? (s.completedDate || data.date) : s.completedDate,
+              };
+            }
+            if (s.subSteps && s.subSteps.length > 0) {
+              return { ...s, subSteps: updateStepRec(s.subSteps) };
+            }
+            return s;
+          });
+        };
+
+        const updatedSteps = updateStepRec(p.steps);
+
+        // Compute average progress across all steps
+        const collectStepProgresses = (steps: ProjectStep[]): number[] => {
+          let list: number[] = [];
+          steps.forEach(s => {
+            const stepTarget = s.outputQuantity || s.targetQuantity || p.targetQuantity || 1;
+            const done = s.completedQuantity || (s.status === 'Completed' ? stepTarget : 0);
+            const prg = s.status === 'Completed' ? 100 : (s.progressPercent !== undefined ? s.progressPercent : Math.min(100, Math.round((done / stepTarget) * 100)));
+            list.push(prg);
+            if (s.subSteps && s.subSteps.length > 0) {
+              list = list.concat(collectStepProgresses(s.subSteps));
+            }
+          });
+          return list;
+        };
+
+        const allProgresses = collectStepProgresses(updatedSteps);
+        const avgProgress = allProgresses.length > 0
+          ? Math.round(allProgresses.reduce((a, b) => a + b, 0) / allProgresses.length)
+          : Math.min(100, Math.round(((p.producedQuantity + data.quantityProduced) / p.targetQuantity) * 100));
+
+        const isAllDone = allProgresses.length > 0 && allProgresses.every(prg => prg === 100);
         const newProduced = p.producedQuantity + data.quantityProduced;
-        const calcProgress = Math.min(100, Math.round((newProduced / p.targetQuantity) * 100));
+        const newProjStatus = isAllDone ? 'Completed' : (avgProgress > 0 && p.status === 'Planning' ? 'Active' : p.status);
+
         return {
           ...p,
+          steps: updatedSteps,
           producedQuantity: newProduced,
-          progressPercent: calcProgress,
-          status: calcProgress === 100 ? 'Completed' : p.status,
+          progressPercent: avgProgress,
+          status: newProjStatus,
         };
       }
       return p;
@@ -2181,7 +2678,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, stockCountings,
       stockInDocs, stockOutDocs, transfers, purchaseRequests,
       productionLogs, materialHandovers, notifications, traceabilityEvents, auditLogs,
-      addMaterialHandover,
+      addMaterialHandover, handoverStepMaterials, recordStepOutputReceipt, calculateProjectProgressSummary,
       addItem, updateItem, deleteItem,
       addItemGroup, updateItemGroup, deleteItemGroup,
       addWarehouse, updateWarehouse, deleteWarehouse,
