@@ -132,6 +132,7 @@ export interface WarehouseTransfer {
   sourceWarehouseId: string; // انبار مبدا (مثلاً انبار مرکزی)
   targetWarehouseId: string; // انبار مقصد (مثلاً انبار پروژه / فرعی)
   projectId?: string; // شناسه پروژه مربوطه
+  stepId?: string; // شناسه مرحله پروژه (برای تحویل قطعات)
   projectName?: string; // نام پروژه
   requestedBy: string; // ثبت‌کننده درخواست (مسئول آنالیز پروژه)
   requestDate?: string;

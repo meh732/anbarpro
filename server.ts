@@ -15,7 +15,7 @@ const __dirname = process.cwd();
 
 async function startServer() {
   const app = express();
-  const PORT = parseInt(process.env.PORT || '3000', 10);
+  const PORT = 3000;
 
   // Parse JSON payloads up to 50MB (for bulk imports, attachments, and snapshots)
   app.use(express.json({ limit: '50mb' }));

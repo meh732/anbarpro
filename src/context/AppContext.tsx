@@ -2092,7 +2092,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('تغییر وضعیت مرحله پروژه', 'ProjectStep', stepId, `تغییر وضعیت مرحله به ${status}`);
   };
 
-  // Direct Handover of Stage Materials to Operator with Automatic Stage Transition
+  // Direct Handover of Stage Materials to Operator with Automatic Stage Transition (Or 2-step via Cartable)
   const handoverStepMaterials = (data: {
     projectId: string;
     stepId: string;
@@ -2108,6 +2108,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const today = new Date().toLocaleDateString('fa-IR');
     const time = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
     const docNumber = `HND-1404-${Math.floor(100 + Math.random() * 900)}`;
+
+    const isCentralWarehouse = warehouses.find(w => w.id === data.sourceWarehouseId)?.warehouseType === 'Central';
+
+    if (isCentralWarehouse) {
+      // 1. Create a 2-step verification cartable transfer
+      const proj = projects.find(p => p.id === data.projectId);
+      createTransfer({
+        sourceWarehouseId: data.sourceWarehouseId,
+        targetWarehouseId: 'wh-prod', // فرض می‌کنیم به انبار خط تولید می‌رود
+        projectId: data.projectId,
+        stepId: data.stepId,
+        projectName: proj?.title || proj?.code,
+        requestedBy: data.supervisorName || currentUser.fullName,
+        requestDate: today,
+        handlerName: data.operatorName,
+        items: data.items.map(it => ({
+          itemId: it.itemId,
+          quantity: it.quantity,
+          notes: it.notes
+        })),
+        notes: `درخواست تحویل مواد مرحله به اپراتور ${data.operatorName} (نیاز به تایید دو مرحله‌ای) | ${data.notes || ''}`,
+        docNumber: docNumber,
+        status: 'Pending',
+        date: today
+      });
+      return {
+        success: true,
+        message: 'درخواست تحویل قطعات با موفقیت ثبت شد و جهت بررسی به کارتابل انبار مرکزی ارسال گردید.',
+        docNumber: ''
+      };
+    }
 
     // 1. Deduct stock from source warehouse and log traceability
     data.items.forEach(it => {
@@ -2800,6 +2831,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes: details.notes ? `${t.notes ? t.notes + ' | ' : ''}${details.notes}` : t.notes,
       };
     }));
+
+    // If this was a project handover transfer, transition stage status and create handover record
+    if (target.projectId && target.stepId) {
+      const newHandover: MaterialHandover = {
+        id: `hnd-${Date.now()}`,
+        docNumber: target.docNumber,
+        shiftSupervisor: target.dispatchedBy || currentUser.fullName,
+        salonName: 'سالن تولید',
+        operatorId: target.handlerName || 'op-unknown',
+        operatorName: target.handlerName || details.receivedBy,
+        projectId: target.projectId,
+        stepId: target.stepId,
+        date: todayDate,
+        startTime: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+        sourceWarehouseId: target.sourceWarehouseId,
+        createdAt: todayDate,
+        items: target.items.map(it => {
+          const itemObj = items.find(i => i.id === it.itemId);
+          return {
+            itemId: it.itemId,
+            itemCode: itemObj?.code || '',
+            itemName: itemObj?.name || 'قطعه',
+            unit: itemObj?.unit || 'عدد',
+            quantity: it.quantity,
+            notes: it.notes
+          };
+        }),
+      };
+      setMaterialHandovers(prev => [newHandover, ...prev]);
+      
+      setProjects(prev => prev.map(p => {
+        if (p.id !== target.projectId) return p;
+        const updateStepRec = (steps: ProjectStep[]): ProjectStep[] => {
+          return steps.map(s => {
+            if (s.id === target.stepId) {
+              return {
+                ...s,
+                status: s.status === 'Completed' ? 'Completed' : 'InProgress',
+                lastHandoverDate: todayDate,
+                lastHandoverOperator: target.handlerName,
+                lastHandoverDocNumber: target.docNumber,
+                progressPercent: s.progressPercent && s.progressPercent > 0 ? s.progressPercent : 15,
+              };
+            }
+            if (s.subSteps && s.subSteps.length > 0) {
+              return { ...s, subSteps: updateStepRec(s.subSteps) };
+            }
+            return s;
+          });
+        };
+        return {
+          ...p,
+          steps: updateStepRec(p.steps),
+          status: p.status === 'Planning' ? 'Active' : p.status,
+        };
+      }));
+      addAudit('تحویل قطعات و شروع مرحله پروژه', 'ProjectStep', target.stepId, `تحویل قطعات پس از تایید دو مرحله‌ای حواله ${target.docNumber}`);
+    }
 
     // Notification for Requester / Central Warehouse
     sendSystemNotification({
