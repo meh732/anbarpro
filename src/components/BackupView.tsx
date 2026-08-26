@@ -4,7 +4,8 @@ import {
   Database, Download, Upload, Clock, ShieldCheck, CheckCircle2, 
   AlertCircle, History, HardDrive, Settings, RefreshCw, FileText, Users,
   Terminal, Server, Globe, Cpu, Laptop, ExternalLink, Play, Trash2,
-  Sparkles, AlertTriangle, RotateCcw, ShieldAlert, Check, Layers, Package
+  Sparkles, AlertTriangle, RotateCcw, ShieldAlert, Check, Layers, Package,
+  Copy, Monitor, Wifi, Network, ArrowRight, Shield
 } from 'lucide-react';
 import { UserManagementView } from './UserManagementView';
 
@@ -14,6 +15,7 @@ export const BackupView: React.FC = () => {
     autoBackupIntervalHours, setAutoBackupIntervalHours, 
     lastBackupTimestamp, backupHistory, t, language,
     serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer,
+    serverUrl, setServerUrl, testServerConnection,
     resetToEmptyDatabase, loadDemoData, resetToSetupWizard,
     items, warehouses, projects, boms, currentUser
   } = useApp();
@@ -22,6 +24,12 @@ export const BackupView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'backup' | 'raw_reset' | 'server'>('backup');
   const [isSyncing, setIsSyncing] = useState(false);
   const [serverMsg, setServerMsg] = useState<string | null>(null);
+
+  // Server Endpoint Config State
+  const [customUrlInput, setCustomUrlInput] = useState<string>(serverUrl || '');
+  const [isTestingUrl, setIsTestingUrl] = useState<boolean>(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; latencyMs?: number; message?: string; serverInfo?: any } | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Modal confirmation state
   const [confirmModal, setConfirmModal] = useState<{
@@ -40,6 +48,230 @@ export const BackupView: React.FC = () => {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingUrl(true);
+    setTestResult(null);
+    try {
+      const res = await testServerConnection(customUrlInput);
+      setTestResult(res);
+    } catch {
+      setTestResult({ success: false, message: 'خطا در برقراری ارتباط با سرور' });
+    } finally {
+      setIsTestingUrl(false);
+    }
+  };
+
+  const handleSaveServerUrl = () => {
+    setServerUrl(customUrlInput);
+    setActionAlert({
+      type: 'success',
+      text: customUrlInput 
+        ? `آدرس سرور مرکزی با موفقیت روی «${customUrlInput}» ذخیره شد.` 
+        : 'آدرس سرور روی حالت پیش‌فرض محلی (Localhost) تنظیم شد.'
+    });
+  };
+
+  const downloadFile = (content: string, filename: string, mimeType: string = 'text/plain') => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadWindowsBat = () => {
+    const batContent = `@echo off
+chcp 65001 > nul
+title AnbarMeh Enterprise - Windows Tauri Exe Builder
+echo ==============================================================================
+echo    AnbarMeh Enterprise - Windows Desktop (.EXE / Setup) Builder (Tauri)
+echo ==============================================================================
+echo.
+
+echo [1/4] Checking Node.js and npm environment...
+where node >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERROR] Node.js is not installed! Please download and install from https://nodejs.org
+    pause
+    exit /b 1
+)
+node -v
+
+echo [2/4] Checking Rust and Cargo environment for Tauri...
+where cargo >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [WARNING] Rust/Cargo was not found in PATH!
+    echo To compile Tauri Windows .exe, install Rust from: https://rustup.rs
+    echo After installing Rust, restart this script.
+    pause
+    exit /b 1
+)
+cargo --version
+
+echo [3/4] Installing project dependencies and building React frontend...
+call npm install
+call npm run build
+if %errorlevel% neq 0 (
+    echo [ERROR] Frontend build failed!
+    pause
+    exit /b 1
+)
+
+echo [4/4] Building Windows .EXE and Setup with Tauri...
+call npx @tauri-apps/cli build
+if %errorlevel% neq 0 (
+    echo [ERROR] Tauri build encountered an issue.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ==============================================================================
+echo [SUCCESS] Windows Setup and Standalone .EXE created successfully!
+echo Output folder: src-tauri\\target\\release\\bundle\\
+echo ==============================================================================
+echo.
+pause
+`;
+    downloadFile(batContent, 'build-windows-exe.bat', 'application/x-bat');
+  };
+
+  const downloadWindowsPs1 = () => {
+    const ps1Content = `# AnbarMeh Enterprise - Windows Tauri Desktop App Builder (.EXE / MSI Setup)
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "       AnbarMeh Enterprise - Windows Desktop (.EXE / Setup) Builder (Tauri)   " -ForegroundColor Yellow
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check Node.js
+Write-Host "[1/4] Checking Node.js and npm..." -ForegroundColor Blue
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host "[ERROR] Node.js is not installed. Please install from https://nodejs.org" -ForegroundColor Red
+    Exit 1
+}
+Write-Host "✓ Node: $(node -v) | npm: $(npm -v)" -ForegroundColor Green
+
+# Check Rust / Cargo
+Write-Host "[2/4] Checking Rust and Cargo for Tauri..." -ForegroundColor Blue
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    Write-Host "[WARNING] Cargo (Rust) was not found in PATH." -ForegroundColor Yellow
+    Write-Host "To build native Windows .exe using Tauri, install Rust from: https://rustup.rs" -ForegroundColor Yellow
+    Write-Host "After installing Rust and restarting PowerShell, run this script again." -ForegroundColor Yellow
+    Exit 1
+}
+Write-Host "✓ Cargo: $(cargo --version)" -ForegroundColor Green
+
+# Install dependencies and build React
+Write-Host "[3/4] Installing dependencies & building frontend..." -ForegroundColor Blue
+npm install
+npm run build
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Frontend build failed!" -ForegroundColor Red
+    Exit 1
+}
+Write-Host "✓ Frontend built successfully into /dist" -ForegroundColor Green
+
+# Build Tauri EXE
+Write-Host "[4/4] Compiling Windows Standalone .EXE and MSI Setup..." -ForegroundColor Blue
+npx @tauri-apps/cli build
+if ($LASTEXITCODE -eq 0) {
+    Write-Host ""
+    Write-Host "==============================================================================" -ForegroundColor Green
+    Write-Host "[SUCCESS] Windows Setup and Standalone .EXE generated successfully!" -ForegroundColor Green
+    Write-Host "Output Directory: .\\src-tauri\\target\\release\\bundle\\" -ForegroundColor Cyan
+    Write-Host "==============================================================================" -ForegroundColor Green
+} else {
+    Write-Host "[ERROR] Tauri compilation failed. Check above errors." -ForegroundColor Red
+}
+`;
+    downloadFile(ps1Content, 'build-windows-exe.ps1', 'application/x-powershell');
+  };
+
+  const downloadLinuxInstaller = () => {
+    const shContent = `#!/bin/bash
+# ==============================================================================
+#  AnbarMeh Enterprise - Linux Server Auto-Installer & Service Manager
+#  Default Port: 3000 (0.0.0.0) | Multi-User Real-time Sync Hub
+# ==============================================================================
+set -e
+
+APP_DIR="/opt/anbarmeh-server"
+SERVICE_NAME="anbarmeh.service"
+PORT=3000
+
+if [ "$EUID" -ne 0 ]; then
+    echo "[ERROR] Please run this script as root or with sudo."
+    exit 1
+fi
+
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+if [ -z "$LOCAL_IP" ]; then LOCAL_IP="127.0.0.1"; fi
+
+echo "Installing prerequisites..."
+if [ -f /etc/debian_version ]; then
+    apt-get update -y && apt-get install -y curl git ufw build-essential
+    if ! command -v node &> /dev/null; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+    fi
+elif [ -f /etc/redhat-release ]; then
+    yum update -y && yum install -y curl git firewalld gcc-c++ make
+    if ! command -v node &> /dev/null; then
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        yum install -y nodejs
+    fi
+fi
+
+mkdir -p "$APP_DIR" "$APP_DIR/data"
+if [ -f "server.ts" ] && [ -f "package.json" ]; then
+    cp -r . "$APP_DIR/"
+fi
+
+cd "$APP_DIR"
+npm install
+npm run build
+
+if command -v ufw &> /dev/null; then ufw allow \${PORT}/tcp || true; fi
+if command -v firewall-cmd &> /dev/null; then firewall-cmd --permanent --add-port=\${PORT}/tcp || true; firewall-cmd --reload || true; fi
+
+cat <<EOF > /etc/systemd/system/\${SERVICE_NAME}
+[Unit]
+Description=AnbarMeh Enterprise Central Linux Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=\${APP_DIR}
+ExecStart=$(which node) \${APP_DIR}/dist/server.cjs
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=\${PORT}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable \${SERVICE_NAME}
+systemctl restart \${SERVICE_NAME}
+
+echo "Installation complete! Access at http://\${LOCAL_IP}:\${PORT}"
+`;
+    downloadFile(shContent, 'install-linux-server.sh', 'application/x-sh');
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -452,23 +684,281 @@ export const BackupView: React.FC = () => {
             </div>
           </div>
 
+          {/* Client Server Endpoint Configuration Card */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-cyan-50 border border-cyan-100 flex items-center justify-center text-cyan-700">
+                  <Network className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-base font-black text-slate-900">تنظیم آدرس سرور مرکزی جهت اتصال کلاینت‌ها (کلاینت ویندوز / مرورگر)</h4>
+                  <p className="text-xs text-slate-500">اگر اپلیکیشن اگزه ویندوز یا مرورگر را روی کامپیوتر دیگری در شبکه باز کرده‌اید، آدرس سرور لینوکس را در کادر زیر وارد و تست کنید.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+              <label className="block text-xs font-bold text-slate-700">
+                آدرس سرور مرکزی در شبکه محلی (LAN Server URL):
+              </label>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={customUrlInput}
+                    onChange={(e) => setCustomUrlInput(e.target.value)}
+                    placeholder="مثال: http://192.168.1.100:3000 (یا خالی برای سرور محلی)"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                  {customUrlInput && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomUrlInput('')}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      پاک کردن
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTestingUrl}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs active:scale-95 disabled:opacity-50"
+                >
+                  {isTestingUrl ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+                  <span>{isTestingUrl ? 'در حال تست...' : 'تست اتصال (Ping)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveServerUrl}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs active:scale-95"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>ذخیره و اتصال</span>
+                </button>
+              </div>
+
+              {testResult && (
+                <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs animate-fadeIn ${
+                  testResult.success 
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200' 
+                    : 'bg-rose-50 text-rose-900 border-rose-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {testResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    )}
+                    <span className="font-bold">{testResult.message}</span>
+                    {testResult.latencyMs !== undefined && (
+                      <span className="font-mono text-[11px] px-2 py-0.5 bg-white/80 rounded-md border">
+                        تاخیر (Latency): {testResult.latencyMs}ms
+                      </span>
+                    )}
+                  </div>
+                  {testResult.serverInfo && (
+                    <span className="font-mono text-[10px] text-slate-500 hidden md:inline">
+                      {testResult.serverInfo.platform || 'Linux'} - v{testResult.serverInfo.version || 1}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Windows Tauri Desktop (.EXE & Setup) Card */}
+          <div className="bg-gradient-to-b from-indigo-50/40 via-white to-white border-2 border-indigo-200 rounded-2xl p-6 shadow-sm space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-200">
+                  <Laptop className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-base font-black text-slate-900">خروجی ستاپ اگزه ویندوز (Tauri Desktop App)</h4>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-300">
+                      Tauri v2 + Rust
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    تبدیل و بسته‌بندی نرم‌افزار انبار به فایل ستاپ ویندوز (<span className="font-mono font-bold text-indigo-700">.exe / .msi</span>) با کمترین مصرف رم و حداکثر سرعت
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadWindowsBat}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-all active:scale-95"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>دانلود اسکریپت ساخت ویندوز (BAT)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={downloadWindowsPs1}
+                  className="px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer transition-all"
+                >
+                  <FileText className="w-4 h-4 text-cyan-600" />
+                  <span>اسکریپت PowerShell</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Step-by-Step Tauri Windows Build Instructions */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-900">
+                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]">1</span>
+                  <span>پیش‌نیازها در ویندوز</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  نصب بودن <strong>Node.js 18+</strong> و ابزار کامپایلر <strong>Rust</strong> (از سایت <span className="font-mono text-indigo-600">rustup.rs</span>).
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-900">
+                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]">2</span>
+                  <span>اجرای اسکریپت بیلد ۱-کلیک</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  فایل <code className="font-mono text-indigo-700 bg-white px-1 rounded">build-windows-exe.bat</code> را در پوشه پروژه اجرا کنید یا دستور زیر را در ترمینال بزنید:
+                </p>
+                <div className="relative">
+                  <div className="p-2 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-lg dir-ltr text-left">
+                    npm run tauri:build
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy('npm run tauri:build', 'tauri_build')}
+                    className="absolute right-1.5 top-1.5 p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedKey === 'tauri_build' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-900">
+                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]">3</span>
+                  <span>دریافت فایل نصبی Setup.exe</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  فایل نهایی ستاپ و اگزه در مسیر زیر تولید می‌شود و آماده نصب روی کامپیوترهای کارخانه و انبار است:
+                </p>
+                <div className="p-2 bg-slate-100 text-slate-800 font-mono text-[10px] rounded-lg dir-ltr text-left truncate">
+                  src-tauri/target/release/bundle/nsis/
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Linux Server Installation Card */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                  <Terminal className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-base font-black text-slate-900">اسکریپت نصب و مدیریت سرور لینوکس (Linux Auto-Installer)</h4>
+                  <p className="text-xs text-slate-500">راه‌اندازی سرویس دائم Systemd روی سرور (Ubuntu, Debian, CentOS, AlmaLinux) با باز کردن فایروال پورت 3000</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={downloadLinuxInstaller}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-all active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                <span>دانلود اسکریپت نصب لینوکس (SH)</span>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-700">
+                دستور اجرای مستقیم اسکریپت نصب روی سرور لینوکس:
+              </label>
+              <div className="relative">
+                <div className="p-3 bg-slate-900 text-emerald-400 rounded-xl font-mono dir-ltr text-left text-xs">
+                  sudo bash scripts/install-linux-server.sh --install
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy('sudo bash scripts/install-linux-server.sh --install', 'linux_cmd')}
+                  className="absolute right-2 top-2 p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedKey === 'linux_cmd' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>کپی دستور</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                <span className="text-slate-500 block mb-1 font-bold">بررسی وضعیت سرویس:</span>
+                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">systemctl status anbarmeh</code>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                <span className="text-slate-500 block mb-1 font-bold">ری‌استارت سرویس سرور:</span>
+                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">systemctl restart anbarmeh</code>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                <span className="text-slate-500 block mb-1 font-bold">مشاهده لاگ‌های زنده:</span>
+                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">journalctl -u anbarmeh -f</code>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                <span className="text-slate-500 block mb-1 font-bold">تنظیم فایروال UFW:</span>
+                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">sudo ufw allow 3000/tcp</code>
+              </div>
+            </div>
+          </div>
+
           {/* Network instructions card */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-4">
             <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Laptop className="w-4 h-4 text-indigo-600" />
-              راهنمای اتصال سایر کامپیوترها به سرور لینوکس
+              <Globe className="w-4 h-4 text-indigo-600" />
+              راهنمای اتصال همزمان تمام کاربران شبکه (وب + نرم‌افزار دسکتاپ ویندوز)
             </h4>
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
-              <p>
-                برای دسترسی کاربران مختلف در انبار یا کارخانه به این سیستم، کافی است در مرورگر کامپیوتر مقصد آدرس IP سرور لینوکس را با پورت <strong>3000</strong> وارد کنید:
-              </p>
-              <div className="p-3 bg-slate-900 text-emerald-400 rounded-xl font-mono dir-ltr text-left">
-                http://[IP_سرور_لینوکس]:3000
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600 leading-relaxed">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                <h5 className="font-black text-slate-900 flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-emerald-600" />
+                  روش اول: اتصال از طریق مرورگر وب (Web Browser)
+                </h5>
+                <p>
+                  پرسنل و مدیران می‌توانند بدون نصب هیچ برنامه‌ای، در هر کامپیوتر یا تبلت در شبکه محلی، مرورگر (Chrome / Edge / Firefox) را باز کرده و آدرس زیر را وارد کنند:
+                </p>
+                <div className="p-2.5 bg-slate-900 text-emerald-400 rounded-xl font-mono dir-ltr text-left text-xs">
+                  http://[IP_سرور_لینوکس]:3000
+                </div>
               </div>
-              <p className="text-slate-500">
-                هر تغییری شامل ثبت ورود/خروج کالا، ایجاد پروژه، تعریف قطعات و انتقال بین انبارها که توسط هر کاربری روی هر سیستمی ثبت شود، بلافاصله روی فایل مرکزی سرور لینوکس ذخیره شده و بدون نیاز به رفرش صفحه به سایر کاربران نمایش داده خواهد شد.
-              </p>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                <h5 className="font-black text-slate-900 flex items-center gap-2">
+                  <Laptop className="w-4 h-4 text-indigo-600" />
+                  روش دوم: اتصال از طریق فایل ستاپ اگزه ویندوز (Tauri Desktop App)
+                </h5>
+                <p>
+                  فایل نصبی <span className="font-mono font-bold text-slate-800">Setup.exe</span> را روی سیستم‌های انبار و کارخانه نصب کنید. پس از باز شدن، در صورت نیاز آدرس سرور را در بخش تنظیمات سرور وارد نمایید تا کلیه داده‌ها در لحظه همگام‌سازی شوند.
+                </p>
+                <div className="p-2.5 bg-slate-900 text-indigo-300 rounded-xl font-mono dir-ltr text-left text-xs">
+                  http://[IP_سرور_لینوکس]:3000
+                </div>
+              </div>
             </div>
+            <p className="text-[11px] text-slate-500 pt-1">
+              * تمام تغییرات، درخواست‌های تحویل انبار، اسناد ورود و خروج، تاییدیه‌های دو مرحله‌ای و چت‌های سازمانی بلافاصله و بدون نیاز به رفرش صفحه بین کلاینت‌های وب و کلاینت‌های دسکتاپ ویندوز رد و بدل می‌شوند.
+            </p>
           </div>
         </div>
       ) : (

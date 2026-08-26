@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/tooling/cli/schema.json",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devPath": "http://localhost:3000",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "AnbarMeh Enterprise",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": true,
+      "shell": {
+        "all": true,
+        "open": true
+      },
+      "dialog": {
+        "all": true
+      },
+      "http": {
+        "all": true,
+        "request": true,
+        "scope": ["http://*", "https://*"]
+      }
+    },
+    "bundle": {
+      "active": true,
+      "category": "DeveloperTool",
+      "copyright": "2026 AnbarMeh Enterprise",
+      "deb": {
+        "depends": []
+      },
+      "externalBin": [],
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "identifier": "com.anbarmeh.enterprise",
+      "longDescription": "Advanced multi-user warehouse, BOM, and production management desktop client connecting to centralized Linux Server.",
+      "macOS": {
+        "frameworks": [],
+        "minimumSystemVersion": "",
+        "exceptionDomain": "",
+        "signingIdentity": null,
+        "entitlements": null
+      },
+      "resources": [],
+      "shortDescription": "AnbarMeh Enterprise Desktop",
+      "targets": ["msi", "nsis", "exe"],
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": "",
+        "wix": {
+          "language": "en-US"
+        },
+        "nsis": {
+          "languages": ["English"],
+          "displayLanguageSelector": false,
+          "installerIcon": "icons/icon.ico",
+          "headerImage": null,
+          "sidebarImage": null
+        }
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "height": 850,
+        "resizable": true,
+        "title": "AnbarMeh Enterprise - سیستم یکپارچه مدیریت انبار و تولید",
+        "width": 1360,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "maximized": true
+      }
+    ]
+  }
+}

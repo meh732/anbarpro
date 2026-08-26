@@ -296,6 +296,10 @@ interface AppContextType {
   lastSyncTime: string | null;
   serverVersion: number;
   serverInfo: any;
+  serverUrl: string;
+  setServerUrl: (url: string) => void;
+  getApiUrl: (path: string) => string;
+  testServerConnection: (testUrl?: string) => Promise<{ success: boolean; latencyMs?: number; message?: string; serverInfo?: any }>;
   forceSyncWithServer: () => Promise<boolean>;
   resetServerDatabase: () => Promise<boolean>;
   resetToEmptyDatabase: () => Promise<boolean>;
@@ -453,6 +457,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${STORAGE_KEY}_language`, lang);
   };
 
+  // Central Server Connection Endpoint (Custom IP / LAN hostname for Tauri & Web Clients)
+  const [serverUrl, setServerUrlState] = useState<string>(() => {
+    try {
+      return localStorage.getItem(`${STORAGE_KEY}_serverUrl`) || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const setServerUrl = (url: string) => {
+    const cleanUrl = url.trim().replace(/\/+$/, '');
+    setServerUrlState(cleanUrl);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_serverUrl`, cleanUrl);
+    } catch {}
+  };
+
+  const getApiUrl = (path: string): string => {
+    const p = path.startsWith('/') ? path : `/${path}`;
+    if (serverUrl) {
+      return `${serverUrl}${p}`;
+    }
+    return p;
+  };
+
+  const testServerConnection = async (targetUrl?: string): Promise<{ success: boolean; latencyMs?: number; message?: string; serverInfo?: any }> => {
+    const urlToTest = targetUrl !== undefined ? targetUrl.trim().replace(/\/+$/, '') : serverUrl;
+    const endpoint = urlToTest ? `${urlToTest}/api/health` : '/api/health';
+    const start = performance.now();
+    try {
+      const res = await fetch(endpoint, { method: 'GET' });
+      const latencyMs = Math.round(performance.now() - start);
+      if (res.ok) {
+        const data = await res.json();
+        return { success: true, latencyMs, serverInfo: data, message: 'اتصال به سرور با موفقیت برقرار شد.' };
+      }
+      return { success: false, latencyMs, message: `پاسخ سرور با کد خطای ${res.status}` };
+    } catch (err: any) {
+      return { success: false, message: 'عدم امکان برقراری ارتباط با آدرس سرور مشخص‌شده.' };
+    }
+  };
+
   // Sync document direction when language changes
   useEffect(() => {
     document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
@@ -461,7 +507,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync Admin credentials from installation environment variables (/api/config)
   useEffect(() => {
-    fetch('/api/config')
+    fetch(getApiUrl('/api/config'))
       .then(res => res.json())
       .then(data => {
         if (data?.adminUser && data?.adminPass) {
@@ -676,7 +722,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         autoBackupIntervalHours, lastBackupTimestamp, backupHistory
       };
 
-      const res = await fetch('/api/sync', {
+      const res = await fetch(getApiUrl('/api/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -704,13 +750,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     operators, stockCountings, stockInDocs, stockOutDocs, transfers,
     purchaseRequests, productionLogs, materialHandovers, notifications,
     traceabilityEvents, auditLogs, users, isInstalled, companyName,
-    autoBackupIntervalHours, lastBackupTimestamp, backupHistory
+    autoBackupIntervalHours, lastBackupTimestamp, backupHistory, serverUrl
   ]);
 
   const forceSyncWithServer = async (): Promise<boolean> => {
     setServerSyncStatus('syncing');
     try {
-      const res = await fetch('/api/data');
+      const res = await fetch(getApiUrl('/api/data'));
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -729,7 +775,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const resetServerDatabase = async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/reset-data', { method: 'POST' });
+      const res = await fetch(getApiUrl('/api/reset-data'), { method: 'POST' });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
@@ -792,7 +838,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       // Call server to wipe database centrally
-      const res = await fetch('/api/reset-empty', {
+      const res = await fetch(getApiUrl('/api/reset-empty'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keepUsers: true, companyName })
@@ -837,7 +883,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTraceabilityEvents(INITIAL_TRACEABILITY);
       setAuditLogs(INITIAL_AUDIT_LOGS);
 
-      const res = await fetch('/api/reset-demo', { method: 'POST' });
+      const res = await fetch(getApiUrl('/api/reset-demo'), { method: 'POST' });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
@@ -879,7 +925,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsInstalled(false);
       setIsAuthenticated(false);
 
-      await fetch('/api/reset-empty', {
+      await fetch(getApiUrl('/api/reset-empty'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keepUsers: false })
@@ -898,7 +944,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initServerConnection = async () => {
       try {
         // Fetch server system diagnostic info
-        fetch('/api/server-info')
+        fetch(getApiUrl('/api/server-info'))
           .then(r => r.json())
           .then(info => {
             if (isMounted && info.success) setServerInfo(info);
@@ -907,7 +953,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Fetch central data from server
         setServerSyncStatus('syncing');
-        const res = await fetch('/api/data');
+        const res = await fetch(getApiUrl('/api/data'));
         if (res.ok) {
           const json = await res.json();
           if (json.success && json.data) {
@@ -932,12 +978,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const pollInterval = setInterval(async () => {
       if (!isMounted || !isInitialServerSyncDoneRef.current) return;
       try {
-        const verRes = await fetch('/api/data/version');
+        const verRes = await fetch(getApiUrl('/api/data/version'));
         if (verRes.ok) {
           const verData = await verRes.json();
           if (verData.version && verData.version > serverVersionRef.current) {
             // New data exists on server from another user/computer!
-            const dataRes = await fetch('/api/data');
+            const dataRes = await fetch(getApiUrl('/api/data'));
             if (dataRes.ok) {
               const dataJson = await dataRes.json();
               if (dataJson.success && dataJson.data) {
@@ -956,7 +1002,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const onFocus = () => {
       if (!isInitialServerSyncDoneRef.current) return;
-      fetch('/api/data')
+      fetch(getApiUrl('/api/data'))
         .then(r => r.json())
         .then(json => {
           if (json.success && json.data && json.version > serverVersionRef.current) {
@@ -972,7 +1018,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearInterval(pollInterval);
       window.removeEventListener('focus', onFocus);
     };
-  }, [applyServerState]);
+  }, [applyServerState, serverUrl]);
 
   // Debounced auto-sync to server on any state mutation
   useEffect(() => {
@@ -1319,7 +1365,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     try {
-      const res = await fetch('/api/messages', {
+      const res = await fetch(getApiUrl('/api/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1349,7 +1395,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteChatMessage = async (id: string): Promise<boolean> => {
     setMessages(prev => prev.filter(m => m.id !== id));
     try {
-      await fetch(`/api/messages/${id}`, { method: 'DELETE' });
+      await fetch(getApiUrl(`/api/messages/${id}`), { method: 'DELETE' });
       return true;
     } catch {
       return false;
@@ -1371,7 +1417,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     try {
-      await fetch(`/api/messages/${messageId}/react`, {
+      await fetch(getApiUrl(`/api/messages/${messageId}/react`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emoji, userId: currentUser.id }),
@@ -3310,7 +3356,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthenticated(false);
 
     // Also reset on centralized Linux server
-    fetch('/api/reset-data', { method: 'POST' }).catch(() => {});
+    fetch(getApiUrl('/api/reset-data'), { method: 'POST' }).catch(() => {});
   };
 
   const completeInstallation = (compName: string, adminUser: string, adminPass: string) => {
@@ -3483,7 +3529,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addAudit('بازیابی داده‌ها از فایل پشتیبان', 'System', 'JSON', 'بارگذاری کامل داده‌ها از فایل پشتیبان');
 
         // Also push imported backup to Linux server
-        fetch('/api/import-data', {
+        fetch(getApiUrl('/api/import-data'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jsonStr })
@@ -3540,7 +3586,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isMobileMenuOpen, setIsMobileMenuOpen,
       isInstalled, setIsInstalled, companyName, setCompanyName,
       completeInstallation,
-      serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer, resetServerDatabase,
+      serverSyncStatus, lastSyncTime, serverVersion, serverInfo,
+      serverUrl, setServerUrl, getApiUrl, testServerConnection,
+      forceSyncWithServer, resetServerDatabase,
       resetToEmptyDatabase, loadDemoData, resetToSetupWizard,
       liteMode, setLiteMode
     }}>

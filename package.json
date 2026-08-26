@@ -36,6 +36,9 @@
     "start": "node dist/server.cjs",
     "electron:dev": "electron .",
     "electron:build": "npm run build && electron-builder --win",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
   },
