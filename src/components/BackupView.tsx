@@ -1016,13 +1016,13 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="text-base font-black text-rose-950">حل قطعی و فوری خطای 502 Bad Gateway سرور و دامنه (Ubuntu / Nginx)</h4>
+                    <h4 className="text-base font-black text-rose-950">حل قطعی و فوری خطای 502 Bad Gateway سرور (پشتیبانی کامل از پورت دلخواه)</h4>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-200 text-rose-800 border border-rose-300 animate-pulse">
-                      رفع قطعی ۵۰۲
+                      رفع قطعی ۵۰۲ با هر پورتی
                     </span>
                   </div>
                   <p className="text-xs text-rose-800/90 mt-0.5">
-                    خطای ۵۰۲ نشان می‌دهد Nginx به درستی فعال است، اما سرور نود (Node Backend) در پورت ۳۰۰۰ متوقف شده است. با اجرای دستور زیر کل سیستم مجدداً کامپایل و پایدار می‌شود.
+                    خطای ۵۰۲ زمانی رخ می‌دهد که Nginx فعال است اما پروسه بک‌اند روی پورت مورد نظر (پیش‌فرض یا پورت اختصاصی شما مثل 3001, 8080, 5000) خاموش شده است.
                   </p>
                 </div>
               </div>
@@ -1037,13 +1037,13 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
               </button>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <label className="block text-xs font-bold text-rose-950">
-                ⚡ دستور تک‌خطی حل فوری در سرور لینوکس (فقط در ترمینال SSH پیست کنید):
+                ⚡ دستور اجرا در سرور با پورت دلخواه شما (مثال: پورت دلخواه را بعد از دستور بنویسید یا خالی بگذارید تا خودکار تشخیص دهد):
               </label>
               <div className="relative">
                 <div className="p-3.5 bg-slate-950 text-emerald-400 rounded-xl font-mono dir-ltr text-left text-xs overflow-x-auto selection:bg-rose-500 selection:text-white">
-                  sudo bash scripts/fix-502-bad-gateway.sh
+                  sudo bash scripts/fix-502-bad-gateway.sh [PORT_دلخواه]
                 </div>
                 <button
                   type="button"
