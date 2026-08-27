@@ -68,10 +68,23 @@ setup_application() {
     mkdir -p "$APP_DIR"
     mkdir -p "$APP_DIR/data"
     
+    # Preserve existing database if already installed before copying new code
+    if [ -f "$APP_DIR/data/server_database.json" ]; then
+        echo -e "${GREEN}✓ Preserving existing database at $APP_DIR/data/server_database.json (No data loss)${NC}"
+        cp "$APP_DIR/data/server_database.json" /tmp/anbarmeh_db_backup_temp.json
+    fi
+
     # Copy current workspace files if running locally or clone
     if [ -f "server.ts" ] && [ -f "package.json" ]; then
         echo -e "${CYAN}Copying local project files to ${APP_DIR}...${NC}"
         cp -r . "$APP_DIR/"
+    fi
+
+    # Restore preserved database after file copy
+    if [ -f /tmp/anbarmeh_db_backup_temp.json ]; then
+        cp /tmp/anbarmeh_db_backup_temp.json "$APP_DIR/data/server_database.json"
+        rm -f /tmp/anbarmeh_db_backup_temp.json
+        echo -e "${GREEN}✓ Existing database restored safely.${NC}"
     fi
 
     cd "$APP_DIR"

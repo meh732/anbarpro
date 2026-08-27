@@ -274,6 +274,13 @@ async function handleUpdate() {
     if (githubUrl.trim()) {
       try {
         console.log(`📥 Downloading source zip from: ${githubUrl}`);
+        // Preserve active database if present
+        const dbPath = path.join(process.cwd(), 'data', 'server_database.json');
+        let tempDbContent = null;
+        if (fs.existsSync(dbPath)) {
+          tempDbContent = fs.readFileSync(dbPath, 'utf8');
+        }
+
         const isWin = process.platform === 'win32';
         if (isWin) {
           execSync(`powershell -Command "Invoke-WebRequest -Uri '${githubUrl}' -OutFile 'update.zip'"`, { stdio: 'inherit' });
@@ -283,6 +290,15 @@ async function handleUpdate() {
           execSync(`curl -L "${githubUrl}" -o update.zip`, { stdio: 'inherit' });
           execSync('unzip -o update.zip && rm update.zip', { stdio: 'inherit' });
         }
+
+        // Restore active database safely if it existed
+        if (tempDbContent) {
+          const dataDir = path.join(process.cwd(), 'data');
+          if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+          fs.writeFileSync(dbPath, tempDbContent, 'utf8');
+          console.log('✅ Active business database preserved and retained intact.');
+        }
+
         console.log('✅ Zipped update installed.');
       } catch (zipErr) {
         console.log('❌ Failed to pull updates. Current codebase remains unchanged.');
