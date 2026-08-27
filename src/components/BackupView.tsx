@@ -273,6 +273,91 @@ echo "Installation complete! Access at http://\${LOCAL_IP}:\${PORT}"
     downloadFile(shContent, 'install-linux-server.sh', 'application/x-sh');
   };
 
+  const downloadFix502Script = () => {
+    const fixContent = `#!/bin/bash
+# AnbarMeh Enterprise - 100% Automated 502 Bad Gateway Fix & Nginx Setup
+set -e
+
+DOMAIN="anbar.templatetesti.shop"
+APP_DIR="/opt/anbarmeh-server"
+SERVICE_NAME="anbarmeh.service"
+PORT=3000
+
+if [ "$EUID" -ne 0 ]; then
+    echo "[ERROR] Please run with sudo or as root."
+    exit 1
+fi
+
+echo "[1/5] Stopping any conflicting processes on Port \${PORT}..."
+systemctl stop \${SERVICE_NAME} 2>/dev/null || true
+fuser -k \${PORT}/tcp 2>/dev/null || true
+
+echo "[2/5] Checking Node.js and NPM..."
+if ! command -v node &> /dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs nginx curl ufw build-essential
+fi
+
+echo "[3/5] Building application in \${APP_DIR}..."
+mkdir -p "$APP_DIR" "$APP_DIR/data"
+cd "$APP_DIR"
+npm install --legacy-peer-deps
+npm run build
+
+echo "[4/5] Creating Systemd Service..."
+cat <<EOF > /etc/systemd/system/\${SERVICE_NAME}
+[Unit]
+Description=AnbarMeh Enterprise Inventory Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=\${APP_DIR}
+ExecStart=\$(which node) \${APP_DIR}/dist/server.cjs
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=PORT=\${PORT}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable \${SERVICE_NAME}
+systemctl restart \${SERVICE_NAME}
+
+echo "[5/5] Configuring Nginx Reverse Proxy for \${DOMAIN}..."
+cat <<EOF > "/etc/nginx/sites-available/\${DOMAIN}"
+server {
+    listen 80;
+    listen [::]:80;
+    server_name \${DOMAIN} www.\${DOMAIN};
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://127.0.0.1:\${PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \\$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \\$host;
+        proxy_cache_bypass \\$http_upgrade;
+        proxy_set_header X-Real-IP \\$remote_addr;
+        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\$scheme;
+    }
+}
+EOF
+
+ln -sf "/etc/nginx/sites-available/\${DOMAIN}" "/etc/nginx/sites-enabled/\${DOMAIN}"
+nginx -t && systemctl reload nginx
+
+echo "SUCCESS! Visit http://\${DOMAIN}"
+`;
+    downloadFile(fixContent, 'fix-502-bad-gateway.sh', 'application/x-sh');
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -857,6 +942,71 @@ echo "Installation complete! Access at http://\${LOCAL_IP}:\${PORT}"
                 <div className="p-2 bg-slate-100 text-slate-800 font-mono text-[10px] rounded-lg dir-ltr text-left truncate">
                   src-tauri/target/release/bundle/nsis/
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 502 Bad Gateway Fixer Card (Specific for anbar.templatetesti.shop and Ubuntu Nginx) */}
+          <div className="bg-rose-50/70 border-2 border-rose-200 rounded-2xl p-6 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold shadow-md shadow-rose-200">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-base font-black text-rose-950">حل قطعی و فوری خطای 502 Bad Gateway سرور و دامنه (Ubuntu / Nginx)</h4>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-200 text-rose-800 border border-rose-300 animate-pulse">
+                      رفع قطعی ۵۰۲
+                    </span>
+                  </div>
+                  <p className="text-xs text-rose-800/90 mt-0.5">
+                    خطای ۵۰۲ نشان می‌دهد Nginx به درستی فعال است، اما سرور نود (Node Backend) در پورت ۳۰۰۰ متوقف شده است. با اجرای دستور زیر کل سیستم مجدداً کامپایل و پایدار می‌شود.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={downloadFix502Script}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-all active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                <span>دانلود اسکریپت رفع ۵۰۲ (SH)</span>
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-rose-950">
+                ⚡ دستور تک‌خطی حل فوری در سرور لینوکس (فقط در ترمینال SSH پیست کنید):
+              </label>
+              <div className="relative">
+                <div className="p-3.5 bg-slate-950 text-emerald-400 rounded-xl font-mono dir-ltr text-left text-xs overflow-x-auto selection:bg-rose-500 selection:text-white">
+                  sudo bash scripts/fix-502-bad-gateway.sh
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy('sudo bash scripts/fix-502-bad-gateway.sh', 'cmd_502')}
+                  className="absolute right-2 top-2 p-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  {copiedKey === 'cmd_502' ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedKey === 'cmd_502' ? 'کپی شد!' : 'کپی دستور'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] text-slate-700">
+              <div className="p-3 bg-white/80 rounded-xl border border-rose-200/70">
+                <strong className="text-rose-900 block mb-1">۱. ری‌استارت سرویس پشتیبان:</strong>
+                اجرای دائمی پروسه با <code className="font-mono text-slate-800 bg-slate-100 px-1 rounded">systemd</code> تا با ریبوت سرور هم قطع نشود.
+              </div>
+              <div className="p-3 bg-white/80 rounded-xl border border-rose-200/70">
+                <strong className="text-rose-900 block mb-1">۲. اتصال Nginx به 127.0.0.1:3000:</strong>
+                پیکربندی خودکار <code className="font-mono text-slate-800 bg-slate-100 px-1 rounded">proxy_pass</code> همراه با وب‌سوکت و پورت دامنه.
+              </div>
+              <div className="p-3 bg-white/80 rounded-xl border border-rose-200/70">
+                <strong className="text-rose-900 block mb-1">۳. باز کردن پورت‌ها در UFW:</strong>
+                اطمینان از عبور ترافیک پورت‌های ۸۰، ۴۴۳ و ۳۰۰۰ بدون تداخل فایروال.
               </div>
             </div>
           </div>
