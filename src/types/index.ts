@@ -533,3 +533,31 @@ export interface ChatChannel {
   unreadCount?: number;
 }
 
+// Telegram & Bale Automated Backup & Alert Messenger Configurations
+export interface TelegramConfig {
+  enabled: boolean;
+  botToken: string;
+  adminChatId: string;
+  sendAutoBackups: boolean;
+  sendAlerts?: boolean;
+}
+
+export interface BaleConfig {
+  enabled: boolean;
+  botToken: string;
+  adminChatId: string; // شناسه مجزای ادمین در پیام‌رسان بله
+  sendAutoBackups: boolean;
+  sendAlerts?: boolean;
+}
+
+export interface MessengerBackupConfig {
+  telegram: TelegramConfig;
+  bale: BaleConfig;
+  autoSendIntervalHours: number; // مثلاً هر 6، 12، یا 24 ساعت
+  includeSummaryText: boolean;
+  lastSentTelegramTimestamp?: string | null;
+  lastSentBaleTimestamp?: string | null;
+  lastTelegramStatus?: { success: boolean; time: string; message: string } | null;
+  lastBaleStatus?: { success: boolean; time: string; message: string } | null;
+}
+

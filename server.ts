@@ -5,6 +5,9 @@ import fs from 'fs';
 import os from 'os';
 import { createServer as createViteServer } from 'vite';
 import { serverStore, getDefaultServerState } from './src/server/serverStore.ts';
+import { 
+  dispatchBackupToMessengers, sendTelegramMessage, sendBaleMessage, generateBackupSummary 
+} from './src/server/messengerService.ts';
 import { db } from './src/db/index.ts';
 import { 
   warehouses, items, itemGroups, inventory, transfers, 
@@ -280,6 +283,171 @@ async function startServer() {
       res.setHeader('Content-Type', 'application/json');
       res.send(JSON.stringify(state, null, 2));
     } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // =========================================================================
+  //  MESSENGER BOTS (TELEGRAM & BALE) AUTOMATED BACKUP & ALERT ENDPOINTS
+  // =========================================================================
+
+  // GET /api/messenger/config - Retrieve Telegram & Bale Bot Settings
+  app.get('/api/messenger/config', (req, res) => {
+    try {
+      const state = serverStore.getState();
+      const config = state.messengerConfig || {
+        telegram: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
+        bale: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
+        autoSendIntervalHours: 24,
+        includeSummaryText: true,
+        lastSentTelegramTimestamp: null,
+        lastSentBaleTimestamp: null,
+        lastTelegramStatus: null,
+        lastBaleStatus: null,
+      };
+      res.json({ success: true, config });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/messenger/config - Save Telegram & Bale Bot Settings
+  app.post('/api/messenger/config', (req, res) => {
+    try {
+      const newConfig = req.body;
+      const state = serverStore.getState();
+      const currentConfig = state.messengerConfig || {
+        telegram: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
+        bale: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
+        autoSendIntervalHours: 24,
+        includeSummaryText: true,
+      };
+
+      const mergedConfig = {
+        ...currentConfig,
+        ...newConfig,
+        telegram: {
+          ...currentConfig.telegram,
+          ...(newConfig.telegram || {}),
+        },
+        bale: {
+          ...currentConfig.bale,
+          ...(newConfig.bale || {}),
+        },
+      };
+
+      const updatedState = serverStore.updateState({ messengerConfig: mergedConfig });
+      res.json({
+        success: true,
+        message: 'تنظیمات ربات‌های تلگرام و بله با موفقیت ذخیره گردید.',
+        config: updatedState.messengerConfig,
+        version: updatedState.version,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/messenger/test - Send a test verification message to Telegram or Bale
+  app.post('/api/messenger/test', async (req, res) => {
+    try {
+      const { platform, botToken, chatId } = req.body;
+      const state = serverStore.getState();
+      const config = state.messengerConfig;
+
+      const dateFa = new Date().toLocaleDateString('fa-IR');
+      const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
+      if (platform === 'telegram') {
+        const token = botToken || config?.telegram?.botToken;
+        const targetChatId = chatId || config?.telegram?.adminChatId;
+        if (!token || !targetChatId) {
+          return res.status(400).json({ success: false, error: 'توکن ربات تلگرام یا شناسه چت ادمین تلگرام وارد نشده است.' });
+        }
+
+        const testMsg = `🤖 <b>تست اتصال ربات تلگرام سامانه انبارمه</b>\n\n✅ ارتباط ربات تلگرام با سرور مرکزی انبارمه با موفقیت برقرار است.\n📅 <b>تاریخ:</b> ${dateFa} | ⏰ <b>ساعت:</b> ${timeFa}\n🏢 <b>مجموعه:</b> ${state.companyName || 'انبار مرکزی'}\n\n📌 <i>پشتیبان‌های خودکار و هشدارهای سیستمی از این پس به این چت ارسال خواهند شد.</i>`;
+        const result = await sendTelegramMessage(token, targetChatId, testMsg);
+        return res.json(result);
+      } else if (platform === 'bale') {
+        const token = botToken || config?.bale?.botToken;
+        const targetChatId = chatId || config?.bale?.adminChatId;
+        if (!token || !targetChatId) {
+          return res.status(400).json({ success: false, error: 'توکن بازوبند بله یا شناسه چت ادمین بله وارد نشده است.' });
+        }
+
+        const testMsg = `🤖 <b>تست اتصال بازوبند پیام‌رسان بله سامانه انبارمه</b>\n\n✅ ارتباط ربات بله با سرور مرکزی انبارمه با موفقیت برقرار شد.\n📅 <b>تاریخ:</b> ${dateFa} | ⏰ <b>ساعت:</b> ${timeFa}\n🏢 <b>مجموعه:</b> ${state.companyName || 'انبار مرکزی'}\n\n📌 <i>پشتیبان‌های خودکار پایگاه داده به این حساب بله ارسال خواهند شد.</i>`;
+        const result = await sendBaleMessage(token, targetChatId, testMsg);
+        return res.json(result);
+      } else {
+        return res.status(400).json({ success: false, error: 'پلتفرم نامعتبر است (telegram یا bale).' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/messenger/send-backup - Dispatch full backup immediately to Telegram / Bale
+  app.post('/api/messenger/send-backup', async (req, res) => {
+    try {
+      const { target = 'all', customTitle } = req.body;
+      const state = serverStore.getState();
+      const config = state.messengerConfig;
+
+      if (!config) {
+        return res.status(400).json({ success: false, error: 'تنظیمات پیام‌رسان‌ها هنوز مقداردهی نشده است.' });
+      }
+
+      const results = await dispatchBackupToMessengers(config, state, {
+        target,
+        title: customTitle || 'پشتیبان دستی پایگاه داده انبارمه',
+      });
+
+      // Update state with last sent status
+      const nowStr = new Date().toISOString();
+      const timeFa = new Date().toLocaleString('fa-IR');
+
+      const updatedMessengerConfig = {
+        ...config,
+        ...(results.telegram ? {
+          lastSentTelegramTimestamp: results.telegram.success ? nowStr : config.lastSentTelegramTimestamp,
+          lastTelegramStatus: {
+            success: results.telegram.success,
+            time: timeFa,
+            message: results.telegram.message,
+          },
+        } : {}),
+        ...(results.bale ? {
+          lastSentBaleTimestamp: results.bale.success ? nowStr : config.lastSentBaleTimestamp,
+          lastBaleStatus: {
+            success: results.bale.success,
+            time: timeFa,
+            message: results.bale.message,
+          },
+        } : {}),
+      };
+
+      // Record in backup history
+      const record = {
+        id: `bk-msg-${Date.now()}`,
+        timestamp: timeFa,
+        fileName: `messenger_backup_${nowStr.slice(0, 10)}.json`,
+        sizeKb: Math.round(JSON.stringify(state).length / 1024),
+        type: 'Manual' as const,
+      };
+
+      const updatedHistory = [record, ...(state.backupHistory || [])];
+      serverStore.updateState({
+        messengerConfig: updatedMessengerConfig,
+        lastBackupTimestamp: timeFa,
+        backupHistory: updatedHistory.slice(0, 100),
+      });
+
+      res.json({
+        success: (results.telegram?.success ?? true) && (results.bale?.success ?? true),
+        results,
+      });
+    } catch (err: any) {
+      console.error('Error dispatching backup to messengers:', err);
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -564,6 +732,85 @@ async function startServer() {
       res.status(404).send('Installer file not found');
     }
   });
+
+  // =========================================================================
+  //  AUTOMATIC BACKGROUND MESSENGER BACKUP SCHEDULER (Telegram & Bale)
+  // =========================================================================
+  const AUTO_CHECK_INTERVAL_MS = 15 * 60 * 1000; // Check every 15 minutes
+  setInterval(async () => {
+    try {
+      const state = serverStore.getState();
+      const config = state.messengerConfig;
+      if (!config) return;
+
+      const isTelegramEnabled = config.telegram?.enabled && config.telegram?.sendAutoBackups && config.telegram?.botToken && config.telegram?.adminChatId;
+      const isBaleEnabled = config.bale?.enabled && config.bale?.sendAutoBackups && config.bale?.botToken && config.bale?.adminChatId;
+
+      if (!isTelegramEnabled && !isBaleEnabled) return;
+
+      const intervalHours = config.autoSendIntervalHours || 24;
+      const intervalMs = intervalHours * 60 * 60 * 1000;
+      const now = Date.now();
+
+      let shouldSendTelegram = false;
+      let shouldSendBale = false;
+
+      if (isTelegramEnabled) {
+        const lastSent = config.lastSentTelegramTimestamp ? new Date(config.lastSentTelegramTimestamp).getTime() : 0;
+        if (now - lastSent >= intervalMs) {
+          shouldSendTelegram = true;
+        }
+      }
+
+      if (isBaleEnabled) {
+        const lastSent = config.lastSentBaleTimestamp ? new Date(config.lastSentBaleTimestamp).getTime() : 0;
+        if (now - lastSent >= intervalMs) {
+          shouldSendBale = true;
+        }
+      }
+
+      if (shouldSendTelegram || shouldSendBale) {
+        console.log(`[AutoBackup] Initiating automated messenger backup dispatch (Telegram: ${shouldSendTelegram}, Bale: ${shouldSendBale})...`);
+        const target = shouldSendTelegram && shouldSendBale ? 'all' : shouldSendTelegram ? 'telegram' : 'bale';
+        
+        const results = await dispatchBackupToMessengers(config, state, {
+          target,
+          title: `پشتیبان خودکار دوره‌ای سامانه انبارمه (${intervalHours} ساعته)`,
+        });
+
+        const timeFa = new Date().toLocaleString('fa-IR');
+        const nowIso = new Date().toISOString();
+
+        const updatedMessengerConfig = {
+          ...config,
+          ...(results.telegram ? {
+            lastSentTelegramTimestamp: results.telegram.success ? nowIso : config.lastSentTelegramTimestamp,
+            lastTelegramStatus: {
+              success: results.telegram.success,
+              time: timeFa,
+              message: results.telegram.message,
+            },
+          } : {}),
+          ...(results.bale ? {
+            lastSentBaleTimestamp: results.bale.success ? nowIso : config.lastSentBaleTimestamp,
+            lastBaleStatus: {
+              success: results.bale.success,
+              time: timeFa,
+              message: results.bale.message,
+            },
+          } : {}),
+        };
+
+        serverStore.updateState({
+          messengerConfig: updatedMessengerConfig,
+          lastBackupTimestamp: timeFa,
+        });
+        console.log(`[AutoBackup] Completed messenger backup dispatch.`);
+      }
+    } catch (schedulerErr) {
+      console.error('[AutoBackup] Error in automated messenger backup loop:', schedulerErr);
+    }
+  }, AUTO_CHECK_INTERVAL_MS);
 
   // Mount Vite Middleware for Dev, Static Serving for Production
   if (process.env.NODE_ENV !== 'production') {

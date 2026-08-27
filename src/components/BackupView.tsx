@@ -5,9 +5,10 @@ import {
   AlertCircle, History, HardDrive, Settings, RefreshCw, FileText, Users,
   Terminal, Server, Globe, Cpu, Laptop, ExternalLink, Play, Trash2,
   Sparkles, AlertTriangle, RotateCcw, ShieldAlert, Check, Layers, Package,
-  Copy, Monitor, Wifi, Network, ArrowRight, Shield
+  Copy, Monitor, Wifi, Network, ArrowRight, Shield, Bot, Send
 } from 'lucide-react';
 import { UserManagementView } from './UserManagementView';
+import { MessengerBackupSettings } from './MessengerBackupSettings';
 
 export const BackupView: React.FC = () => {
   const { 
@@ -21,7 +22,7 @@ export const BackupView: React.FC = () => {
   } = useApp();
   const isFa = language === 'fa';
 
-  const [activeTab, setActiveTab] = useState<'users' | 'backup' | 'raw_reset' | 'server'>('backup');
+  const [activeTab, setActiveTab] = useState<'users' | 'backup' | 'raw_reset' | 'server' | 'messenger_bot'>('backup');
   const [isSyncing, setIsSyncing] = useState(false);
   const [serverMsg, setServerMsg] = useState<string | null>(null);
 
@@ -561,6 +562,18 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
         </button>
 
         <button
+          onClick={() => setActiveTab('messenger_bot')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'messenger_bot'
+              ? 'bg-sky-600 text-white shadow-2xs'
+              : 'bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-200'
+          }`}
+        >
+          <Bot className="w-4 h-4 text-sky-600" />
+          {isFa ? 'ربات تلگرام و بله (بکاپ خودکار)' : 'Telegram & Bale Bot Backups'}
+        </button>
+
+        <button
           onClick={() => setActiveTab('raw_reset')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'raw_reset'
@@ -599,6 +612,8 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
 
       {activeTab === 'users' ? (
         <UserManagementView />
+      ) : activeTab === 'messenger_bot' ? (
+        <MessengerBackupSettings />
       ) : activeTab === 'raw_reset' ? (
         <div className="space-y-6 animate-fadeIn">
           {/* Current State Summary Banner */}
@@ -1326,6 +1341,32 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Quick Messenger Backup Callout */}
+          <div className="bg-gradient-to-r from-sky-500/10 via-emerald-500/10 to-indigo-500/10 border border-sky-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-sky-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md">
+                <Bot className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  ارسال خودکار فایل پشتیبان به تلگرام و بله (Messenger Offsite Backup)
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  ارسال مستقیم نسخه کامل دیتابیس JSON به اکانت ادمین در تلگرام و بازوبند بله جهت جلوگیری از هرگونه فقدان اطلاعات.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('messenger_bot')}
+              className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              <Settings className="w-4 h-4" />
+              <span>پیکربندی ربات‌های تلگرام و بله</span>
+            </button>
           </div>
 
           {/* Backup History Table */}

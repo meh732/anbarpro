@@ -12,7 +12,7 @@ import {
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, Operator, User,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog,
   MaterialHandover, TraceabilityEvent, SystemNotification, AuditLog, Contractor,
-  StockCountingSession, ChatMessage, ChatChannel
+  StockCountingSession, ChatMessage, ChatChannel, MessengerBackupConfig
 } from '../types';
 
 export interface ServerDatabaseState {
@@ -23,6 +23,7 @@ export interface ServerDatabaseState {
   autoBackupIntervalHours: number;
   lastBackupTimestamp: string;
   backupHistory: Array<{ id: string; timestamp: string; fileName: string; sizeKb: number; type: 'Manual' | 'Auto' }>;
+  messengerConfig?: MessengerBackupConfig;
   users: User[];
   items: Item[];
   itemGroups: ItemGroup[];
@@ -47,35 +48,74 @@ export interface ServerDatabaseState {
 }
 
 export function getDefaultServerState(): ServerDatabaseState {
+  const adminUser: User = {
+    id: 'usr-1',
+    username: 'admin',
+    password: '123',
+    fullName: 'مدیر ارشد سیستم',
+    role: 'SystemAdmin',
+    department: 'مدیریت',
+    email: 'admin@local.host',
+    allowedTabs: ['*'],
+    isActive: true,
+    canAdd: true,
+    canEdit: true,
+    canDelete: true,
+    canExport: true,
+    canViewPrices: true
+  };
+
   return {
     version: Date.now(),
     lastUpdated: new Date().toISOString(),
-    isInstalled: true,
-    companyName: 'سامانه یکپارچه مدیریت انبار و تولید',
+    isInstalled: false,
+    companyName: '',
     autoBackupIntervalHours: 24,
     lastBackupTimestamp: new Date().toISOString(),
     backupHistory: [],
-    users: INITIAL_USERS,
-    items: INITIAL_ITEMS,
-    itemGroups: INITIAL_ITEM_GROUPS,
-    warehouses: INITIAL_WAREHOUSES,
-    contractors: INITIAL_CONTRACTORS,
-    inventory: INITIAL_INVENTORY,
-    boms: INITIAL_BOMS,
-    projects: INITIAL_PROJECTS,
-    operators: INITIAL_OPERATORS,
-    stockCountings: INITIAL_STOCK_COUNTINGS,
-    stockInDocs: INITIAL_STOCK_IN_DOCS,
-    stockOutDocs: INITIAL_STOCK_OUT_DOCS,
-    transfers: INITIAL_TRANSFERS,
-    purchaseRequests: INITIAL_PURCHASE_REQUESTS,
-    productionLogs: INITIAL_PRODUCTION_LOGS,
-    materialHandovers: INITIAL_MATERIAL_HANDOVERS,
-    notifications: INITIAL_NOTIFICATIONS,
-    messages: INITIAL_MESSAGES,
-    channels: INITIAL_CHANNELS,
-    traceabilityEvents: INITIAL_TRACEABILITY,
-    auditLogs: INITIAL_AUDIT_LOGS,
+    messengerConfig: {
+      telegram: {
+        enabled: false,
+        botToken: '',
+        adminChatId: '',
+        sendAutoBackups: true,
+        sendAlerts: true
+      },
+      bale: {
+        enabled: false,
+        botToken: '',
+        adminChatId: '',
+        sendAutoBackups: true,
+        sendAlerts: true
+      },
+      autoSendIntervalHours: 24,
+      includeSummaryText: true,
+      lastSentTelegramTimestamp: null,
+      lastSentBaleTimestamp: null,
+      lastTelegramStatus: null,
+      lastBaleStatus: null,
+    },
+    users: [adminUser],
+    items: [],
+    itemGroups: [],
+    warehouses: [],
+    contractors: [],
+    inventory: [],
+    boms: [],
+    projects: [],
+    operators: [],
+    stockCountings: [],
+    stockInDocs: [],
+    stockOutDocs: [],
+    transfers: [],
+    purchaseRequests: [],
+    productionLogs: [],
+    materialHandovers: [],
+    notifications: [],
+    messages: [],
+    channels: [],
+    traceabilityEvents: [],
+    auditLogs: [],
   };
 }
 

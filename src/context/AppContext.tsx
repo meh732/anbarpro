@@ -4,7 +4,8 @@ import {
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, ProjectStep, Operator, User, UserRole,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
   TraceabilityEvent, SystemNotification, NotificationType, AuditLog, Contractor, StockCountingSession, StockCountingItem,
-  ChatMessage, ChatChannel, ChatAttachment, ContractorWageContract, ContractorFinancialTransaction
+  ChatMessage, ChatChannel, ChatAttachment, ContractorWageContract, ContractorFinancialTransaction,
+  MessengerBackupConfig
 } from '../types';
 import { InitialStockParsedRow } from '../utils/excelUtils';
 import { calculateAllProjectStageTargets, applySmartTargetsToProjectSteps } from '../utils/smartBOMCalculator';
@@ -306,6 +307,13 @@ interface AppContextType {
   loadDemoData: () => Promise<boolean>;
   resetToSetupWizard: () => Promise<boolean>;
 
+  // Messenger Bots (Telegram & Bale) Auto Backup & Alerts
+  messengerConfig: MessengerBackupConfig;
+  updateMessengerConfig: (config: Partial<MessengerBackupConfig>) => Promise<boolean>;
+  sendBackupToMessengers: (target?: 'all' | 'telegram' | 'bale') => Promise<{ success: boolean; results?: any; error?: string }>;
+  testMessengerBot: (platform: 'telegram' | 'bale', botToken?: string, chatId?: string) => Promise<{ success: boolean; message: string }>;
+  isSendingMessengerBackup: boolean;
+
   // Lite Mode / Performance Toggle for Low-End Devices
   liteMode: boolean;
   setLiteMode: (lite: boolean) => void;
@@ -337,8 +345,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${STORAGE_KEY}_company_name`, name);
   };
 
+  const DEFAULT_INITIAL_ADMIN: User = {
+    id: 'usr-1',
+    username: 'admin',
+    password: hashPassword('123', 'admin'),
+    fullName: 'مدیر ارشد سیستم',
+    role: 'SystemAdmin',
+    department: 'مدیریت',
+    email: 'admin@local.host',
+    allowedTabs: ['*'],
+    isActive: true,
+    canAdd: true,
+    canEdit: true,
+    canDelete: true,
+    canExport: true,
+    canViewPrices: true
+  };
+
   const [users, setUsers] = useState<User[]>(() => {
-    const raw = loadStorage('users', INITIAL_USERS);
+    const raw = loadStorage('users', [DEFAULT_INITIAL_ADMIN]);
     return ensureUsersPasswordsHashed(raw);
   });
   
@@ -392,30 +417,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   
-  const [items, setItems] = useState<Item[]>(() => loadStorage('items', INITIAL_ITEMS));
-  const [itemGroups, setItemGroups] = useState<ItemGroup[]>(() => loadStorage('itemGroups', INITIAL_ITEM_GROUPS));
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => loadStorage('warehouses', INITIAL_WAREHOUSES));
-  const [contractors, setContractors] = useState<Contractor[]>(() => loadStorage('contractors', INITIAL_CONTRACTORS));
-  const [contractorContracts, setContractorContracts] = useState<ContractorWageContract[]>(() => loadStorage('contractorContracts', INITIAL_CONTRACTOR_CONTRACTS));
-  const [contractorTransactions, setContractorTransactions] = useState<ContractorFinancialTransaction[]>(() => loadStorage('contractorTransactions', INITIAL_CONTRACTOR_TRANSACTIONS));
-  const [inventory, setInventory] = useState<InventoryBalance[]>(() => loadStorage('inventory', INITIAL_INVENTORY));
-  const [boms, setBoms] = useState<BOM[]>(() => loadStorage('boms', INITIAL_BOMS));
-  const [projects, setProjects] = useState<Project[]>(() => loadStorage('projects', INITIAL_PROJECTS));
-  const [operators, setOperators] = useState<Operator[]>(() => loadStorage('operators', INITIAL_OPERATORS));
-  const [stockCountings, setStockCountings] = useState<StockCountingSession[]>(() => loadStorage('stockCountings', INITIAL_STOCK_COUNTINGS));
-  const [stockInDocs, setStockInDocs] = useState<StockInDoc[]>(() => loadStorage('stockInDocs', INITIAL_STOCK_IN_DOCS));
-  const [stockOutDocs, setStockOutDocs] = useState<StockOutDoc[]>(() => loadStorage('stockOutDocs', INITIAL_STOCK_OUT_DOCS));
-  const [transfers, setTransfers] = useState<WarehouseTransfer[]>(() => loadStorage('transfers', INITIAL_TRANSFERS));
-  const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>(() => loadStorage('purchaseRequests', INITIAL_PURCHASE_REQUESTS));
-  const [productionLogs, setProductionLogs] = useState<ProductionLog[]>(() => loadStorage('productionLogs', INITIAL_PRODUCTION_LOGS));
-  const [materialHandovers, setMaterialHandovers] = useState<MaterialHandover[]>(() => loadStorage('materialHandovers', INITIAL_MATERIAL_HANDOVERS));
-  const [notifications, setNotifications] = useState<SystemNotification[]>(() => loadStorage('notifications', INITIAL_NOTIFICATIONS));
-  const [messages, setMessages] = useState<ChatMessage[]>(() => loadStorage('messages', INITIAL_MESSAGES));
-  const [channels, setChannels] = useState<ChatChannel[]>(INITIAL_CHANNELS);
+  const [items, setItems] = useState<Item[]>(() => loadStorage('items', []));
+  const [itemGroups, setItemGroups] = useState<ItemGroup[]>(() => loadStorage('itemGroups', []));
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => loadStorage('warehouses', []));
+  const [contractors, setContractors] = useState<Contractor[]>(() => loadStorage('contractors', []));
+  const [contractorContracts, setContractorContracts] = useState<ContractorWageContract[]>(() => loadStorage('contractorContracts', []));
+  const [contractorTransactions, setContractorTransactions] = useState<ContractorFinancialTransaction[]>(() => loadStorage('contractorTransactions', []));
+  const [inventory, setInventory] = useState<InventoryBalance[]>(() => loadStorage('inventory', []));
+  const [boms, setBoms] = useState<BOM[]>(() => loadStorage('boms', []));
+  const [projects, setProjects] = useState<Project[]>(() => loadStorage('projects', []));
+  const [operators, setOperators] = useState<Operator[]>(() => loadStorage('operators', []));
+  const [stockCountings, setStockCountings] = useState<StockCountingSession[]>(() => loadStorage('stockCountings', []));
+  const [stockInDocs, setStockInDocs] = useState<StockInDoc[]>(() => loadStorage('stockInDocs', []));
+  const [stockOutDocs, setStockOutDocs] = useState<StockOutDoc[]>(() => loadStorage('stockOutDocs', []));
+  const [transfers, setTransfers] = useState<WarehouseTransfer[]>(() => loadStorage('transfers', []));
+  const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>(() => loadStorage('purchaseRequests', []));
+  const [productionLogs, setProductionLogs] = useState<ProductionLog[]>(() => loadStorage('productionLogs', []));
+  const [materialHandovers, setMaterialHandovers] = useState<MaterialHandover[]>(() => loadStorage('materialHandovers', []));
+  const [notifications, setNotifications] = useState<SystemNotification[]>(() => loadStorage('notifications', []));
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadStorage('messages', []));
+  const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission | 'unsupported'>(getBrowserNotificationPermission());
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(soundEngine.isSoundEnabled());
-  const [traceabilityEvents, setTraceabilityEvents] = useState<TraceabilityEvent[]>(() => loadStorage('traceabilityEvents', INITIAL_TRACEABILITY));
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadStorage('auditLogs', INITIAL_AUDIT_LOGS));
+  const [traceabilityEvents, setTraceabilityEvents] = useState<TraceabilityEvent[]>(() => loadStorage('traceabilityEvents', []));
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadStorage('auditLogs', []));
 
   const setSoundEnabled = (enabled: boolean) => {
     soundEngine.setSoundEnabled(enabled);
@@ -585,6 +610,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Messenger (Telegram & Bale) Bot State
+  const DEFAULT_MESSENGER_CONFIG: MessengerBackupConfig = {
+    telegram: {
+      enabled: false,
+      botToken: '',
+      adminChatId: '',
+      sendAutoBackups: true,
+      sendAlerts: true
+    },
+    bale: {
+      enabled: false,
+      botToken: '',
+      adminChatId: '',
+      sendAutoBackups: true,
+      sendAlerts: true
+    },
+    autoSendIntervalHours: 24,
+    includeSummaryText: true,
+    lastSentTelegramTimestamp: null,
+    lastSentBaleTimestamp: null,
+    lastTelegramStatus: null,
+    lastBaleStatus: null,
+  };
+
+  const [messengerConfig, setMessengerConfigState] = useState<MessengerBackupConfig>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_messengerConfig`);
+      return stored ? { ...DEFAULT_MESSENGER_CONFIG, ...JSON.parse(stored) } : DEFAULT_MESSENGER_CONFIG;
+    } catch {
+      return DEFAULT_MESSENGER_CONFIG;
+    }
+  });
+  const [isSendingMessengerBackup, setIsSendingMessengerBackup] = useState<boolean>(false);
+
   // Centralized Linux Server Real-Time Sync State & Diagnostics
   const [serverSyncStatus, setServerSyncStatus] = useState<'connected' | 'syncing' | 'offline' | 'error'>('syncing');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
@@ -699,6 +758,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.autoBackupIntervalHours !== undefined) setAutoBackupIntervalHoursState(data.autoBackupIntervalHours);
     if (data.lastBackupTimestamp) setLastBackupTimestamp(data.lastBackupTimestamp);
     if (data.backupHistory) setBackupHistory(data.backupHistory);
+    if (data.messengerConfig) {
+      setMessengerConfigState(data.messengerConfig);
+      localStorage.setItem(`${STORAGE_KEY}_messengerConfig`, JSON.stringify(data.messengerConfig));
+    }
 
     serverVersionRef.current = version;
     setServerVersion(version);
@@ -719,7 +782,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         purchaseRequests, productionLogs, materialHandovers, notifications,
         messages, channels,
         traceabilityEvents, auditLogs, users, isInstalled, companyName,
-        autoBackupIntervalHours, lastBackupTimestamp, backupHistory
+        autoBackupIntervalHours, lastBackupTimestamp, backupHistory, messengerConfig
       };
 
       const res = await fetch(getApiUrl('/api/sync'), {
@@ -3543,6 +3606,89 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateMessengerConfig = async (updated: Partial<MessengerBackupConfig>): Promise<boolean> => {
+    const merged: MessengerBackupConfig = {
+      ...messengerConfig,
+      ...updated,
+      telegram: {
+        ...messengerConfig.telegram,
+        ...(updated.telegram || {}),
+      },
+      bale: {
+        ...messengerConfig.bale,
+        ...(updated.bale || {}),
+      },
+    };
+    setMessengerConfigState(merged);
+    localStorage.setItem(`${STORAGE_KEY}_messengerConfig`, JSON.stringify(merged));
+
+    try {
+      const res = await fetch(getApiUrl('/api/messenger/config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const sendBackupToMessengers = async (target: 'all' | 'telegram' | 'bale' = 'all'): Promise<{ success: boolean; results?: any; error?: string }> => {
+    setIsSendingMessengerBackup(true);
+    try {
+      const res = await fetch(getApiUrl('/api/messenger/send-backup'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target }),
+      });
+      const data = await res.json();
+      if (res.ok && data.results) {
+        if (data.results.telegram || data.results.bale) {
+          setMessengerConfigState(prev => ({
+            ...prev,
+            ...(data.results.telegram ? {
+              lastSentTelegramTimestamp: data.results.telegram.success ? new Date().toISOString() : prev.lastSentTelegramTimestamp,
+              lastTelegramStatus: {
+                success: data.results.telegram.success,
+                time: data.results.telegram.timestamp,
+                message: data.results.telegram.message,
+              }
+            } : {}),
+            ...(data.results.bale ? {
+              lastSentBaleTimestamp: data.results.bale.success ? new Date().toISOString() : prev.lastSentBaleTimestamp,
+              lastBaleStatus: {
+                success: data.results.bale.success,
+                time: data.results.bale.timestamp,
+                message: data.results.bale.message,
+              }
+            } : {}),
+          }));
+        }
+        return { success: data.success, results: data.results };
+      }
+      return { success: false, error: data.error || 'خطا در ارسال بکاپ به پیام‌رسان‌ها' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'عدم اتصال به سرور جهت ارسال پیام' };
+    } finally {
+      setIsSendingMessengerBackup(false);
+    }
+  };
+
+  const testMessengerBot = async (platform: 'telegram' | 'bale', botToken?: string, chatId?: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch(getApiUrl('/api/messenger/test'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, botToken, chatId }),
+      });
+      const data = await res.json();
+      return { success: data.success, message: data.message || data.error || 'خطا در دریافت پاسخ' };
+    } catch (err: any) {
+      return { success: false, message: `خطا در ارتباط با سرور: ${err.message}` };
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       currentUser, setCurrentUser, users,
@@ -3590,6 +3736,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       serverUrl, setServerUrl, getApiUrl, testServerConnection,
       forceSyncWithServer, resetServerDatabase,
       resetToEmptyDatabase, loadDemoData, resetToSetupWizard,
+      messengerConfig, updateMessengerConfig, sendBackupToMessengers, testMessengerBot, isSendingMessengerBackup,
       liteMode, setLiteMode
     }}>
       {children}
