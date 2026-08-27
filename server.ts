@@ -13,9 +13,17 @@ import {
 
 const __dirname = process.cwd();
 
+// Global error guard to prevent any unhandled crash in production
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught exception in server process:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRITICAL] Unhandled rejection in server process:', reason);
+});
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Parse JSON payloads up to 50MB (for bulk imports, attachments, and snapshots)
   app.use(express.json({ limit: '50mb' }));

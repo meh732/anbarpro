@@ -275,37 +275,40 @@ echo "Installation complete! Access at http://\${LOCAL_IP}:\${PORT}"
 
   const downloadFix502Script = () => {
     const fixContent = `#!/bin/bash
-# AnbarMeh Enterprise - 100% Automated 502 Bad Gateway Fix & Nginx Setup
+# AnbarMeh Enterprise - Multi-App & SSL-Safe 502 Bad Gateway Fixer
 set -e
 
 DOMAIN="anbar.templatetesti.shop"
 APP_DIR="/opt/anbarmeh-server"
-SERVICE_NAME="anbarmeh.service"
+SERVICE_NAME="anbarmeh"
 PORT=3000
 
 if [ "$EUID" -ne 0 ]; then
-    echo "[ERROR] Please run with sudo or as root."
+    echo "[ERROR] Please run with sudo: sudo bash scripts/fix-502-bad-gateway.sh"
     exit 1
 fi
 
-echo "[1/5] Stopping any conflicting processes on Port \${PORT}..."
-systemctl stop \${SERVICE_NAME} 2>/dev/null || true
-fuser -k \${PORT}/tcp 2>/dev/null || true
-
-echo "[2/5] Checking Node.js and NPM..."
+echo "[1/6] Installing/Checking Node.js..."
 if ! command -v node &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs nginx curl ufw build-essential
+    apt-get install -y nodejs build-essential
 fi
 
-echo "[3/5] Building application in \${APP_DIR}..."
-mkdir -p "$APP_DIR" "$APP_DIR/data"
+echo "[2/6] Building application in \${APP_DIR}..."
+mkdir -p "$APP_DIR" "$APP_DIR/data" "$APP_DIR/dist"
 cd "$APP_DIR"
 npm install --legacy-peer-deps
-npm run build
+npx vite build
+npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs
+chmod -R 777 "$APP_DIR/data" 2>/dev/null || true
 
-echo "[4/5] Creating Systemd Service..."
-cat <<EOF > /etc/systemd/system/\${SERVICE_NAME}
+echo "[3/6] Cleaning up port \${PORT}..."
+systemctl stop \${SERVICE_NAME}.service 2>/dev/null || true
+fuser -k \${PORT}/tcp 2>/dev/null || true
+sleep 1
+
+echo "[4/6] Creating & Launching Systemd Service..."
+cat <<EOF > /etc/systemd/system/\${SERVICE_NAME}.service
 [Unit]
 Description=AnbarMeh Enterprise Inventory Server
 After=network.target
@@ -319,17 +322,74 @@ Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
 Environment=PORT=\${PORT}
+Environment=DATA_DIR=\${APP_DIR}/data
+
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable \${SERVICE_NAME}
-systemctl restart \${SERVICE_NAME}
+systemctl enable \${SERVICE_NAME}.service
+systemctl restart \${SERVICE_NAME}.service
 
-echo "[5/5] Configuring Nginx Reverse Proxy for \${DOMAIN}..."
-cat <<EOF > "/etc/nginx/sites-available/\${DOMAIN}"
+echo "[5/6] Verifying Node Backend Health..."
+sleep 2
+curl -s "http://127.0.0.1:\${PORT}/api/health" || true
+
+echo "[6/6] Configuring Nginx with SSL detection..."
+SSL_CERT=""
+SSL_KEY=""
+if [ -f "/etc/letsencrypt/live/\${DOMAIN}/fullchain.pem" ]; then
+    SSL_CERT="/etc/letsencrypt/live/\${DOMAIN}/fullchain.pem"
+    SSL_KEY="/etc/letsencrypt/live/\${DOMAIN}/privkey.pem"
+elif [ -f "/etc/letsencrypt/live/templatetesti.shop/fullchain.pem" ]; then
+    SSL_CERT="/etc/letsencrypt/live/templatetesti.shop/fullchain.pem"
+    SSL_KEY="/etc/letsencrypt/live/templatetesti.shop/privkey.pem"
+fi
+
+NGINX_CONF="/etc/nginx/sites-available/\${DOMAIN}"
+
+if [ -n "\$SSL_CERT" ] && [ -f "\$SSL_CERT" ]; then
+    cat <<EOF > "\$NGINX_CONF"
+server {
+    listen 80;
+    listen [::]:80;
+    server_name \${DOMAIN} www.\${DOMAIN};
+    client_max_body_size 100M;
+    location / {
+        return 301 https://\\$host\\$request_uri;
+    }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name \${DOMAIN} www.\${DOMAIN};
+
+    ssl_certificate \${SSL_CERT};
+    ssl_certificate_key \${SSL_KEY};
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://127.0.0.1:\${PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \\$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \\$host;
+        proxy_cache_bypass \\$http_upgrade;
+        proxy_set_header X-Real-IP \\$remote_addr;
+        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\$scheme;
+    }
+}
+EOF
+else
+    cat <<EOF > "\$NGINX_CONF"
 server {
     listen 80;
     listen [::]:80;
@@ -349,11 +409,12 @@ server {
     }
 }
 EOF
+fi
 
-ln -sf "/etc/nginx/sites-available/\${DOMAIN}" "/etc/nginx/sites-enabled/\${DOMAIN}"
+ln -sf "\$NGINX_CONF" "/etc/nginx/sites-enabled/\${DOMAIN}"
 nginx -t && systemctl reload nginx
 
-echo "SUCCESS! Visit http://\${DOMAIN}"
+echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
 `;
     downloadFile(fixContent, 'fix-502-bad-gateway.sh', 'application/x-sh');
   };
