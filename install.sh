@@ -40,14 +40,21 @@ show_menu() {
     print_banner
     # Detect current port and status
     local current_port="3000"
-    if [ -f "/etc/systemd/system/anbarpro.service" ]; then
-        local found_port=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service 2>/dev/null | cut -d= -f2)
-        if [ -n "$found_port" ]; then
+    if [ -d "/etc/nginx" ]; then
+        local found_port=$(grep -rEi 'proxy_pass\s+http://(127\.0\.0\.1|localhost):[0-9]+' /etc/nginx/ 2>/dev/null | head -n1 | grep -oE '[0-9]+$' | tr -d ' "/;')
+        if [ -n "$found_port" ] && [[ "$found_port" =~ ^[0-9]+$ ]]; then
             current_port="$found_port"
         fi
-    elif [ -f "/usr/local/anbarpro/.env" ]; then
-        local found_port=$(grep -E '^(PORT|APP_PORT)=' /usr/local/anbarpro/.env 2>/dev/null | head -n1 | cut -d= -f2)
-        if [ -n "$found_port" ]; then
+    fi
+    if [ "$current_port" = "3000" ] && [ -f "/etc/systemd/system/anbarpro.service" ]; then
+        local found_port=$(grep -oE 'PORT=[0-9]+' /etc/systemd/system/anbarpro.service 2>/dev/null | cut -d= -f2)
+        if [ -n "$found_port" ] && [[ "$found_port" =~ ^[0-9]+$ ]]; then
+            current_port="$found_port"
+        fi
+    fi
+    if [ "$current_port" = "3000" ] && [ -f "/usr/local/anbarpro/.env" ]; then
+        local found_port=$(grep -E '^(PORT|APP_PORT)=' /usr/local/anbarpro/.env 2>/dev/null | head -n1 | cut -d= -f2 | tr -d ' "')
+        if [ -n "$found_port" ] && [[ "$found_port" =~ ^[0-9]+$ ]]; then
             current_port="$found_port"
         fi
     fi
@@ -572,34 +579,34 @@ update_anbarpro() {
     # Ensure custom port and domain are strictly preserved from Nginx or existing configs
     DETECTED_PORT="3000"
     
-    # Primary Source of Truth: Nginx Reverse Proxy Config
-    if [ -f "/etc/nginx/sites-available/anbarpro" ]; then
-        FOUND_P=$(grep -oE 'proxy_pass http://127.0.0.1:[0-9]+' /etc/nginx/sites-available/anbarpro | grep -oE '[0-9]+$')
-        if [ -n "$FOUND_P" ]; then
+    # 1. Search all files in /etc/nginx to see where Nginx is actually routing traffic for anbarpro
+    if [ -d "/etc/nginx" ]; then
+        FOUND_P=$(grep -rEi 'proxy_pass\s+http://(127\.0\.0\.1|localhost):[0-9]+' /etc/nginx/ 2>/dev/null | head -n1 | grep -oE '[0-9]+$' | tr -d ' "/;')
+        if [ -n "$FOUND_P" ] && [[ "$FOUND_P" =~ ^[0-9]+$ ]]; then
             DETECTED_PORT="$FOUND_P"
-        fi
-    elif [ -f "/etc/nginx/conf.d/anbarpro.conf" ]; then
-        FOUND_P=$(grep -oE 'proxy_pass http://127.0.0.1:[0-9]+' /etc/nginx/conf.d/anbarpro.conf | grep -oE '[0-9]+$')
-        if [ -n "$FOUND_P" ]; then
-            DETECTED_PORT="$FOUND_P"
+            echo -e "${GREEN}🔍 Detected active port from Nginx routing: $DETECTED_PORT${NC}"
         fi
     fi
     
-    # Fallback to .env if nginx config not found
-    if [ "$DETECTED_PORT" = "3000" ]; then
-        if [ -f "$INSTALL_DIR/.env" ]; then
-            FOUND_P=$(grep -E '^(PORT|APP_PORT)=' "$INSTALL_DIR/.env" | head -n1 | cut -d= -f2 | tr -d ' "')
-            if [ -n "$FOUND_P" ]; then
-                DETECTED_PORT="$FOUND_P"
-            fi
-        elif [ -f "/etc/systemd/system/anbarpro.service" ]; then
-            FOUND_P=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service | cut -d= -f2)
-            if [ -n "$FOUND_P" ]; then
-                DETECTED_PORT="$FOUND_P"
-            fi
+    # 2. If Nginx routing not found, fallback to existing systemd service port
+    if [ "$DETECTED_PORT" = "3000" ] && [ -f "/etc/systemd/system/anbarpro.service" ]; then
+        FOUND_P=$(grep -oE 'PORT=[0-9]+' /etc/systemd/system/anbarpro.service 2>/dev/null | cut -d= -f2)
+        if [ -n "$FOUND_P" ] && [[ "$FOUND_P" =~ ^[0-9]+$ ]]; then
+            DETECTED_PORT="$FOUND_P"
+            echo -e "${GREEN}🔍 Detected active port from systemd service: $DETECTED_PORT${NC}"
         fi
     fi
-    echo -e "${CYAN}🔌 Active Web Port Detected from Nginx/Env: $DETECTED_PORT (Preserving without alteration)${NC}"
+
+    # 3. Fallback to existing .env if still not found or as confirmation
+    if [ "$DETECTED_PORT" = "3000" ] && [ -f "$INSTALL_DIR/.env" ]; then
+        FOUND_P=$(grep -E '^(PORT|APP_PORT)=' "$INSTALL_DIR/.env" | head -n1 | cut -d= -f2 | tr -d ' "')
+        if [ -n "$FOUND_P" ] && [[ "$FOUND_P" =~ ^[0-9]+$ ]]; then
+            DETECTED_PORT="$FOUND_P"
+            echo -e "${GREEN}🔍 Detected active port from .env: $DETECTED_PORT${NC}"
+        fi
+    fi
+    
+    echo -e "${CYAN}🔌 Active Web Port Determined: $DETECTED_PORT (Preserving without alteration)${NC}"
 
     # Ensure .env exists and has the correct port
     if [ ! -f "$INSTALL_DIR/.env" ]; then
