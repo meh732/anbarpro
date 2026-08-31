@@ -1363,15 +1363,16 @@ export const TransfersView: React.FC = () => {
                 <tbody className="divide-y divide-slate-200">
                   {printOfficialVoucher.items.map((it, idx) => {
                     const itemObj = items.find(i => i.id === it.itemId);
-                    const price = it.unitPrice || itemObj?.unitPrice || 0;
-                    const totalPrice = price * it.quantity;
+                    const qty = Number(it.quantity) || 0;
+                    const price = Number(it.unitPrice) || Number(itemObj?.unitPrice) || 0;
+                    const totalPrice = price * qty;
                     return (
                       <tr key={idx} className="h-9">
                         <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
-                        <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code}</td>
-                        <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name}</td>
-                        <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit}</td>
-                        <td className="p-2 border-l border-slate-300 text-center font-bold font-mono">{it.quantity.toLocaleString('fa-IR')}</td>
+                        <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code || it.itemId}</td>
+                        <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name || 'کالای نامشخص'}</td>
+                        <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit || 'عدد'}</td>
+                        <td className="p-2 border-l border-slate-300 text-center font-bold font-mono">{qty.toLocaleString('fa-IR')}</td>
                         <td className="p-2 border-l border-slate-300 text-center font-mono">{price > 0 ? price.toLocaleString('fa-IR') : '-'}</td>
                         <td className="p-2 text-center font-mono font-bold">{totalPrice > 0 ? totalPrice.toLocaleString('fa-IR') : '-'}</td>
                       </tr>

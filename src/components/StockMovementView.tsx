@@ -135,7 +135,12 @@ export const StockMovementView: React.FC = () => {
     setMovementType(doc.entryType);
     setSelectedWarehouseId(doc.warehouseId);
     setDocNotes(doc.notes || '');
-    setDocItems(doc.items.map(it => ({ ...it })));
+    setDocItems(doc.items.map(it => ({ 
+      itemId: it.itemId,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice,
+      notes: it.notes || ''
+    })));
     setIsDocModalOpen(true);
   };
 
@@ -149,7 +154,12 @@ export const StockMovementView: React.FC = () => {
     setMovementType(doc.exitType);
     setSelectedWarehouseId(doc.warehouseId);
     setDocNotes(doc.notes || '');
-    setDocItems(doc.items.map(it => ({ ...it })));
+    setDocItems(doc.items.map(it => ({ 
+      itemId: it.itemId,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice,
+      notes: it.notes || ''
+    })));
     setIsDocModalOpen(true);
   };
 

@@ -10,7 +10,7 @@ export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) =>
 
   // Mobile Camera Scan States
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [cameras, setCameras] = useState<any[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scannerInstance, setScannerInstance] = useState<Html5Qrcode | null>(null);

@@ -22,10 +22,10 @@ export interface Item {
   itemType: ItemType;
   unitPrice: number; // قیمت واحد به تومان
   price?: number; // نام جایگزین برای قیمت واحد
-  minStockAlert?: boolean;
+  minStockAlert?: number | boolean;
   systemQuantity?: number;
   locationInRack?: string; // قفسه و ردیف
-  locationInWarehouse?: string;
+  locationInWarehouse?: string | { rack?: string; shelf?: string } | any;
   imageUrl?: string;
   createdAt: string;
 }

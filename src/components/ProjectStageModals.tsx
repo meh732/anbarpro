@@ -703,7 +703,9 @@ export const ProjectStageProgressReportModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   project: Project;
-}> = ({ isOpen, onClose, project }) => {
+  onOpenHandover?: (step: ProjectStep) => void;
+  onOpenOutputReceipt?: (step: ProjectStep) => void;
+}> = ({ isOpen, onClose, project, onOpenHandover, onOpenOutputReceipt }) => {
   const { items, contractors, calculateProjectProgressSummary } = useApp();
   const [filterStatus, setFilterStatus] = useState<'all' | 'Completed' | 'InProgress' | 'Pending'>('all');
 

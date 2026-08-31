@@ -923,8 +923,10 @@ export const ProjectsView: React.FC = () => {
   };
 
   // Helper to load BOM rows & Stage-by-Stage BOM configs in Edit Modal
-  const initializeBOMRowsForEdit = (proj: Project) => {
-    const matched = boms.find(b => b.finishedItemId === proj.targetFinishedItemId && b.isActive);
+  const initializeBOMRowsForEdit = (projOrTargetItemId: Project | string) => {
+    const targetItemId = typeof projOrTargetItemId === 'string' ? projOrTargetItemId : projOrTargetItemId.targetFinishedItemId;
+    const proj = typeof projOrTargetItemId === 'string' ? editingProject : projOrTargetItemId;
+    const matched = boms.find(b => b.finishedItemId === targetItemId && b.isActive);
     let rows: BOMRowItem[] = [];
 
     if (matched && Array.isArray(matched.items) && matched.items.length > 0) {
@@ -937,7 +939,8 @@ export const ProjectsView: React.FC = () => {
     }
     setEditBomRows(rows);
 
-    const builtStepBoms: StepBOMConfig[] = (proj.steps || []).map((st, idx) => {
+    const stepsToMap = proj?.steps || [];
+    const builtStepBoms: StepBOMConfig[] = stepsToMap.map((st, idx) => {
       let stageItems: BOMRowItem[] = [];
       if (st.bomItems && Array.isArray(st.bomItems) && st.bomItems.length > 0) {
         stageItems = st.bomItems.map(it => ({
@@ -970,7 +973,18 @@ export const ProjectsView: React.FC = () => {
   };
 
   // Custom Steps Form State (With Output Items & Default Step 1: Material Transfer)
-  const defaultInitialSteps = [
+  interface CustomStepFormItem {
+    id: string;
+    name: string;
+    operator: string;
+    isOutsourced: boolean;
+    contractorId?: string;
+    outsourcingCost?: number;
+    outputItemId: string;
+    scrapAllowancePercent: number;
+  }
+
+  const defaultInitialSteps: CustomStepFormItem[] = [
     { 
       id: 'step-init-1', 
       name: 'تحویل و تخصیص مواد اولیه از انبار مرکزی به قفسه پروژه در خط تولید', 
@@ -1004,7 +1018,7 @@ export const ProjectsView: React.FC = () => {
       scrapAllowancePercent: 1
     },
   ];
-  const [customSteps, setCustomSteps] = useState(defaultInitialSteps);
+  const [customSteps, setCustomSteps] = useState<CustomStepFormItem[]>(defaultInitialSteps);
 
   const handleOpenAdd = () => {
     setCode(`PRJ-2026-P${Math.floor(10 + Math.random() * 90)}`);
@@ -1518,6 +1532,7 @@ export const ProjectsView: React.FC = () => {
       date: new Date().toISOString().substring(0, 10),
       sourceWarehouseId: 'wh-raw',
       targetWarehouseId: targetWHId,
+      requestedBy: 'سیستم برنامه‌ریزی تولید',
       registeredBy: 'سیستم برنامه‌ریزی تولید',
       handlerName: 'انباردار انبار مرکزی',
       status: 'Completed',

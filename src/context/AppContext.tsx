@@ -142,6 +142,7 @@ interface AppContextType {
   importBOMsBatch: (newBoms: Omit<BOM, 'id' | 'createdAt'>[]) => { count: number };
   
   // Multi-Level Project Stage Auto-Calculation & Automated Progress Engine
+  deleteMaterialHandover: (id: string) => void;
   applySmartStageTargetsToProject: (projectId: string, customOverrides?: { projectScrap?: number; stepScraps?: Record<string, number> }) => { success: boolean; message: string; count: number };
   handoverStepMaterials: (data: {
     projectId: string;
@@ -2206,6 +2207,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('تغییر وضعیت مرحله پروژه', 'ProjectStep', stepId, `تغییر وضعیت مرحله به ${status}`);
   };
 
+  const deleteMaterialHandover = (id: string) => {
+    setMaterialHandovers(prev => prev.filter(h => h.id !== id));
+    addAudit('حذف برگه تحویل قطعات', 'MaterialHandover', id, 'حذف برگه تحویل قطعات');
+  };
+
   // Direct Handover of Stage Materials to Operator with Automatic Stage Transition (Or 2-step via Cartable)
   const handoverStepMaterials = (data: {
     projectId: string;
@@ -3719,7 +3725,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sendChatMessage, deleteChatMessage, toggleMessageReaction, unreadMessagesCount,
       sendSystemNotification, browserNotificationPermission, requestNotificationPermission,
       soundEnabled, setSoundEnabled, testBrowserNotification, unreadCount,
-      addMaterialHandover, handoverStepMaterials, recordStepOutputReceipt, calculateProjectProgressSummary,
+      addMaterialHandover, deleteMaterialHandover, handoverStepMaterials, recordStepOutputReceipt, calculateProjectProgressSummary,
       addItem, updateItem, deleteItem,
       addItemGroup, updateItemGroup, deleteItemGroup,
       addWarehouse, updateWarehouse, deleteWarehouse,

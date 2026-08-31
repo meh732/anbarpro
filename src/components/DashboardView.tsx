@@ -105,7 +105,8 @@ export const DashboardView: React.FC = () => {
         const totalStock = itemBalances.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
         const reservedQty = itemBalances.reduce((acc, curr) => acc + (curr.reservedQuantity || 0), 0);
         const freeStock = Math.max(0, totalStock - reservedQty);
-        return freeStock < (bi.quantityNeeded + (bi.scrapAllowanceQty || 0));
+        const scrapAllowance = (bi as any).scrapAllowanceQty || (bi.scrapAllowancePercent ? (bi.quantityNeeded * bi.scrapAllowancePercent / 100) : 0);
+        return freeStock < (bi.quantityNeeded + scrapAllowance);
       });
     });
   }, [boms, items, inventory]);

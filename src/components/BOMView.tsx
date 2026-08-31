@@ -276,7 +276,12 @@ export const BOMView: React.FC = () => {
     setFinishedItemId(bom.finishedItemId);
     setSelectedProjectId(bom.projectId || '');
     setSelectedProjectStepId(bom.projectStepId || '');
-    setBomItems(bom.items.map(it => ({ ...it })));
+    setBomItems(bom.items.map(it => ({ 
+      itemId: it.itemId,
+      quantityNeeded: it.quantityNeeded,
+      unit: it.unit,
+      scrapAllowancePercent: it.scrapAllowancePercent ?? 0
+    })));
     setIsModalOpen(true);
   };
 

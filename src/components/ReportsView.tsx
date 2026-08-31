@@ -17,7 +17,7 @@ export const ReportsView: React.FC = () => {
   } = useApp();
 
   const userCanViewPrice = currentUser?.canViewPrices ?? (
-    currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'manager'
+    currentUser?.role === 'SystemAdmin' || currentUser?.role === 'PlantManager' || currentUser?.role === 'WarehouseManager'
   );
 
   const [activeReportTab, setActiveReportTab] = useState<'inventory' | 'valuation' | 'movements' | 'counting' | 'projects' | 'operators'>('inventory');
@@ -27,6 +27,13 @@ export const ReportsView: React.FC = () => {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'low' | 'out' | 'normal'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Helper to get min threshold
+  const getItemMinStock = (it: any) => {
+    if (!it) return 0;
+    if (typeof it.minStockAlert === 'number') return it.minStockAlert;
+    return typeof it.minStock === 'number' ? it.minStock : 0;
+  };
 
   // 1. Filtered Inventory Data
   const filteredInventory = useMemo(() => {
@@ -38,9 +45,11 @@ export const ReportsView: React.FC = () => {
       if (selectedWarehouseId !== 'all' && inv.warehouseId !== selectedWarehouseId) return false;
       if (selectedGroupId !== 'all' && item.group !== selectedGroupId) return false;
 
-      if (stockStatusFilter === 'low' && (inv.quantity > item.minStockAlert || inv.quantity === 0)) return false;
+      const minThreshold = getItemMinStock(item);
+
+      if (stockStatusFilter === 'low' && (inv.quantity > minThreshold || inv.quantity === 0)) return false;
       if (stockStatusFilter === 'out' && inv.quantity > 0) return false;
-      if (stockStatusFilter === 'normal' && (inv.quantity <= item.minStockAlert)) return false;
+      if (stockStatusFilter === 'normal' && (inv.quantity <= minThreshold)) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -67,9 +76,11 @@ export const ReportsView: React.FC = () => {
       if (it) {
         totalItemsCount++;
         totalInventoryQuantity += inv.quantity;
-        totalRialValue += (inv.quantity * (it.price || 0));
+        const uPrice = it.price || it.unitPrice || 0;
+        totalRialValue += (inv.quantity * uPrice);
+        const minThreshold = getItemMinStock(it);
         if (inv.quantity === 0) outOfStockCount++;
-        else if (inv.quantity <= it.minStockAlert) lowStockCount++;
+        else if (inv.quantity <= minThreshold) lowStockCount++;
       }
     });
 
@@ -304,7 +315,8 @@ export const ReportsView: React.FC = () => {
                   const rows = filteredInventory.map(inv => {
                     const item = items.find(i => i.id === inv.itemId);
                     const wh = warehouses.find(w => w.id === inv.warehouseId);
-                    const isLow = item && inv.quantity <= item.minStockAlert;
+                    const minVal = getItemMinStock(item);
+                    const isLow = item && inv.quantity <= minVal;
                     return [
                       item?.code || '',
                       item?.name || '',
@@ -312,7 +324,7 @@ export const ReportsView: React.FC = () => {
                       wh?.name || '',
                       inv.quantity,
                       item?.unit || '',
-                      item?.minStockAlert || 0,
+                      minVal,
                       item?.locationInRack || '',
                       isLow ? 'کسری' : 'نرمال'
                     ];
@@ -351,7 +363,8 @@ export const ReportsView: React.FC = () => {
                     filteredInventory.map((inv, idx) => {
                       const item = items.find(i => i.id === inv.itemId);
                       const wh = warehouses.find(w => w.id === inv.warehouseId);
-                      const isLow = item && inv.quantity <= item.minStockAlert;
+                      const minVal = getItemMinStock(item);
+                      const isLow = item && inv.quantity <= minVal;
                       const isZero = inv.quantity === 0;
 
                       return (
@@ -363,7 +376,7 @@ export const ReportsView: React.FC = () => {
                           <td className="py-2.5 px-3 text-center font-mono font-black text-slate-900">
                             {inv.quantity.toLocaleString('fa-IR')} <span className="text-[10px] text-slate-500 font-normal">{item?.unit}</span>
                           </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-slate-500">{item?.minStockAlert || 0}</td>
+                          <td className="py-2.5 px-3 text-center font-mono text-slate-500">{minVal}</td>
                           <td className="py-2.5 px-3 text-slate-600 font-mono text-[11px]">{item?.locationInRack || '—'}</td>
                           <td className="py-2.5 px-3 text-center">
                             {isZero ? (

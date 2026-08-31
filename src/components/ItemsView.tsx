@@ -697,6 +697,10 @@ export const ItemsView: React.FC = () => {
 
                   const isLow = totalStock < item.minStock;
 
+                  const safeMinStock = Number(item.minStock) || 0;
+                  const safeMaxStock = Number(item.maxStock) || 0;
+                  const safeUnitPrice = Number(item.unitPrice) || 0;
+
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors cursor-pointer group" onClick={() => setViewingItem(item)}>
                       <td className="whitespace-nowrap p-3.5 font-mono font-bold text-indigo-600">{item.code}</td>
@@ -705,17 +709,17 @@ export const ItemsView: React.FC = () => {
                           <span>{item.name}</span>
                           <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
-                        <div className="text-[10px] text-slate-400 font-mono">{isFa ? 'بارکد:' : 'Barcode:'} {item.barcode}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{isFa ? 'بارکد:' : 'Barcode:'} {item.barcode || item.code}</div>
                       </td>
                       <td className="whitespace-nowrap p-3.5">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${typeBadges[item.itemType]}`}>
-                          {typeLabels[item.itemType]}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${typeBadges[item.itemType] || 'bg-slate-100 text-slate-700'}`}>
+                          {typeLabels[item.itemType] || item.itemType}
                         </span>
                       </td>
                       <td className="whitespace-nowrap p-3.5">
                         <div className="font-bold text-slate-800 flex items-center gap-1">
                           <FolderTree className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>{item.group}</span>
+                          <span>{item.group || 'عمومی'}</span>
                         </div>
                         {item.subGroup && item.subGroup !== 'عمومی' && (
                           <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -726,14 +730,14 @@ export const ItemsView: React.FC = () => {
                       </td>
                       <td className="whitespace-nowrap p-3.5 font-mono font-bold">
                         <span className={isLow ? 'text-amber-600 font-extrabold' : 'text-emerald-600'}>
-                          {isFa ? totalStock.toLocaleString('fa-IR') : totalStock.toLocaleString('en-US')} {item.unit}
+                          {isFa ? (totalStock || 0).toLocaleString('fa-IR') : (totalStock || 0).toLocaleString('en-US')} {item.unit || 'عدد'}
                         </span>
                       </td>
                       <td className="whitespace-nowrap p-3.5 font-mono text-[11px] text-slate-400">
-                        {isFa ? `${item.minStock.toLocaleString('fa-IR')} تا ${item.maxStock.toLocaleString('fa-IR')}` : `${item.minStock.toLocaleString('en-US')} to ${item.maxStock.toLocaleString('en-US')}`}
+                        {isFa ? `${safeMinStock.toLocaleString('fa-IR')} تا ${safeMaxStock.toLocaleString('fa-IR')}` : `${safeMinStock.toLocaleString('en-US')} to ${safeMaxStock.toLocaleString('en-US')}`}
                       </td>
                       <td className="whitespace-nowrap p-3.5 font-mono text-slate-800">
-                        {isFa ? `${item.unitPrice.toLocaleString('fa-IR')} تومان` : `$${item.unitPrice.toLocaleString('en-US')}`}
+                        {isFa ? `${safeUnitPrice.toLocaleString('fa-IR')} تومان` : `$${safeUnitPrice.toLocaleString('en-US')}`}
                       </td>
                       <td className="whitespace-nowrap p-3.5 font-mono text-amber-600 text-[11px] font-medium">
                         {item.locationInRack || (isFa ? 'تعریف‌نشده' : 'N/A')}
@@ -1212,15 +1216,15 @@ export const ItemsView: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3 text-slate-700">
                     <div className="p-3 bg-white border border-slate-200 rounded-lg">
                       <span className="text-slate-400 block text-[10px] mb-0.5">گروه اصلی کالا:</span>
-                      <strong className="text-slate-800 font-bold">{viewingItem.group}</strong>
+                      <strong className="text-slate-800 font-bold">{viewingItem.group || 'عمومی'}</strong>
                     </div>
                     <div className="p-3 bg-white border border-slate-200 rounded-lg">
                       <span className="text-slate-400 block text-[10px] mb-0.5">زیرگروه تخصصی:</span>
-                      <strong className="text-slate-800 font-bold">{viewingItem.subGroup}</strong>
+                      <strong className="text-slate-800 font-bold">{viewingItem.subGroup || 'عمومی'}</strong>
                     </div>
                     <div className="p-3 bg-white border border-slate-200 rounded-lg">
                       <span className="text-slate-400 block text-[10px] mb-0.5">قیمت واحد تامین:</span>
-                      <strong className="text-indigo-600 font-bold font-mono">{viewingItem.unitPrice.toLocaleString('fa-IR')} تومان</strong>
+                      <strong className="text-indigo-600 font-bold font-mono">{(Number(viewingItem.unitPrice) || 0).toLocaleString('fa-IR')} تومان</strong>
                     </div>
                     <div className="p-3 bg-white border border-slate-200 rounded-lg">
                       <span className="text-slate-400 block text-[10px] mb-0.5">موقعیت قفسه انبار:</span>
@@ -1247,8 +1251,8 @@ export const ItemsView: React.FC = () => {
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {warehouses.map(wh => {
                             const balance = inventory.find(i => i.itemId === viewingItem.id && i.warehouseId === wh.id);
-                            const qty = balance ? balance.quantity : 0;
-                            const res = balance ? balance.reservedQuantity : 0;
+                            const qty = balance ? (Number(balance.quantity) || 0) : 0;
+                            const res = balance ? (Number(balance.reservedQuantity) || 0) : 0;
                             const av = Math.max(0, qty - res);
 
                             if (qty === 0 && res === 0) return null;
@@ -1256,9 +1260,9 @@ export const ItemsView: React.FC = () => {
                             return (
                               <tr key={wh.id} className="hover:bg-slate-50">
                                 <td className="whitespace-nowrap p-2 font-bold text-slate-800">{wh.name}</td>
-                                <td className="whitespace-nowrap p-2 font-mono text-slate-700 font-bold">{qty.toLocaleString('fa-IR')} {viewingItem.unit}</td>
-                                <td className="whitespace-nowrap p-2 font-mono text-amber-600 font-bold">{res.toLocaleString('fa-IR')} {viewingItem.unit}</td>
-                                <td className="whitespace-nowrap p-2 font-mono text-emerald-600 font-bold">{av.toLocaleString('fa-IR')} {viewingItem.unit}</td>
+                                <td className="whitespace-nowrap p-2 font-mono text-slate-700 font-bold">{qty.toLocaleString('fa-IR')} {viewingItem.unit || 'عدد'}</td>
+                                <td className="whitespace-nowrap p-2 font-mono text-amber-600 font-bold">{res.toLocaleString('fa-IR')} {viewingItem.unit || 'عدد'}</td>
+                                <td className="whitespace-nowrap p-2 font-mono text-emerald-600 font-bold">{av.toLocaleString('fa-IR')} {viewingItem.unit || 'عدد'}</td>
                               </tr>
                             );
                           })}
@@ -1350,9 +1354,9 @@ export const ItemsView: React.FC = () => {
                           {itemKardexLines.map((line, idx) => {
                             const ev = line.event;
                             let eventBadgeStyle = 'bg-slate-100 text-slate-700';
-                            let eventLabel = ev.eventType;
+                            let eventLabel: string = String(ev.eventType);
                             
-                            switch (ev.eventType) {
+                            switch (ev.eventType as string) {
                               case 'StockIn':
                                 eventBadgeStyle = 'bg-blue-50 text-blue-700 border border-blue-100';
                                 eventLabel = 'ورود کالا (رسید)';

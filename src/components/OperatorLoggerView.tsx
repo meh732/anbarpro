@@ -288,7 +288,7 @@ export const OperatorLoggerView: React.FC = () => {
               
               <button
                 type="button"
-                onClick={handleLoadBOMChecklist}
+                onClick={() => handleLoadBOMChecklist()}
                 className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
               >
                 <ClipboardList className="w-4 h-4" />

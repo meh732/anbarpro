@@ -26,7 +26,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  // Robust Port Detection: Support PORT, APP_PORT, HTTP_PORT with sanitization
+  const rawPort = process.env.PORT || process.env.APP_PORT || process.env.HTTP_PORT || '3000';
+  const PORT = parseInt(String(rawPort).trim(), 10) || 3000;
 
   // Parse JSON payloads up to 50MB (for bulk imports, attachments, and snapshots)
   app.use(express.json({ limit: '50mb' }));
@@ -822,29 +824,79 @@ async function startServer() {
     }
   }, AUTO_CHECK_INTERVAL_MS);
 
-  // Mount Vite Middleware for Dev, Static Serving for Production
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
+  // Mount Static Assets or Vite Middleware
+  // Auto-detect production mode: check if running bundled file, NODE_ENV=production, or dist/index.html exists
+  const isBundled = typeof __filename !== 'undefined' && __filename.endsWith('.cjs');
+  const possibleDistDirs = [
+    path.resolve(process.cwd(), 'dist'),
+    path.resolve(__dirname, 'dist'),
+    path.resolve(__dirname),
+  ];
+  const activeDistPath = possibleDistDirs.find(d => fs.existsSync(path.join(d, 'index.html'))) || possibleDistDirs[0];
+  const hasStaticDist = fs.existsSync(path.join(activeDistPath, 'index.html'));
+  const isExplicitProduction = process.env.NODE_ENV === 'production';
+  const shouldServeStatic = isExplicitProduction || isBundled || hasStaticDist;
+
+  if (shouldServeStatic && hasStaticDist) {
+    console.log(`[Production] Serving static files from: ${activeDistPath}`);
+    app.use(express.static(activeDistPath, { maxAge: '1d', index: false }));
+    app.get('*', (req, res, next) => {
+      // Don't intercept API routes
+      if (req.path.startsWith('/api/')) return next();
+      const indexPath = path.join(activeDistPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send('Application build not found. Please run: npm run build');
+      }
     });
-    app.use(vite.middlewares);
   } else {
-    const distPath = __dirname.endsWith('dist') ? __dirname : path.join(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    // Development mode with Vite middleware
+    try {
+      console.log(`[Development] Initializing Vite middleware...`);
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (viteError) {
+      console.warn('[Server] Vite middleware initialization bypassed. Serving fallback:', viteError);
+      if (hasStaticDist) {
+        app.use(express.static(activeDistPath));
+        app.get('*', (req, res) => res.sendFile(path.join(activeDistPath, 'index.html')));
+      }
+    }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  // Global Express Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[Server Error Handler]:', err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'Internal Server Error', message: err?.message || 'Unknown error' });
+  });
+
+  const serverInstance = app.listen(PORT, '0.0.0.0', () => {
     console.log(`=======================================================`);
     console.log(` AnbarMeh Enterprise Central Server is LIVE!`);
-    console.log(` Running on http://0.0.0.0:${PORT}`);
+    console.log(` Running on:`);
+    console.log(`   - Local:    http://127.0.0.1:${PORT}`);
+    console.log(`   - Network:  http://0.0.0.0:${PORT}`);
+    console.log(` Port Mode:   ${PORT} (Custom or ENV configured)`);
     console.log(` Storage Path: ${serverStore.getStorageInfo().filePath}`);
     console.log(` Storage Size: ${serverStore.getStorageInfo().sizeKb} KB`);
     console.log(` Multi-client Real-Time Sync: ENABLED`);
     console.log(`=======================================================`);
+  });
+
+  serverInstance.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[CRITICAL] Port ${PORT} is already in use by another process!`);
+      console.error(`Please either stop the existing process or set a different PORT:`);
+      console.error(`  fuser -k ${PORT}/tcp   (to kill the existing process)`);
+      console.error(`  PORT=${PORT + 1} npm start (to run on another port)`);
+    } else {
+      console.error('[Server Fatal Error]:', err);
+    }
   });
 }
 

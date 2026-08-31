@@ -13,7 +13,7 @@ export const AuditLogsView: React.FC = () => {
   const filteredLogs = auditLogs.filter(log => {
     const term = (searchTerm || '').toLowerCase();
     return (
-      (log.userFullName || '').toLowerCase().includes(term) ||
+      (log.userName || '').toLowerCase().includes(term) ||
       (log.action || '').toLowerCase().includes(term) ||
       (log.details || '').toLowerCase().includes(term)
     );
@@ -78,15 +78,15 @@ export const AuditLogsView: React.FC = () => {
                 filteredLogs.map(log => (
                   <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="whitespace-nowrap p-3.5 font-mono text-slate-500">{log.timestamp}</td>
-                    <td className="whitespace-nowrap p-3.5 font-bold text-slate-900">{log.userFullName}</td>
+                    <td className="whitespace-nowrap p-3.5 font-bold text-slate-900">{log.userName}</td>
                     <td className="whitespace-nowrap p-3.5">
                       <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 border border-slate-200 font-medium">
-                        {log.userRole}
+                        {log.role}
                       </span>
                     </td>
                     <td className="whitespace-nowrap p-3.5 font-bold text-indigo-600">{log.action}</td>
                     <td className="whitespace-nowrap p-3.5 text-slate-700 leading-relaxed">{log.details}</td>
-                    <td className="whitespace-nowrap p-3.5 font-mono text-slate-400">{log.ipAddress || '192.168.1.100'}</td>
+                    <td className="whitespace-nowrap p-3.5 font-mono text-slate-400">{log.targetEntity || 'System'}</td>
                   </tr>
                 ))
               )}

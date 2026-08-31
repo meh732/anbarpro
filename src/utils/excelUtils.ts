@@ -77,7 +77,13 @@ export function getRowField(row: Record<string, any>, candidateKeys: string[]): 
   for (const [rawKey, rawVal] of rowEntries) {
     if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
     const normKey = cleanHeaderKey(rawKey);
-    if (normalizedCandidateKeys.some(cand => normKey === cand || (cand.length >= 3 && normKey.includes(cand)) || (normKey.length >= 3 && cand.includes(normKey)))) {
+    if (
+      normalizedCandidateKeys.some(cand => 
+        normKey === cand || 
+        (cand.length >= 3 && normKey.includes(cand)) || 
+        (normKey.length >= 3 && cand.includes(normKey))
+      )
+    ) {
       return rawVal;
     }
   }
@@ -86,82 +92,107 @@ export function getRowField(row: Record<string, any>, candidateKeys: string[]): 
 }
 
 /**
- * Finds the best sheet containing tabular data and extracts clean rows
+ * Finds the best sheet containing tabular data and extracts clean rows with intelligent header detection
  */
 function extractRowsFromWorkbook(workbook: XLSX.WorkBook): { rawRows: Record<string, any>[]; sheetName: string } {
   if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
     return { rawRows: [], sheetName: '' };
   }
 
-  // Check all sheets and pick the one with most valid-looking rows
+  const HEADER_KEYWORDS = [
+    'کد', 'نام', 'عنوان', 'شرح', 'کالا', 'قطعه', 'محصول', 'قیمت', 'فی', 'تعداد', 'مقدار', 
+    'موجودی', 'واحد', 'گروه', 'دسته', 'بارکد', 'قفسه', 'انبار', 'نوع', 'فرمول', 'پروژه',
+    'code', 'name', 'item', 'title', 'desc', 'description', 'price', 'qty', 'quantity', 
+    'stock', 'unit', 'group', 'category', 'barcode', 'rack', 'location', 'warehouse', 'bom', 'type'
+  ];
+
+  let bestResult: { rawRows: Record<string, any>[]; sheetName: string; score: number } = {
+    rawRows: [],
+    sheetName: workbook.SheetNames[0] || '',
+    score: -1
+  };
+
+  // Inspect each sheet in workbook
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
 
-    // Try standard json conversion
-    const standardRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
-    if (standardRows && standardRows.length > 0) {
-      // Verify that rows have more than 1 column
-      const sampleRow = standardRows[0] || {};
-      const sampleKeys = Object.keys(sampleRow);
-      if (sampleKeys.length >= 2) {
-        return { rawRows: standardRows, sheetName };
+    // Convert sheet to matrix of cells
+    const rawMatrix = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', blankrows: false, raw: false });
+    if (!rawMatrix || rawMatrix.length === 0) continue;
+
+    // Scan top 25 rows to identify the best header row
+    let bestHeaderRowIndex = 0;
+    let maxHeaderScore = 0;
+
+    const maxScanRows = Math.min(rawMatrix.length, 25);
+    for (let r = 0; r < maxScanRows; r++) {
+      const rowArr = rawMatrix[r];
+      if (!Array.isArray(rowArr) || rowArr.length < 1) continue;
+
+      let score = 0;
+      rowArr.forEach(cell => {
+        const cleaned = cleanHeaderKey(String(cell || ''));
+        if (cleaned && HEADER_KEYWORDS.some(kw => cleaned.includes(cleanHeaderKey(kw)))) {
+          score += 2;
+        } else if (cleaned && cleaned.length >= 2) {
+          score += 0.5;
+        }
+      });
+
+      if (score > maxHeaderScore) {
+        maxHeaderScore = score;
+        bestHeaderRowIndex = r;
       }
     }
 
-    // Try reading as 2D array if header row was offset (e.g. title banner in row 0)
-    const rawMatrix = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
-    if (rawMatrix && rawMatrix.length > 1) {
-      // Find header row index
-      let headerRowIndex = 0;
-      for (let r = 0; r < Math.min(rawMatrix.length, 10); r++) {
-        const rowArr = rawMatrix[r];
-        if (Array.isArray(rowArr) && rowArr.length >= 2) {
-          const joinedRow = rowArr.map(c => cleanHeaderKey(String(c))).join(' ');
-          if (
-            joinedRow.includes('کد') || 
-            joinedRow.includes('نام') || 
-            joinedRow.includes('code') || 
-            joinedRow.includes('name') || 
-            joinedRow.includes('انبار') ||
-            joinedRow.includes('item')
-          ) {
-            headerRowIndex = r;
-            break;
+    // Extract headers from the detected best row
+    const rawHeaderRow = rawMatrix[bestHeaderRowIndex] || [];
+    const headers = rawHeaderRow.map((h, colIdx) => {
+      const s = parseSafeString(h);
+      return s || `COL_${colIdx + 1}`;
+    });
+
+    const extractedRows: Record<string, any>[] = [];
+    for (let r = bestHeaderRowIndex + 1; r < rawMatrix.length; r++) {
+      const rowArr = rawMatrix[r];
+      if (!Array.isArray(rowArr) || rowArr.length === 0) continue;
+
+      const rowObj: Record<string, any> = {};
+      let hasData = false;
+
+      headers.forEach((h, colIdx) => {
+        if (colIdx < rowArr.length) {
+          const val = rowArr[colIdx];
+          rowObj[h] = val;
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            hasData = true;
           }
         }
-      }
+      });
 
-      const headers = (rawMatrix[headerRowIndex] || []).map(h => parseSafeString(h));
-      const extracted: Record<string, any>[] = [];
-      for (let r = headerRowIndex + 1; r < rawMatrix.length; r++) {
-        const rowArr = rawMatrix[r];
-        if (!Array.isArray(rowArr) || rowArr.length === 0) continue;
-        const rowObj: Record<string, any> = {};
-        let hasContent = false;
-        headers.forEach((h, colIdx) => {
-          if (h && colIdx < rowArr.length) {
-            rowObj[h] = rowArr[colIdx];
-            if (rowArr[colIdx] !== '' && rowArr[colIdx] !== null && rowArr[colIdx] !== undefined) {
-              hasContent = true;
-            }
-          }
-        });
-        if (hasContent) {
-          extracted.push(rowObj);
-        }
+      if (hasData) {
+        extractedRows.push(rowObj);
       }
+    }
 
-      if (extracted.length > 0) {
-        return { rawRows: extracted, sheetName };
-      }
+    if (extractedRows.length > 0 && maxHeaderScore > bestResult.score) {
+      bestResult = {
+        rawRows: extractedRows,
+        sheetName,
+        score: maxHeaderScore
+      };
     }
   }
 
-  // Fallback to first sheet
+  if (bestResult.rawRows.length > 0) {
+    return { rawRows: bestResult.rawRows, sheetName: bestResult.sheetName };
+  }
+
+  // Absolute fallback: standard JSON conversion on first sheet
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   const fallbackRows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: '' });
-  return { rawRows: fallbackRows || [], sheetName: workbook.SheetNames[0] };
+  return { rawRows: fallbackRows || [], sheetName: workbook.SheetNames[0] || '' };
 }
 
 // =========================================================================
@@ -610,16 +641,31 @@ export async function parseInitialStockFromExcel(
     const itemByBarcode = new Map<string, Item>();
     const itemByName = new Map<string, Item>();
     items.forEach(it => {
-      if (it.code) itemByCode.set(it.code.toLowerCase().trim(), it);
-      if (it.barcode) itemByBarcode.set(it.barcode.trim(), it);
-      if (it.name) itemByName.set(it.name.toLowerCase().trim(), it);
+      if (it.code) {
+        itemByCode.set(it.code.toLowerCase().trim(), it);
+        itemByCode.set(normalizeDigits(it.code).toLowerCase().trim(), it);
+      }
+      if (it.barcode) {
+        itemByBarcode.set(it.barcode.trim(), it);
+        itemByBarcode.set(normalizeDigits(it.barcode).trim(), it);
+      }
+      if (it.name) {
+        itemByName.set(it.name.toLowerCase().trim(), it);
+        itemByName.set(cleanHeaderKey(it.name), it);
+      }
     });
 
     const warehouseByCode = new Map<string, Warehouse>();
     const warehouseByName = new Map<string, Warehouse>();
     warehouses.forEach(w => {
-      if (w.code) warehouseByCode.set(w.code.toLowerCase().trim(), w);
-      if (w.name) warehouseByName.set(w.name.toLowerCase().trim(), w);
+      if (w.code) {
+        warehouseByCode.set(w.code.toLowerCase().trim(), w);
+        warehouseByCode.set(normalizeDigits(w.code).toLowerCase().trim(), w);
+      }
+      if (w.name) {
+        warehouseByName.set(w.name.toLowerCase().trim(), w);
+        warehouseByName.set(cleanHeaderKey(w.name), w);
+      }
     });
 
     rawRows.forEach((row, idx) => {
@@ -653,10 +699,10 @@ export async function parseInitialStockFromExcel(
       // 1. Resolve Warehouse
       let matchedWh: Warehouse | undefined = undefined;
       if (whCodeInput) {
-        matchedWh = warehouseByCode.get(whCodeInput.toLowerCase());
+        matchedWh = warehouseByCode.get(whCodeInput.toLowerCase().trim()) || warehouseByCode.get(normalizeDigits(whCodeInput).toLowerCase().trim());
       }
       if (!matchedWh && whNameInput) {
-        matchedWh = warehouseByName.get(whNameInput.toLowerCase());
+        matchedWh = warehouseByName.get(whNameInput.toLowerCase().trim()) || warehouseByName.get(cleanHeaderKey(whNameInput));
       }
       if (!matchedWh && warehouses.length === 1) {
         matchedWh = warehouses[0];
@@ -673,13 +719,13 @@ export async function parseInitialStockFromExcel(
       // 2. Resolve Item
       let matchedItem: Item | undefined = undefined;
       if (itemCodeInput) {
-        matchedItem = itemByCode.get(itemCodeInput.toLowerCase());
+        matchedItem = itemByCode.get(itemCodeInput.toLowerCase().trim()) || itemByCode.get(normalizeDigits(itemCodeInput).toLowerCase().trim());
       }
       if (!matchedItem && barcodeInput) {
-        matchedItem = itemByBarcode.get(barcodeInput);
+        matchedItem = itemByBarcode.get(barcodeInput.trim()) || itemByBarcode.get(normalizeDigits(barcodeInput).trim());
       }
       if (!matchedItem && itemNameInput) {
-        matchedItem = itemByName.get(itemNameInput.toLowerCase());
+        matchedItem = itemByName.get(itemNameInput.toLowerCase().trim()) || itemByName.get(cleanHeaderKey(itemNameInput));
       }
 
       if (!matchedItem) {
@@ -923,13 +969,32 @@ export async function parseBOMsFromExcel(
     const warnings: string[] = [];
 
     const itemByCode = new Map<string, Item>();
+    const itemByName = new Map<string, Item>();
     items.forEach(it => {
-      if (it.code) itemByCode.set(it.code.toLowerCase().trim(), it);
+      if (it.code) {
+        itemByCode.set(it.code.toLowerCase().trim(), it);
+        itemByCode.set(normalizeDigits(it.code).toLowerCase().trim(), it);
+      }
+      if (it.barcode) {
+        itemByCode.set(it.barcode.trim(), it);
+        itemByCode.set(normalizeDigits(it.barcode).trim(), it);
+      }
+      if (it.name) {
+        itemByName.set(it.name.toLowerCase().trim(), it);
+        itemByName.set(cleanHeaderKey(it.name), it);
+      }
     });
 
     const projectByCode = new Map<string, Project>();
     projects.forEach(p => {
-      if (p.code) projectByCode.set(p.code.toLowerCase().trim(), p);
+      if (p.code) {
+        projectByCode.set(p.code.toLowerCase().trim(), p);
+        projectByCode.set(normalizeDigits(p.code).toLowerCase().trim(), p);
+      }
+      if (p.name) {
+        projectByCode.set(p.name.toLowerCase().trim(), p);
+        projectByCode.set(cleanHeaderKey(p.name), p);
+      }
     });
 
     // Group rows by key: `finishedItemCode:::bomName:::version`
@@ -1017,13 +1082,19 @@ export async function parseBOMsFromExcel(
         return;
       }
 
-      const matchedFinItem = itemByCode.get(finCode.toLowerCase());
+      const matchedFinItem = itemByCode.get(finCode.toLowerCase().trim()) || 
+                             itemByCode.get(normalizeDigits(finCode).toLowerCase().trim()) ||
+                             itemByName.get(finCode.toLowerCase().trim()) ||
+                             itemByName.get(cleanHeaderKey(finCode));
       if (!matchedFinItem) {
         errors.push(`ردیف ${rowNum}: کالای نهایی با کد "${finCode}" در سامانه یافت نشد.`);
         return;
       }
 
-      const matchedCompItem = itemByCode.get(compCode.toLowerCase());
+      const matchedCompItem = itemByCode.get(compCode.toLowerCase().trim()) || 
+                              itemByCode.get(normalizeDigits(compCode).toLowerCase().trim()) ||
+                              itemByName.get(compCode.toLowerCase().trim()) ||
+                              itemByName.get(cleanHeaderKey(compCode));
       if (!matchedCompItem) {
         errors.push(`ردیف ${rowNum}: قطعه تشکیل‌دهنده با کد "${compCode}" در سامانه یافت نشد.`);
         return;

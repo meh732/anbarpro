@@ -71,7 +71,9 @@ export const OfficialDocumentViewerModal: React.FC<Props> = ({
     const barcode = it.barcode || raw?.barcode || '-';
     const unitPrice = it.unitPrice !== undefined ? it.unitPrice : (raw?.unitPrice || 0);
     const totalPrice = unitPrice * it.quantity;
-    const location = it.warehouseLocation || (raw?.locationInWarehouse ? `${raw.locationInWarehouse.rack || ''} ${raw.locationInWarehouse.shelf || ''}` : '-');
+    const rawLoc = raw?.locationInWarehouse;
+    const locStr = typeof rawLoc === 'string' ? rawLoc : (rawLoc ? `${rawLoc.rack || ''} ${rawLoc.shelf || ''}`.trim() : '');
+    const location = it.warehouseLocation || locStr || '-';
 
     return {
       ...it,

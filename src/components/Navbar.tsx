@@ -372,7 +372,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                   </button>
 
                   <div className="pt-1 border-t border-slate-200/50">
-                    <PWAInstallPrompt compact />
+                    <PWAInstallPrompt variant="button" />
                   </div>
                 </div>
 

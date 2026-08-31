@@ -227,7 +227,7 @@ export const ContractorsView: React.FC = () => {
                       <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
                         <span className="text-slate-500">نرخ کارمزد پایه هر قطعه:</span>
                         <span className="font-mono font-bold text-slate-900">
-                          {canViewPrices ? c.defaultUnitWage.toLocaleString('fa-IR') : '***'} ریال
+                          {canViewPrices ? (Number(c.defaultUnitWage) || 0).toLocaleString('fa-IR') : '***'} ریال
                         </span>
                       </div>
                     ) : null}
@@ -246,7 +246,7 @@ export const ContractorsView: React.FC = () => {
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-slate-500 font-medium">تیراژ کل تولید:</span>
                     <span className="font-mono font-bold text-slate-800">
-                      {summary.totalProducedQuantity.toLocaleString('fa-IR')} عدد
+                      {(Number(summary.totalProducedQuantity) || 0).toLocaleString('fa-IR')} عدد
                     </span>
                   </div>
 
@@ -256,7 +256,7 @@ export const ContractorsView: React.FC = () => {
                       <span className={`font-mono font-black text-xs ${
                         summary.status === 'Creditor' ? 'text-amber-700' : summary.status === 'Debtor' ? 'text-blue-700' : 'text-emerald-700'
                       }`}>
-                        {canViewPrices ? summary.balance.toLocaleString('fa-IR') : '***'} ریال
+                        {canViewPrices ? (Number(summary.balance) || 0).toLocaleString('fa-IR') : '***'} ریال
                       </span>
                       <span className={`text-[9px] px-1.5 py-0.2 font-bold rounded ${
                         summary.status === 'Creditor' ? 'bg-amber-100 text-amber-800' : summary.status === 'Debtor' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'
