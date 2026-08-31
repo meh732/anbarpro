@@ -4,8 +4,10 @@ import { MessengerBackupConfig } from '../types';
 import { 
   Send, Bot, MessageSquare, ShieldCheck, CheckCircle2, AlertCircle, 
   RefreshCw, Check, Copy, Clock, Zap, Eye, EyeOff, Radio, FileText,
-  HelpCircle, ExternalLink, ArrowRight, ShieldAlert, Sparkles, Database
+  HelpCircle, ExternalLink, ArrowRight, ShieldAlert, Sparkles, Database,
+  Settings2, ChevronDown, ChevronUp, Globe, Network, Shield
 } from 'lucide-react';
+import { normalizeDigits, cleanBotToken, cleanChatId } from '../utils/messengerUtils';
 
 export const MessengerBackupSettings: React.FC = () => {
   const { 
@@ -26,6 +28,8 @@ export const MessengerBackupSettings: React.FC = () => {
       adminChatId: '',
       sendAutoBackups: true,
       sendAlerts: true,
+      apiBaseUrl: 'https://api.telegram.org',
+      proxyUrl: '',
       ...(messengerConfig?.telegram || {})
     },
     bale: {
@@ -34,6 +38,7 @@ export const MessengerBackupSettings: React.FC = () => {
       adminChatId: '',
       sendAutoBackups: true,
       sendAlerts: true,
+      apiBaseUrl: 'https://tapi.bale.ai',
       ...(messengerConfig?.bale || {})
     },
     autoSendIntervalHours: messengerConfig?.autoSendIntervalHours || 24,
@@ -50,8 +55,17 @@ export const MessengerBackupSettings: React.FC = () => {
       setFormData(prev => ({
         ...prev,
         ...messengerConfig,
-        telegram: { ...prev.telegram, ...(messengerConfig.telegram || {}) },
-        bale: { ...prev.bale, ...(messengerConfig.bale || {}) },
+        telegram: { 
+          ...prev.telegram, 
+          ...(messengerConfig.telegram || {}),
+          apiBaseUrl: messengerConfig.telegram?.apiBaseUrl || 'https://api.telegram.org',
+          proxyUrl: messengerConfig.telegram?.proxyUrl || '',
+        },
+        bale: { 
+          ...prev.bale, 
+          ...(messengerConfig.bale || {}),
+          apiBaseUrl: messengerConfig.bale?.apiBaseUrl || 'https://tapi.bale.ai',
+        },
       }));
     }
   }, [messengerConfig]);
@@ -59,6 +73,8 @@ export const MessengerBackupSettings: React.FC = () => {
   // UI helpers
   const [showTelegramToken, setShowTelegramToken] = useState(false);
   const [showBaleToken, setShowBaleToken] = useState(false);
+  const [showTelegramAdvanced, setShowTelegramAdvanced] = useState(false);
+  const [showBaleAdvanced, setShowBaleAdvanced] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
@@ -76,19 +92,32 @@ export const MessengerBackupSettings: React.FC = () => {
     error?: string;
   } | null>(null);
 
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2500);
+  const sanitizeFormData = (): MessengerBackupConfig => {
+    return {
+      ...formData,
+      telegram: {
+        ...formData.telegram,
+        botToken: cleanBotToken(formData.telegram.botToken),
+        adminChatId: cleanChatId(formData.telegram.adminChatId),
+        apiBaseUrl: formData.telegram.apiBaseUrl?.trim() || 'https://api.telegram.org',
+        proxyUrl: formData.telegram.proxyUrl?.trim() || '',
+      },
+      bale: {
+        ...formData.bale,
+        botToken: cleanBotToken(formData.bale.botToken),
+        adminChatId: cleanChatId(formData.bale.adminChatId),
+        apiBaseUrl: formData.bale.apiBaseUrl?.trim() || 'https://tapi.bale.ai',
+      }
+    };
   };
 
   const handleSaveConfig = async () => {
     setIsSaving(true);
     setSaveSuccessMsg(null);
     try {
-      const ok = await updateMessengerConfig(formData);
+      const sanitized = sanitizeFormData();
+      setFormData(sanitized);
+      const ok = await updateMessengerConfig(sanitized);
       if (ok) {
         setSaveSuccessMsg('تنظیمات ربات‌های تلگرام و بله با موفقیت ذخیره گردید.');
         setTimeout(() => setSaveSuccessMsg(null), 4000);
@@ -106,7 +135,15 @@ export const MessengerBackupSettings: React.FC = () => {
     setIsTestingTelegram(true);
     setTelegramTestResult(null);
     try {
-      const res = await testMessengerBot('telegram', formData.telegram.botToken, formData.telegram.adminChatId);
+      const cleanToken = cleanBotToken(formData.telegram.botToken);
+      const cleanChat = cleanChatId(formData.telegram.adminChatId);
+      const proxy = formData.telegram.proxyUrl?.trim();
+      const baseUrl = formData.telegram.apiBaseUrl?.trim();
+
+      const res = await testMessengerBot('telegram', cleanToken, cleanChat, {
+        proxyUrl: proxy,
+        apiBaseUrl: baseUrl,
+      });
       setTelegramTestResult(res);
     } catch (err: any) {
       setTelegramTestResult({ success: false, message: err.message || 'خطا در تست تلگرام' });
@@ -119,7 +156,13 @@ export const MessengerBackupSettings: React.FC = () => {
     setIsTestingBale(true);
     setBaleTestResult(null);
     try {
-      const res = await testMessengerBot('bale', formData.bale.botToken, formData.bale.adminChatId);
+      const cleanToken = cleanBotToken(formData.bale.botToken);
+      const cleanChat = cleanChatId(formData.bale.adminChatId);
+      const baseUrl = formData.bale.apiBaseUrl?.trim();
+
+      const res = await testMessengerBot('bale', cleanToken, cleanChat, {
+        apiBaseUrl: baseUrl,
+      });
       setBaleTestResult(res);
     } catch (err: any) {
       setBaleTestResult({ success: false, message: err.message || 'خطا در تست بله' });
@@ -131,7 +174,8 @@ export const MessengerBackupSettings: React.FC = () => {
   const handleTriggerBackup = async (target: 'all' | 'telegram' | 'bale') => {
     setDispatchResult(null);
     // Auto-save any unsaved inputs before sending
-    await updateMessengerConfig(formData);
+    const sanitized = sanitizeFormData();
+    await updateMessengerConfig(sanitized);
     const res = await sendBackupToMessengers(target);
     setDispatchResult(res);
   };
@@ -297,10 +341,13 @@ export const MessengerBackupSettings: React.FC = () => {
                   <input
                     type={showTelegramToken ? 'text' : 'password'}
                     value={formData.telegram.botToken}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      telegram: { ...prev.telegram, botToken: e.target.value.trim() }
-                    }))}
+                    onChange={(e) => {
+                      const val = normalizeDigits(e.target.value);
+                      setFormData(prev => ({
+                        ...prev,
+                        telegram: { ...prev.telegram, botToken: val }
+                      }));
+                    }}
                     placeholder="مثال: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                   />
@@ -323,16 +370,76 @@ export const MessengerBackupSettings: React.FC = () => {
                 <input
                   type="text"
                   value={formData.telegram.adminChatId}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    telegram: { ...prev.telegram, adminChatId: e.target.value.trim() }
-                  }))}
+                  onChange={(e) => {
+                    const val = normalizeDigits(e.target.value);
+                    setFormData(prev => ({
+                      ...prev,
+                      telegram: { ...prev.telegram, adminChatId: val }
+                    }));
+                  }}
                   placeholder="مثال: 987654321 (شناسه عددی اکانت شما در تلگرام)"
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">
-                  💡 نکته: برای دریافت Chat ID خود در تلگرام، به ربات <code className="font-mono text-sky-600">@userinfobot</code> در تلگرام پیام دهید. همچنین باید ربات خود را یک بار Start کنید.
+                  💡 نکته: برای دریافت Chat ID خود در تلگرام، به ربات <code className="font-mono text-sky-600">@userinfobot</code> در تلگرام پیام دهید. <b>دقت کنید که حتماً باید ربات خود را یک بار Start کنید.</b>
                 </p>
+              </div>
+
+              {/* Advanced Network / Proxy Accordion for Telegram */}
+              <div className="border border-slate-200 rounded-2xl p-3 bg-slate-50/70">
+                <button
+                  type="button"
+                  onClick={() => setShowTelegramAdvanced(!showTelegramAdvanced)}
+                  className="w-full flex items-center justify-between text-xs font-bold text-slate-700 cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5 text-sky-800">
+                    <Network className="w-3.5 h-3.5" />
+                    تنظیمات پیشرفته اتصال و پروکسی تلگرام (در صورت فیلترینگ)
+                  </span>
+                  {showTelegramAdvanced ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                </button>
+
+                {showTelegramAdvanced && (
+                  <div className="mt-3 space-y-3 pt-2 border-t border-slate-200/80 animate-fadeIn text-xs">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        آدرس سرور پروکسی (HTTP / HTTPS / SOCKS5 Proxy):
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.telegram.proxyUrl || ''}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          telegram: { ...prev.telegram, proxyUrl: e.target.value.trim() }
+                        }))}
+                        placeholder="مثال: http://127.0.0.1:1080 یا socks5://127.0.0.1:1080"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:border-sky-500 focus:ring-1 focus:ring-sky-100"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        اگر سرور شما در ایران قرار دارد، می‌توانید با وارد کردن پروکسی محلی اتصال به تلگرام را بدون قطعی برقرار کنید.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        آدرس پایه وب‌سرویس تلگرام (Custom Bot API Base URL):
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.telegram.apiBaseUrl || ''}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          telegram: { ...prev.telegram, apiBaseUrl: e.target.value.trim() }
+                        }))}
+                        placeholder="پیش‌فرض: https://api.telegram.org"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:border-sky-500 focus:ring-1 focus:ring-sky-100"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        در صورت استفاده از Reverse Proxy یا Local Bot API سرور اختصاصی.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Sub-options */}
@@ -379,11 +486,11 @@ export const MessengerBackupSettings: React.FC = () => {
 
               {/* Test Result Message */}
               {telegramTestResult && (
-                <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                <div className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2 ${
                   telegramTestResult.success ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
                 }`}>
-                  {telegramTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
-                  <span>{telegramTestResult.message}</span>
+                  {telegramTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />}
+                  <span className="leading-relaxed">{telegramTestResult.message}</span>
                 </div>
               )}
             </div>
@@ -459,10 +566,13 @@ export const MessengerBackupSettings: React.FC = () => {
                   <input
                     type={showBaleToken ? 'text' : 'password'}
                     value={formData.bale.botToken}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      bale: { ...prev.bale, botToken: e.target.value.trim() }
-                    }))}
+                    onChange={(e) => {
+                      const val = normalizeDigits(e.target.value);
+                      setFormData(prev => ({
+                        ...prev,
+                        bale: { ...prev.bale, botToken: val }
+                      }));
+                    }}
                     placeholder="مثال: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                   />
@@ -480,21 +590,57 @@ export const MessengerBackupSettings: React.FC = () => {
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
                   <span>شناسه چت ادمین در بله (Bale Admin Chat ID):</span>
-                  <span className="text-[10px] text-emerald-700 font-bold">شناسه مستقل بله (متفاوت از تلگرام)</span>
+                  <span className="text-[10px] text-emerald-700 font-bold">شناسه مستقل بله (عددی)</span>
                 </label>
                 <input
                   type="text"
                   value={formData.bale.adminChatId}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    bale: { ...prev.bale, adminChatId: e.target.value.trim() }
-                  }))}
+                  onChange={(e) => {
+                    const val = normalizeDigits(e.target.value);
+                    setFormData(prev => ({
+                      ...prev,
+                      bale: { ...prev.bale, adminChatId: val }
+                    }));
+                  }}
                   placeholder="مثال: 1987654321 (شناسه عددی اکانت شما در بله)"
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">
-                  💡 نکته: شناسه کاربری ادمین در بله با تلگرام متفاوت است. در بله به ربات خود یا ربات‌های نمایش شناسه پیام داده و ربات را Start کنید.
+                  💡 نکته: شناسه کاربری ادمین در بله با تلگرام متفاوت است. <b>حتماً ابتدا در بله وارد بازوبند خود شده و دکمه شروع (Start) را لمس فرمایید.</b>
                 </p>
+              </div>
+
+              {/* Advanced Network for Bale */}
+              <div className="border border-slate-200 rounded-2xl p-3 bg-slate-50/70">
+                <button
+                  type="button"
+                  onClick={() => setShowBaleAdvanced(!showBaleAdvanced)}
+                  className="w-full flex items-center justify-between text-xs font-bold text-slate-700 cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5 text-emerald-800">
+                    <Globe className="w-3.5 h-3.5" />
+                    تنظیمات پیشرفته آدرس وب‌سرویس بله
+                  </span>
+                  {showBaleAdvanced ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                </button>
+
+                {showBaleAdvanced && (
+                  <div className="mt-3 space-y-2 pt-2 border-t border-slate-200/80 animate-fadeIn text-xs">
+                    <label className="block text-[11px] font-bold text-slate-700">
+                      آدرس پایه وب‌سرویس بله (Bale API Base URL):
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.bale.apiBaseUrl || ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        bale: { ...prev.bale, apiBaseUrl: e.target.value.trim() }
+                      }))}
+                      placeholder="پیش‌فرض: https://tapi.bale.ai"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono dir-ltr text-left text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Sub-options */}
@@ -541,11 +687,11 @@ export const MessengerBackupSettings: React.FC = () => {
 
               {/* Test Result Message */}
               {baleTestResult && (
-                <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                <div className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2 ${
                   baleTestResult.success ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
                 }`}>
-                  {baleTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
-                  <span>{baleTestResult.message}</span>
+                  {baleTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />}
+                  <span className="leading-relaxed">{baleTestResult.message}</span>
                 </div>
               )}
             </div>
@@ -655,7 +801,7 @@ export const MessengerBackupSettings: React.FC = () => {
         {/* Bottom Save Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
           <div className="text-[11px] text-slate-500">
-            * پشتیبان‌گیری در پس‌زمینه سیستم توسط سرور لینوکس نودجی‌اس انجام می‌گیرد.
+            * پشتیبان‌گیری در پس‌زمینه سیستم توسط سرور مرکزی لینوکس انجام می‌گیرد.
           </div>
 
           <button
@@ -683,11 +829,12 @@ export const MessengerBackupSettings: React.FC = () => {
               <Send className="w-3.5 h-3.5 text-sky-600" />
               مراحل راه‌اندازی در تلگرام:
             </h5>
-            <ol className="list-decimal list-inside space-y-1 text-slate-700 text-[11px]">
+            <ol className="list-decimal list-inside space-y-1.5 text-slate-700 text-[11px]">
               <li>در تلگرام به <code className="font-mono text-sky-700 font-bold">@BotFather</code> رفته و دستور <code className="font-mono text-sky-700 font-bold">/newbot</code> را بزنید.</li>
               <li>نام و آیدی ربات را تعیین کرده و توکن (Token) دریافتی را در فیلد بالا کپی کنید.</li>
-              <li>به ربات ساخته‌شده خود رفته و دکمه <b>Start</b> را بزنید.</li>
+              <li><b>بسیار مهم:</b> وارد صفحه ربات تازه ایجاد شده خود شوید و دکمه <b>Start</b> را بزنید تا اجازه دریافت پیام فعال شود.</li>
               <li>برای دریافت Chat ID عددی خود، به ربات <code className="font-mono text-sky-700 font-bold">@userinfobot</code> پیام دهید و عدد Id را در کادر شناسه چت وارد کنید.</li>
+              <li>در صورتی که سرور در ایران قرار دارد و تلگرام فیلتر است، در بخش «تنظیمات پیشرفته» آدرس پروکسی (مانند <code className="font-mono text-[10px]">http://127.0.0.1:1080</code>) را مشخص کنید.</li>
             </ol>
           </div>
 
@@ -696,11 +843,12 @@ export const MessengerBackupSettings: React.FC = () => {
               <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
               مراحل راه‌اندازی در پیام‌رسان بله (Bale):
             </h5>
-            <ol className="list-decimal list-inside space-y-1 text-slate-700 text-[11px]">
+            <ol className="list-decimal list-inside space-y-1.5 text-slate-700 text-[11px]">
               <li>در اپلیکیشن بله، به ربات بازوبندساز <code className="font-mono text-emerald-700 font-bold">@BotFather</code> پیام دهید.</li>
               <li>دستور ایجاد بازوبند جدید را انتخاب کنید و توکن ارائه‌شده را در فیلد بالا قرار دهید.</li>
-              <li>به بازوبند خود در بله رفته و آن را <b>Start</b> نمایید.</li>
-              <li>شناسه کاربری اکانت بله خود را در کادر «شناسه چت ادمین در بله» ثبت کنید.</li>
+              <li><b>بسیار مهم:</b> به بازوبند ساخته‌شده خود در بله رفته و دکمه <b>شروع (Start)</b> را لمس نمایید.</li>
+              <li>شناسه کاربری عددی اکانت بله خود را در کادر «شناسه چت ادمین در بله» ثبت کنید.</li>
+              <li>پیام‌رسان بله کاملاً داخلی بوده و بدون نیاز به فیلترشکن در تمامی سرورهای ایران با بالاترین سرعت کار می‌کند.</li>
             </ol>
           </div>
         </div>

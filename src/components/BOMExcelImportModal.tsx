@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { importBOMsBatch, items, boms, language } = useApp();
+  const { importBOMsBatch, items, boms, projects, language } = useApp();
   const isFa = language === 'fa';
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -34,8 +34,13 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setSuccessReport(null);
 
     try {
-      const res = await parseBOMsFromExcel(selected, items);
-      setParsedResult(res);
+      const res = await parseBOMsFromExcel(selected, items, projects || []);
+      setParsedResult({
+        boms: res.boms || [],
+        errors: res.errors || [],
+        warnings: res.warnings || [],
+        totalRowsParsed: res.totalRowsParsed || res.totalRows || 0
+      });
     } catch (err: any) {
       setParsedResult({
         boms: [],
@@ -50,8 +55,17 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const handleApplyImport = () => {
     if (!parsedResult || parsedResult.boms.length === 0) return;
-    const report = importBOMsBatch(parsedResult.boms);
-    setSuccessReport({ count: report.count });
+    try {
+      const report = importBOMsBatch(parsedResult.boms);
+      setSuccessReport({ count: report.count });
+    } catch (err: any) {
+      setParsedResult(prev => ({
+        boms: prev?.boms || [],
+        errors: [...(prev?.errors || []), `خطا در ثبت فرمول‌های ساخت: ${err?.message || 'خطای سیستمی'}`],
+        warnings: prev?.warnings || [],
+        totalRowsParsed: prev?.totalRowsParsed || 0
+      }));
+    }
   };
 
   const handleReset = () => {
@@ -77,7 +91,7 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
           <button 
             onClick={onClose} 
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -98,7 +112,7 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
             <button
               onClick={() => generateBOMsExcelTemplate(items)}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-purple-50 text-purple-700 border border-purple-300 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs shrink-0"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-purple-50 text-purple-700 border border-purple-300 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs shrink-0 cursor-pointer"
             >
               <Download className="w-4 h-4" />
               <span>دانلود فایل نمونه اکسل فرمول ساخت</span>
@@ -149,7 +163,7 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
           )}
 
           {/* Warnings & Errors */}
-          {parsedResult && parsedResult.errors.length > 0 && (
+          {parsedResult && parsedResult.errors && parsedResult.errors.length > 0 && (
             <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
               <div className="flex items-center gap-2 text-xs font-bold text-rose-800">
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -163,7 +177,7 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           )}
 
-          {parsedResult && parsedResult.warnings.length > 0 && (
+          {parsedResult && parsedResult.warnings && parsedResult.warnings.length > 0 && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
               <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -178,7 +192,7 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
           )}
 
           {/* Preview Table */}
-          {parsedResult && parsedResult.boms.length > 0 && (
+          {parsedResult && parsedResult.boms && parsedResult.boms.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
@@ -198,19 +212,20 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
                         <div className="flex items-center gap-2">
                           <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-600 text-white font-mono">
-                            نسخه {bom.version}
+                            نسخه {bom.version || 'v1.0'}
                           </span>
                           <span className="text-xs font-bold text-slate-900">{bom.name}</span>
                           <span className="text-[11px] text-slate-500 font-mono">({targetItem?.code || bom.finishedItemId})</span>
                         </div>
                         <span className="text-[11px] font-bold text-indigo-700 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">
-                          {bom.items.length} قلم تشکیل‌دهنده
+                          {bom.items?.length || 0} قلم تشکیل‌دهنده
                         </span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                        {bom.items.map((comp, cIdx) => {
+                        {bom.items && bom.items.map((comp, cIdx) => {
                           const raw = items.find(i => i.id === comp.itemId);
+                          const qty = Number(comp.quantityNeeded) || 0;
                           return (
                             <div key={cIdx} className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
                               <div className="truncate pr-1">
@@ -218,11 +233,11 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                 <div className="text-[10px] text-slate-400 font-mono">{raw?.code || comp.itemId}</div>
                               </div>
                               <div className="text-left shrink-0 pl-1">
-                                <span className="font-bold text-purple-700 font-mono text-xs">{comp.quantityNeeded}</span>
+                                <span className="font-bold text-purple-700 font-mono text-xs">{qty.toLocaleString('fa-IR')}</span>
                                 <span className="text-[10px] text-slate-500 mr-1">{comp.unit || 'عدد'}</span>
-                                {comp.scrapAllowancePercent ? (
+                                {Boolean(comp.scrapAllowancePercent) && (
                                   <span className="text-[9px] text-amber-700 block font-bold">+{comp.scrapAllowancePercent}٪ ضایعات</span>
-                                ) : null}
+                                )}
                               </div>
                             </div>
                           );
@@ -240,7 +255,7 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
           <button
             onClick={handleReset}
-            className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-colors"
+            className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
           >
             پاکسازی و انتخاب مجدد
           </button>
@@ -248,17 +263,17 @@ export const BOMExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors"
+              className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
             >
               بستن
             </button>
-            {parsedResult && parsedResult.boms.length > 0 && !successReport && (
+            {parsedResult && parsedResult.boms && parsedResult.boms.length > 0 && !successReport && (
               <button
                 onClick={handleApplyImport}
                 className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-md shadow-purple-600/20 transition-all cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4" />
-                <span>تایید و ذخیره {parsedResult.boms.length} فرمول ساخت در سیستم</span>
+                <span>تایید و ذخیره فرمول‌های ساخت ({parsedResult.boms.length} فرمول)</span>
               </button>
             )}
           </div>

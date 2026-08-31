@@ -311,7 +311,12 @@ interface AppContextType {
   messengerConfig: MessengerBackupConfig;
   updateMessengerConfig: (config: Partial<MessengerBackupConfig>) => Promise<boolean>;
   sendBackupToMessengers: (target?: 'all' | 'telegram' | 'bale') => Promise<{ success: boolean; results?: any; error?: string }>;
-  testMessengerBot: (platform: 'telegram' | 'bale', botToken?: string, chatId?: string) => Promise<{ success: boolean; message: string }>;
+  testMessengerBot: (
+    platform: 'telegram' | 'bale', 
+    botToken?: string, 
+    chatId?: string,
+    options?: { proxyUrl?: string; apiBaseUrl?: string }
+  ) => Promise<{ success: boolean; message: string }>;
   isSendingMessengerBackup: boolean;
 
   // Lite Mode / Performance Toggle for Low-End Devices
@@ -3675,12 +3680,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const testMessengerBot = async (platform: 'telegram' | 'bale', botToken?: string, chatId?: string): Promise<{ success: boolean; message: string }> => {
+  const testMessengerBot = async (
+    platform: 'telegram' | 'bale', 
+    botToken?: string, 
+    chatId?: string,
+    options?: { proxyUrl?: string; apiBaseUrl?: string }
+  ): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await fetch(getApiUrl('/api/messenger/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, botToken, chatId }),
+        body: JSON.stringify({ 
+          platform, 
+          botToken, 
+          chatId,
+          proxyUrl: options?.proxyUrl,
+          apiBaseUrl: options?.apiBaseUrl,
+        }),
       });
       const data = await res.json();
       return { success: data.success, message: data.message || data.error || 'خطا در دریافت پاسخ' };

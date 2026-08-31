@@ -21,7 +21,11 @@ export interface Item {
   maxStock: number;
   itemType: ItemType;
   unitPrice: number; // قیمت واحد به تومان
+  price?: number; // نام جایگزین برای قیمت واحد
+  minStockAlert?: boolean;
+  systemQuantity?: number;
   locationInRack?: string; // قفسه و ردیف
+  locationInWarehouse?: string;
   imageUrl?: string;
   createdAt: string;
 }
@@ -74,10 +78,13 @@ export type StockInType = 'Purchase' | 'ProductionReturn' | 'CustomerReturn' | '
 export interface StockInDoc {
   id: string;
   docNumber: string;
+  documentNumber?: string;
   date: string;
   supplier: string;
+  supplierName?: string;
   registeredBy: string;
   warehouseId: string;
+  warehouseName?: string;
   entryType: StockInType;
   items: {
     itemId: string;
@@ -135,6 +142,7 @@ export interface WarehouseTransfer {
   stepId?: string; // شناسه مرحله پروژه (برای تحویل قطعات)
   projectName?: string; // نام پروژه
   requestedBy: string; // ثبت‌کننده درخواست (مسئول آنالیز پروژه)
+  registeredBy?: string;
   requestDate?: string;
   dispatchedBy?: string; // تاییدکننده و انباردار مرکزی
   dispatchDate?: string;
@@ -321,6 +329,7 @@ export interface Project {
   id: string;
   code: string;
   name: string;
+  title?: string;
   client: string;
   startDate: string;
   endDate: string;
@@ -382,6 +391,8 @@ export interface MaterialHandover {
 
 export interface ProductionLog {
   id: string;
+  docNumber?: string;
+  receiptNumber?: string;
   operatorId: string;
   operatorName: string;
   shift: 'Morning' | 'Evening' | 'Night';
@@ -421,10 +432,13 @@ export interface TraceabilityEvent {
   sourceWarehouseId?: string;
   targetWarehouseId?: string;
   docNumber?: string;
+  batchCode?: string;
+  serialNumber?: string;
   projectId?: string;
   operatorName?: string;
   quantity: number;
   details: string;
+  notes?: string;
   performedBy: string;
 }
 
@@ -540,6 +554,8 @@ export interface TelegramConfig {
   adminChatId: string;
   sendAutoBackups: boolean;
   sendAlerts?: boolean;
+  apiBaseUrl?: string; // آدرس اختصاصی یا آینه‌ای (پیش‌فرض: https://api.telegram.org)
+  proxyUrl?: string; // آدرس پروکسی سرور (مثال: http://127.0.0.1:1080 یا socks5://127.0.0.1:1080)
 }
 
 export interface BaleConfig {
@@ -548,6 +564,7 @@ export interface BaleConfig {
   adminChatId: string; // شناسه مجزای ادمین در پیام‌رسان بله
   sendAutoBackups: boolean;
   sendAlerts?: boolean;
+  apiBaseUrl?: string; // آدرس وب‌سرویس بله (پیش‌فرض: https://tapi.bale.ai)
 }
 
 export interface MessengerBackupConfig {

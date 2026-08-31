@@ -35,7 +35,12 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
     try {
       const res = await parseItemsFromExcel(selected);
-      setParsedResult(res);
+      setParsedResult({
+        items: res.items || [],
+        errors: res.errors || [],
+        warnings: res.warnings || [],
+        groupsToCreate: res.groupsToCreate || []
+      });
     } catch (err: any) {
       setParsedResult({
         items: [],
@@ -50,8 +55,17 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const handleApplyImport = () => {
     if (!parsedResult || parsedResult.items.length === 0) return;
-    const report = importItemsBatch(parsedResult.items, parsedResult.groupsToCreate);
-    setSuccessReport({ added: report.count, updated: report.updatedCount });
+    try {
+      const report = importItemsBatch(parsedResult.items, parsedResult.groupsToCreate);
+      setSuccessReport({ added: report.count, updated: report.updatedCount });
+    } catch (err: any) {
+      setParsedResult(prev => ({
+        items: prev?.items || [],
+        errors: [...(prev?.errors || []), `خطا در ثبت کالاها: ${err?.message || 'خطای سیستمی'}`],
+        warnings: prev?.warnings || [],
+        groupsToCreate: prev?.groupsToCreate || []
+      }));
+    }
   };
 
   const handleReset = () => {
@@ -68,6 +82,7 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
         return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-50 text-blue-700 border border-blue-200">قطعه / ماده اولیه</span>;
       case 'SemiFinished':
         return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">نیمه‌ساخته (مرحله‌ای)</span>;
+      case 'Finished':
       case 'FinishedProduct':
         return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">محصول نهایی</span>;
       default:
@@ -91,7 +106,7 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
           <button 
             onClick={onClose} 
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -112,7 +127,7 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
             <button
               onClick={() => generateItemsExcelTemplate()}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs shrink-0"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs shrink-0 cursor-pointer"
             >
               <Download className="w-4 h-4" />
               <span>دانلود فایل نمونه اکسل (Template)</span>
@@ -156,14 +171,14 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <div className="space-y-1">
                 <h4 className="text-xs font-bold text-emerald-900">اطلاعات کالاها با موفقیت در سیستم ثبت گردید!</h4>
                 <p className="text-xs text-emerald-700">
-                  تعداد <b>{successReport.added}</b> کالای جدید ثبت و <b>{successReport.updated}</b> کالا به‌روزرسانی شد. اطلاعات به صورت خودکار با سرور لینوکس نیز همگام‌سازی شد.
+                  تعداد <b>{successReport.added}</b> کالای جدید ثبت و <b>{successReport.updated}</b> کالا به‌روزرسانی شد.
                 </p>
               </div>
             </div>
           )}
 
           {/* Warnings & Errors */}
-          {parsedResult && parsedResult.errors.length > 0 && (
+          {parsedResult && parsedResult.errors && parsedResult.errors.length > 0 && (
             <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
               <div className="flex items-center gap-2 text-xs font-bold text-rose-800">
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -177,7 +192,7 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           )}
 
-          {parsedResult && parsedResult.warnings.length > 0 && (
+          {parsedResult && parsedResult.warnings && parsedResult.warnings.length > 0 && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
               <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -192,14 +207,14 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
           )}
 
           {/* Preview Table */}
-          {parsedResult && parsedResult.items.length > 0 && (
+          {parsedResult && parsedResult.items && parsedResult.items.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
                   <Layers className="w-4 h-4 text-indigo-600" />
                   <span>پیش‌نمایش اقلام آماده ثبت ({parsedResult.items.length} ردیف)</span>
                 </div>
-                {parsedResult.groupsToCreate.length > 0 && (
+                {parsedResult.groupsToCreate && parsedResult.groupsToCreate.length > 0 && (
                   <span className="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-lg font-bold">
                     {parsedResult.groupsToCreate.length} گروه جدید نیز خودکار ساخته خواهد شد
                   </span>
@@ -218,25 +233,30 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       <th className="p-2.5">زیرگروه</th>
                       <th className="p-2.5">واحد</th>
                       <th className="p-2.5">حداقل/حداکثر</th>
-                      <th className="p-2.5">قیمت واحد</th>
+                      <th className="p-2.5">قیمت واحد (ریال/تومان)</th>
                       <th className="p-2.5">موقعیت قفسه</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                    {parsedResult.items.map((it, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
-                        <td className="p-2.5 font-bold font-mono text-slate-900">{it.code}</td>
-                        <td className="p-2.5 font-bold text-slate-800">{it.name}</td>
-                        <td className="p-2.5">{getItemTypeBadge(it.itemType)}</td>
-                        <td className="p-2.5">{it.group}</td>
-                        <td className="p-2.5">{it.subGroup || '-'}</td>
-                        <td className="p-2.5">{it.unit}</td>
-                        <td className="p-2.5 font-mono text-[11px]">{it.minStock} / {it.maxStock}</td>
-                        <td className="p-2.5 font-mono text-[11px]">{it.unitPrice.toLocaleString('fa-IR')} ریال</td>
-                        <td className="p-2.5 font-mono text-[11px]">{it.locationInRack || '-'}</td>
-                      </tr>
-                    ))}
+                    {parsedResult.items.map((it, idx) => {
+                      const uPrice = Number(it.unitPrice) || 0;
+                      const minStk = Number(it.minStock) || 0;
+                      const maxStk = Number(it.maxStock) || 0;
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="p-2.5 font-bold font-mono text-slate-900">{it.code}</td>
+                          <td className="p-2.5 font-bold text-slate-800">{it.name}</td>
+                          <td className="p-2.5">{getItemTypeBadge(it.itemType)}</td>
+                          <td className="p-2.5">{it.group}</td>
+                          <td className="p-2.5">{it.subGroup || '-'}</td>
+                          <td className="p-2.5">{it.unit}</td>
+                          <td className="p-2.5 font-mono text-[11px]">{minStk.toLocaleString('fa-IR')} / {maxStk.toLocaleString('fa-IR')}</td>
+                          <td className="p-2.5 font-mono text-[11px]">{uPrice.toLocaleString('fa-IR')}</td>
+                          <td className="p-2.5 font-mono text-[11px]">{it.locationInRack || '-'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -248,7 +268,7 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
           <button
             onClick={handleReset}
-            className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-colors"
+            className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
           >
             پاکسازی و انتخاب مجدد
           </button>
@@ -256,11 +276,11 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors"
+              className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
             >
               بستن
             </button>
-            {parsedResult && parsedResult.items.length > 0 && !successReport && (
+            {parsedResult && parsedResult.items && parsedResult.items.length > 0 && !successReport && (
               <button
                 onClick={handleApplyImport}
                 className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer"

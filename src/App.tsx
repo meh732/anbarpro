@@ -25,6 +25,7 @@ import { ContractorsView } from './components/ContractorsView';
 import { KardexView } from './components/KardexView';
 import { ChatView } from './components/ChatView';
 import { ShieldAlert } from 'lucide-react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const MainContent: React.FC = () => {
   const { 
@@ -166,8 +167,10 @@ const MainContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <MainContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <MainContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

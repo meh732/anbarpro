@@ -351,7 +351,7 @@ async function startServer() {
   // POST /api/messenger/test - Send a test verification message to Telegram or Bale
   app.post('/api/messenger/test', async (req, res) => {
     try {
-      const { platform, botToken, chatId } = req.body;
+      const { platform, botToken, chatId, proxyUrl, apiBaseUrl } = req.body;
       const state = serverStore.getState();
       const config = state.messengerConfig;
 
@@ -361,22 +361,32 @@ async function startServer() {
       if (platform === 'telegram') {
         const token = botToken || config?.telegram?.botToken;
         const targetChatId = chatId || config?.telegram?.adminChatId;
+        const targetProxy = proxyUrl !== undefined ? proxyUrl : config?.telegram?.proxyUrl;
+        const targetBaseUrl = apiBaseUrl !== undefined ? apiBaseUrl : config?.telegram?.apiBaseUrl;
+
         if (!token || !targetChatId) {
           return res.status(400).json({ success: false, error: 'توکن ربات تلگرام یا شناسه چت ادمین تلگرام وارد نشده است.' });
         }
 
         const testMsg = `🤖 <b>تست اتصال ربات تلگرام سامانه انبارمه</b>\n\n✅ ارتباط ربات تلگرام با سرور مرکزی انبارمه با موفقیت برقرار است.\n📅 <b>تاریخ:</b> ${dateFa} | ⏰ <b>ساعت:</b> ${timeFa}\n🏢 <b>مجموعه:</b> ${state.companyName || 'انبار مرکزی'}\n\n📌 <i>پشتیبان‌های خودکار و هشدارهای سیستمی از این پس به این چت ارسال خواهند شد.</i>`;
-        const result = await sendTelegramMessage(token, targetChatId, testMsg);
+        const result = await sendTelegramMessage(token, targetChatId, testMsg, {
+          apiBaseUrl: targetBaseUrl,
+          proxyUrl: targetProxy,
+        });
         return res.json(result);
       } else if (platform === 'bale') {
         const token = botToken || config?.bale?.botToken;
         const targetChatId = chatId || config?.bale?.adminChatId;
+        const targetBaseUrl = apiBaseUrl !== undefined ? apiBaseUrl : config?.bale?.apiBaseUrl;
+
         if (!token || !targetChatId) {
           return res.status(400).json({ success: false, error: 'توکن بازوبند بله یا شناسه چت ادمین بله وارد نشده است.' });
         }
 
         const testMsg = `🤖 <b>تست اتصال بازوبند پیام‌رسان بله سامانه انبارمه</b>\n\n✅ ارتباط ربات بله با سرور مرکزی انبارمه با موفقیت برقرار شد.\n📅 <b>تاریخ:</b> ${dateFa} | ⏰ <b>ساعت:</b> ${timeFa}\n🏢 <b>مجموعه:</b> ${state.companyName || 'انبار مرکزی'}\n\n📌 <i>پشتیبان‌های خودکار پایگاه داده به این حساب بله ارسال خواهند شد.</i>`;
-        const result = await sendBaleMessage(token, targetChatId, testMsg);
+        const result = await sendBaleMessage(token, targetChatId, testMsg, {
+          apiBaseUrl: targetBaseUrl,
+        });
         return res.json(result);
       } else {
         return res.status(400).json({ success: false, error: 'پلتفرم نامعتبر است (telegram یا bale).' });
