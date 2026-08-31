@@ -645,12 +645,21 @@ EOF
         pm2 kill 2>/dev/null || true
     fi
     
-    echo -e "${YELLOW}🧹 Forcefully freeing port $DETECTED_PORT...${NC}"
+    echo -e "${YELLOW}🧹 Forcefully freeing port $DETECTED_PORT (fuser, lsof, ss fallbacks)...${NC}"
     if command -v fuser &> /dev/null; then
         fuser -k -9 $DETECTED_PORT/tcp 2>/dev/null || true
     else
         apt-get install -y psmisc &>/dev/null || yum install -y psmisc &>/dev/null || true
         fuser -k -9 $DETECTED_PORT/tcp 2>/dev/null || true
+    fi
+    if command -v lsof &> /dev/null; then
+        kill -9 $(lsof -t -i:$DETECTED_PORT) 2>/dev/null || true
+    fi
+    if command -v ss &> /dev/null; then
+        PIDS=$(ss -lptn "sport = :$DETECTED_PORT" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2)
+        if [ -n "$PIDS" ]; then
+            kill -9 $PIDS 2>/dev/null || true
+        fi
     fi
 
     systemctl daemon-reload
@@ -792,12 +801,21 @@ EOF
         pm2 kill 2>/dev/null || true
     fi
 
-    echo -e "${YELLOW}🧹 Forcefully freeing new port $NEW_PORT...${NC}"
+    echo -e "${YELLOW}🧹 Forcefully freeing new port $NEW_PORT (fuser, lsof, ss fallbacks)...${NC}"
     if command -v fuser &> /dev/null; then
         fuser -k -9 $NEW_PORT/tcp 2>/dev/null || true
     else
         apt-get install -y psmisc &>/dev/null || yum install -y psmisc &>/dev/null || true
         fuser -k -9 $NEW_PORT/tcp 2>/dev/null || true
+    fi
+    if command -v lsof &> /dev/null; then
+        kill -9 $(lsof -t -i:$NEW_PORT) 2>/dev/null || true
+    fi
+    if command -v ss &> /dev/null; then
+        PIDS=$(ss -lptn "sport = :$NEW_PORT" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2)
+        if [ -n "$PIDS" ]; then
+            kill -9 $PIDS 2>/dev/null || true
+        fi
     fi
 
     # Restart Services
@@ -844,6 +862,8 @@ uninstall_anbarpro() {
 show_status() {
     echo -e "\n${CYAN}📊 Current AnbarPro Service Status:${NC}"
     systemctl status anbarpro --no-pager
+    echo -e "\n${YELLOW}📋 Latest 30 Application Logs (Journalctl):${NC}"
+    journalctl -u anbarpro -n 30 --no-pager
     echo ""
     read -p "Press [Enter] to return to the main menu..." CONFIRM
 }

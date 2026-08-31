@@ -894,10 +894,18 @@ async function startServer() {
       console.error(`Please either stop the existing process or set a different PORT:`);
       console.error(`  fuser -k ${PORT}/tcp   (to kill the existing process)`);
       console.error(`  PORT=${PORT + 1} npm start (to run on another port)`);
+      process.exit(1);
     } else {
       console.error('[Server Fatal Error]:', err);
+      process.exit(1);
     }
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('[FATAL STARTUP ERROR]:', err);
+  try {
+    fs.writeFileSync(path.join(process.cwd(), 'startup_error.log'), String(err?.stack || err), 'utf-8');
+  } catch (_) {}
+  process.exit(1);
+});
