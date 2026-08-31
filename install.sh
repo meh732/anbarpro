@@ -73,7 +73,8 @@ show_menu() {
     echo -e "   ${CYAN}[5]${NC} Restart Web Service (Restart Service)"
     echo -e "   ${CYAN}[6]${NC} Stop Web Service (Stop Service)"
     echo -e "   ${CYAN}[7]${NC} Create Manual System Backup (Backup)"
-    echo -e "   ${RED}[8]${NC} Uninstall System Completely (Uninstall)"
+    echo -e "   ${GREEN}[8]${NC} Restore Database from Backup (Restore Data)"
+    echo -e "   ${RED}[9]${NC} Uninstall System Completely (Uninstall)"
     echo -e "   ${RED}[0]${NC} Exit Installer (Exit)"
     echo -e "${CYAN}==================================================================${NC}"
 }
@@ -907,10 +908,130 @@ manual_backup() {
     sleep 3
 }
 
+# Restore database from backup
+restore_backup() {
+    INSTALL_DIR="/usr/local/anbarpro"
+    if [ ! -d "$INSTALL_DIR" ]; then
+        echo -e "${RED}❌ Application folder not found!${NC}"
+        sleep 2
+        return 1
+    fi
+    
+    echo -e "\n${CYAN}🔎 Searching for available backups in system...${NC}"
+    
+    local count=0
+    local backup_paths=()
+    local backup_types=()
+    
+    # 1. Search for previous renamed directories:
+    for dir in $(ls -d /usr/local/anbarpro_backup_* 2>/dev/null); do
+        if [ -f "$dir/data/server_database.json" ]; then
+            backup_paths+=("$dir/data/server_database.json")
+            backup_types+=("Full directory backup: $dir")
+            ((count++))
+        fi
+    done
+    
+    # 2. Search for tar.gz backups inside backups directory
+    for archive in $(ls -t "$INSTALL_DIR/backups/"*.tar.gz 2>/dev/null); do
+        backup_paths+=("$archive")
+        backup_types+=("Compressed backup archive: $(basename "$archive")")
+        ((count++))
+    done
+    
+    if [ $count -eq 0 ]; then
+        echo -e "${RED}❌ No database backups found on this server!${NC}"
+        sleep 3
+        return 1
+    fi
+    
+    echo -e "\n${YELLOW}📋 Available backups found on your system:${NC}"
+    for i in "${!backup_paths[@]}"; do
+        echo -e "   [${GREEN}$((i+1))${NC}] ${backup_types[$i]}"
+    done
+    echo -e "   [${RED}0${NC}] Cancel (انصراف)"
+    
+    echo ""
+    read -p "🔢 Select backup to restore [0-$count]: " BACKUP_CHOICE
+    
+    if [ -z "$BACKUP_CHOICE" ] || [ "$BACKUP_CHOICE" -eq 0 ] 2>/dev/null; then
+        echo -e "${YELLOW}Restore operation cancelled.${NC}"
+        sleep 1.5
+        return 0
+    fi
+    
+    if ! [[ "$BACKUP_CHOICE" =~ ^[0-9]+$ ]] || [ "$BACKUP_CHOICE" -gt "$count" ] || [ "$BACKUP_CHOICE" -lt 1 ]; then
+        echo -e "${RED}❌ Invalid selection!${NC}"
+        sleep 1.5
+        return 1
+    fi
+    
+    local INDEX=$((BACKUP_CHOICE - 1))
+    local SELECTED_PATH="${backup_paths[$INDEX]}"
+    local SELECTED_TYPE="${backup_types[$INDEX]}"
+    
+    echo -e "\n${RED}⚠️ WARNING: Restoring will completely overwrite your current active database!${NC}"
+    read -p "Are you absolutely sure you want to restore? (yes/no): " CONFIRM_RESTORE
+    
+    if [ "$CONFIRM_RESTORE" != "yes" ]; then
+        echo -e "${YELLOW}Restore operation cancelled.${NC}"
+        sleep 1.5
+        return 0
+    fi
+    
+    echo -e "${YELLOW}🛑 Stopping service to safely overwrite database...${NC}"
+    systemctl stop anbarpro 2>/dev/null || true
+    
+    mkdir -p "$INSTALL_DIR/data"
+    local cp_exit=1
+    
+    if [[ "$SELECTED_PATH" == *.json ]]; then
+        # Direct file copy
+        cp -f "$SELECTED_PATH" "$INSTALL_DIR/data/server_database.json"
+        cp_exit=$?
+    elif [[ "$SELECTED_PATH" == *.tar.gz ]]; then
+        # Unpack server_database.json from tar.gz
+        local TMP_EXTRACT_DIR="/tmp/anbar_restore_$(date +%s)"
+        mkdir -p "$TMP_EXTRACT_DIR"
+        tar -xzf "$SELECTED_PATH" -C "$TMP_EXTRACT_DIR" data/server_database.json 2>/dev/null || tar -xzf "$SELECTED_PATH" -C "$TMP_EXTRACT_DIR" ./data/server_database.json 2>/dev/null || true
+        
+        if [ -f "$TMP_EXTRACT_DIR/data/server_database.json" ]; then
+            cp -f "$TMP_EXTRACT_DIR/data/server_database.json" "$INSTALL_DIR/data/server_database.json"
+            cp_exit=$?
+            rm -rf "$TMP_EXTRACT_DIR"
+        elif [ -f "$TMP_EXTRACT_DIR/./data/server_database.json" ]; then
+            cp -f "$TMP_EXTRACT_DIR/./data/server_database.json" "$INSTALL_DIR/data/server_database.json"
+            cp_exit=$?
+            rm -rf "$TMP_EXTRACT_DIR"
+        else
+            echo -e "${RED}❌ Failed to extract server_database.json from backup archive!${NC}"
+            rm -rf "$TMP_EXTRACT_DIR"
+            systemctl start anbarpro 2>/dev/null || true
+            sleep 3
+            return 1
+        fi
+    fi
+    
+    if [ "$cp_exit" -eq 0 ]; then
+        # Verify file ownership & permissions
+        chown -R root:root "$INSTALL_DIR/data" 2>/dev/null || true
+        chmod 600 "$INSTALL_DIR/data/server_database.json" 2>/dev/null || true
+        echo -e "${GREEN}✅ Database restored successfully!${NC}"
+    else
+        echo -e "${RED}❌ Failed to copy database file!${NC}"
+    fi
+    
+    echo -e "${YELLOW}⚡ Restarting service...${NC}"
+    systemctl restart anbarpro 2>/dev/null || true
+    
+    echo -e "${GREEN}🎉 DATABASE RESTORED AND SERVICE ONLINE! All your data is back!${NC}"
+    sleep 3
+}
+
 # Core menu loop
 while true; do
     show_menu
-    read -p "🔢 Please select an option [0-8]: " CHOICE
+    read -p "🔢 Please select an option [0-9]: " CHOICE
     case $CHOICE in
         1)
             install_anbarpro
@@ -934,6 +1055,9 @@ while true; do
             manual_backup
             ;;
         8)
+            restore_backup
+            ;;
+        9)
             uninstall_anbarpro
             ;;
         0)
