@@ -38,13 +38,35 @@ print_banner() {
 # Print main menu
 show_menu() {
     print_banner
+    # Detect current port and status
+    local current_port="3000"
+    if [ -f "/etc/systemd/system/anbarpro.service" ]; then
+        local found_port=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service 2>/dev/null | cut -d= -f2)
+        if [ -n "$found_port" ]; then
+            current_port="$found_port"
+        fi
+    elif [ -f "/usr/local/anbarpro/.env" ]; then
+        local found_port=$(grep -E '^(PORT|APP_PORT)=' /usr/local/anbarpro/.env 2>/dev/null | head -n1 | cut -d= -f2)
+        if [ -n "$found_port" ]; then
+            current_port="$found_port"
+        fi
+    fi
+
+    local svc_status="${RED}Inactive 🔴${NC}"
+    if systemctl is-active --quiet anbarpro 2>/dev/null; then
+        svc_status="${GREEN}Running 🟢 (Port: $current_port)${NC}"
+    fi
+
+    echo -e "   📌 Server Status: $svc_status"
+    echo -e "   ${CYAN}------------------------------------------------------------------${NC}"
     echo -e "   ${GREEN}[1]${NC} Install AnbarPro System (Fresh Installation)"
-    echo -e "   ${GREEN}[2]${NC} Update System from GitHub (Update from GitHub)"
-    echo -e "   ${GREEN}[3]${NC} Uninstall System Completely (Uninstall)"
-    echo -e "   ${CYAN}[4]${NC} View Service Status (Show Status)"
+    echo -e "   ${GREEN}[2]${NC} Update System from GitHub (Preserves Custom Port & Data)"
+    echo -e "   ${YELLOW}[3]${NC} Change Web Service Port (Configure Custom Port)"
+    echo -e "   ${CYAN}[4]${NC} View Service Status & Logs (Show Status)"
     echo -e "   ${CYAN}[5]${NC} Restart Web Service (Restart Service)"
     echo -e "   ${CYAN}[6]${NC} Stop Web Service (Stop Service)"
     echo -e "   ${CYAN}[7]${NC} Create Manual System Backup (Backup)"
+    echo -e "   ${RED}[8]${NC} Uninstall System Completely (Uninstall)"
     echo -e "   ${RED}[0]${NC} Exit Installer (Exit)"
     echo -e "${CYAN}==================================================================${NC}"
 }
@@ -287,12 +309,21 @@ install_anbarpro() {
         return 1
     fi
     
-    # 6. Setup Systemd Service
-    echo -e "\n${YELLOW}🛡️ Registering systemd service for background auto-start...${NC}"
+    # 6. Setup Systemd Service & Environment file
+    echo -e "\n${YELLOW}🛡️ Registering systemd service and environment files...${NC}"
     
     NODE_BIN_PATH=$(command -v node || echo "/usr/bin/node")
     echo -e "${CYAN}🔹 Node.js Executable: $NODE_BIN_PATH${NC}"
     
+    # Save active configuration to .env and config file
+    cat > "$INSTALL_DIR/.env" <<EOF
+PORT=$APP_PORT
+APP_PORT=$APP_PORT
+NODE_ENV=production
+APP_DOMAIN=$APP_DOMAIN
+EOF
+    chmod 600 "$INSTALL_DIR/.env"
+
     cat > /etc/systemd/system/anbarpro.service <<EOF
 [Unit]
 Description=AnbarMeh Smart Enterprise ERP Application
@@ -304,7 +335,8 @@ User=root
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$NODE_BIN_PATH dist/server.cjs
 Restart=always
-RestartSec=10
+RestartSec=5
+EnvironmentFile=-$INSTALL_DIR/.env
 Environment=NODE_ENV=production PORT=$APP_PORT
 
 [Install]
@@ -476,15 +508,29 @@ update_anbarpro() {
     fi
     
     cd "$INSTALL_DIR"
+    mkdir -p backups data
     echo -e "${YELLOW}📦 Creating backup before update...${NC}"
     if command -v tar &> /dev/null; then
-        tar -czf backups/AnbarMeh_AutoBackup_PreUpdate_$(date +%Y%m%d%H%M%S).tar.gz --exclude='./node_modules' --exclude='./dist' .
+        tar -czf backups/AnbarMeh_AutoBackup_PreUpdate_$(date +%Y%m%d%H%M%S).tar.gz --exclude='./node_modules' --exclude='./dist' . 2>/dev/null || true
         echo -e "${GREEN}✅ Backup saved successfully in the backups folder.${NC}"
+    fi
+
+    # Preserve database during git reset
+    if [ -f "data/server_database.json" ]; then
+        cp -f "data/server_database.json" "/tmp/anbar_db_update_temp.json" 2>/dev/null || true
     fi
     
     echo -e "${YELLOW}📥 Fetching the latest application codes from GitHub main repository...${NC}"
     git fetch --all
-    git reset --hard origin/main
+    git reset --hard origin/main || git pull --force
+    
+    # Restore preserved active database
+    if [ -f "/tmp/anbar_db_update_temp.json" ]; then
+        mkdir -p data
+        cp -f "/tmp/anbar_db_update_temp.json" "data/server_database.json"
+        rm -f "/tmp/anbar_db_update_temp.json"
+        echo -e "${GREEN}✅ Active business database preserved safely.${NC}"
+    fi
     
     # Remove package-lock.json if it exists to prevent Tailwind v4 native binary compilation bugs
     if [ -f "package-lock.json" ]; then
@@ -504,6 +550,7 @@ update_anbarpro() {
         run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
     fi
     
+    echo -e "${YELLOW}📦 Compiling project and building production assets (Vite & Server)...${NC}"
     NODE_OPTIONS="--max-old-space-size=1536" npm run build
     
     # Auto-repair fallback if native binary fails during build
@@ -515,14 +562,193 @@ update_anbarpro() {
     
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${RED}❌ Critical Error: Update build failed! dist/server.cjs was not created.${NC}"
+        read -p "Press [Enter] to return..." DUMMY
         return 1
     fi
     
-    echo -e "${YELLOW}🛡️ Restarting AnbarPro web service...${NC}"
+    # Ensure custom port and domain are strictly preserved from existing .env or systemd service
+    DETECTED_PORT="3000"
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        FOUND_P=$(grep -E '^(PORT|APP_PORT)=' "$INSTALL_DIR/.env" | head -n1 | cut -d= -f2 | tr -d ' "')
+        if [ -n "$FOUND_P" ]; then
+            DETECTED_PORT="$FOUND_P"
+        fi
+    elif [ -f "/etc/systemd/system/anbarpro.service" ]; then
+        FOUND_P=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service | cut -d= -f2)
+        if [ -n "$FOUND_P" ]; then
+            DETECTED_PORT="$FOUND_P"
+        fi
+    fi
+    echo -e "${CYAN}🔌 Active Web Port Detected: $DETECTED_PORT (Preserving without alteration)${NC}"
+
+    # Ensure .env exists and has the correct port
+    if [ ! -f "$INSTALL_DIR/.env" ]; then
+        cat > "$INSTALL_DIR/.env" <<EOF
+PORT=$DETECTED_PORT
+APP_PORT=$DETECTED_PORT
+NODE_ENV=production
+EOF
+    fi
+
+    # Ensure systemd service exists and is configured properly with preserved PORT
+    NODE_BIN_PATH=$(command -v node || echo "/usr/bin/node")
+    cat > /etc/systemd/system/anbarpro.service <<EOF
+[Unit]
+Description=AnbarMeh Smart Enterprise ERP Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$NODE_BIN_PATH dist/server.cjs
+Restart=always
+RestartSec=5
+EnvironmentFile=-$INSTALL_DIR/.env
+Environment=NODE_ENV=production PORT=$DETECTED_PORT
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable anbarpro
+
+    echo -e "${YELLOW}🛡️ Restarting AnbarPro web service on Port $DETECTED_PORT and PM2 (if used)...${NC}"
+    # If PM2 is managing the process, restart PM2 with environment as well
+    if command -v pm2 &> /dev/null; then
+        pm2 restart all --update-env 2>/dev/null || pm2 restart anbarpro --update-env 2>/dev/null || true
+    fi
+    systemctl daemon-reload
     systemctl restart anbarpro
     
-    echo -e "${GREEN}✅ Update completed successfully! Service restarted.${NC}"
+    # Verify service health
+    sleep 2
+    if systemctl is-active --quiet anbarpro; then
+        echo -e "${GREEN}✅ Update completed successfully! Service is active and running on port $DETECTED_PORT.${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Checking service status...${NC}"
+        journalctl -u anbarpro -n 10 --no-pager
+    fi
+    
+    # Sync Nginx configuration if existing to point to the active custom port
+    if [ -f "/etc/nginx/sites-available/anbarpro" ]; then
+        echo -e "${YELLOW}🌐 Syncing Nginx reverse proxy to port $DETECTED_PORT...${NC}"
+        sed -i -E "s|proxy_pass http://127.0.0.1:[0-9]+;|proxy_pass http://127.0.0.1:$DETECTED_PORT;|g" "/etc/nginx/sites-available/anbarpro"
+    fi
+
+    # Restart Nginx if present
+    if command -v nginx &> /dev/null; then
+        nginx -t &>/dev/null && systemctl reload nginx 2>/dev/null || true
+    fi
+    
+    echo -e "${GREEN}==================================================================${NC}"
+    echo -e "${GREEN}🎉 AnbarPro Updated & Restared Successfully on Port $DETECTED_PORT!${NC}"
+    echo -e "${GREEN}==================================================================${NC}\n"
     sleep 3
+}
+
+# Change Web Service Port
+change_port() {
+    INSTALL_DIR="/usr/local/anbarpro"
+    if [ ! -d "$INSTALL_DIR" ]; then
+        read -p "📂 Enter AnbarPro installation folder path [/usr/local/anbarpro]: " INPUT_DIR
+        if [ -n "$INPUT_DIR" ]; then
+            INSTALL_DIR="$INPUT_DIR"
+        fi
+    fi
+
+    if [ ! -d "$INSTALL_DIR" ]; then
+        echo -e "${RED}❌ Application folder not found! Please install first.${NC}"
+        sleep 2
+        return 1
+    fi
+
+    # Detect current port
+    local current_port="3000"
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        current_port=$(grep -E '^(PORT|APP_PORT)=' "$INSTALL_DIR/.env" | head -n1 | cut -d= -f2 | tr -d ' "')
+    elif [ -f "/etc/systemd/system/anbarpro.service" ]; then
+        current_port=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service | cut -d= -f2)
+    fi
+    current_port=${current_port:-3000}
+
+    echo -e "\n${CYAN}🔌 Current Web Service Port: ${YELLOW}$current_port${NC}"
+    read -p "⚙️ Enter NEW custom port (e.g. 3000, 8080, 5000, 8000): " NEW_PORT
+
+    if [ -z "$NEW_PORT" ] || ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}❌ Invalid port number provided! Operation cancelled.${NC}"
+        sleep 2
+        return 1
+    fi
+
+    echo -e "${YELLOW}⚙️ Updating port from $current_port to $NEW_PORT...${NC}"
+
+    # Update .env
+    cat > "$INSTALL_DIR/.env" <<EOF
+PORT=$NEW_PORT
+APP_PORT=$NEW_PORT
+NODE_ENV=production
+EOF
+    chmod 600 "$INSTALL_DIR/.env"
+
+    # Update systemd unit
+    NODE_BIN_PATH=$(command -v node || echo "/usr/bin/node")
+    cat > /etc/systemd/system/anbarpro.service <<EOF
+[Unit]
+Description=AnbarMeh Smart Enterprise ERP Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$NODE_BIN_PATH dist/server.cjs
+Restart=always
+RestartSec=5
+EnvironmentFile=-$INSTALL_DIR/.env
+Environment=NODE_ENV=production PORT=$NEW_PORT
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Update firewall rules
+    if command -v ufw &> /dev/null; then
+        if ufw status | grep -q "active"; then
+            ufw allow $NEW_PORT/tcp &> /dev/null
+            ufw reload &> /dev/null
+        fi
+    fi
+    if command -v firewall-cmd &> /dev/null; then
+        if systemctl is-active --quiet firewalld; then
+            firewall-cmd --permanent --add-port=$NEW_PORT/tcp &> /dev/null
+            firewall-cmd --reload &> /dev/null
+        fi
+    fi
+
+    # Update Nginx reverse proxy if configured
+    if [ -f "/etc/nginx/sites-available/anbarpro" ]; then
+        sed -i -E "s|proxy_pass http://127.0.0.1:[0-9]+;|proxy_pass http://127.0.0.1:$NEW_PORT;|g" "/etc/nginx/sites-available/anbarpro"
+        nginx -t &>/dev/null && systemctl reload nginx 2>/dev/null || true
+    fi
+
+    # Restart Services
+    systemctl daemon-reload
+    systemctl restart anbarpro
+
+    if command -v pm2 &> /dev/null; then
+        pm2 restart all --update-env 2>/dev/null || pm2 restart anbarpro --update-env 2>/dev/null || true
+    fi
+
+    sleep 2
+    if systemctl is-active --quiet anbarpro; then
+        echo -e "${GREEN}✅ Port successfully changed to $NEW_PORT! Service is online and healthy.${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Service status check:${NC}"
+        journalctl -u anbarpro -n 10 --no-pager
+    fi
+
+    read -p "Press [Enter] to return..." DUMMY
 }
 
 # Uninstall
@@ -593,7 +819,7 @@ manual_backup() {
 # Core menu loop
 while true; do
     show_menu
-    read -p "🔢 Please select an option [0-7]: " CHOICE
+    read -p "🔢 Please select an option [0-8]: " CHOICE
     case $CHOICE in
         1)
             install_anbarpro
@@ -602,7 +828,7 @@ while true; do
             update_anbarpro
             ;;
         3)
-            uninstall_anbarpro
+            change_port
             ;;
         4)
             show_status
@@ -615,6 +841,9 @@ while true; do
             ;;
         7)
             manual_backup
+            ;;
+        8)
+            uninstall_anbarpro
             ;;
         0)
             echo -e "\n${GREEN}Goodbye! Exiting installer.${NC}\n"

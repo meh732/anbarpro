@@ -123,7 +123,7 @@ pm2 delete anbarmeh-app 2>/dev/null || true
 
 # Start the application
 echo "=> Starting application with PM2..."
-pm2 start npm --name "anbarmeh-app" -- run start
+pm2 start "node dist/server.cjs" --name "anbarmeh-app" || pm2 restart anbarmeh-app
 
 # Setup PM2 startup script
 echo "=> Configuring PM2 to start on boot..."
