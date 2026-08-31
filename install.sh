@@ -566,20 +566,37 @@ update_anbarpro() {
         return 1
     fi
     
-    # Ensure custom port and domain are strictly preserved from existing .env or systemd service
+    # Ensure custom port and domain are strictly preserved from Nginx or existing configs
     DETECTED_PORT="3000"
-    if [ -f "$INSTALL_DIR/.env" ]; then
-        FOUND_P=$(grep -E '^(PORT|APP_PORT)=' "$INSTALL_DIR/.env" | head -n1 | cut -d= -f2 | tr -d ' "')
+    
+    # Primary Source of Truth: Nginx Reverse Proxy Config
+    if [ -f "/etc/nginx/sites-available/anbarpro" ]; then
+        FOUND_P=$(grep -oE 'proxy_pass http://127.0.0.1:[0-9]+' /etc/nginx/sites-available/anbarpro | grep -oE '[0-9]+$')
         if [ -n "$FOUND_P" ]; then
             DETECTED_PORT="$FOUND_P"
         fi
-    elif [ -f "/etc/systemd/system/anbarpro.service" ]; then
-        FOUND_P=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service | cut -d= -f2)
+    elif [ -f "/etc/nginx/conf.d/anbarpro.conf" ]; then
+        FOUND_P=$(grep -oE 'proxy_pass http://127.0.0.1:[0-9]+' /etc/nginx/conf.d/anbarpro.conf | grep -oE '[0-9]+$')
         if [ -n "$FOUND_P" ]; then
             DETECTED_PORT="$FOUND_P"
         fi
     fi
-    echo -e "${CYAN}🔌 Active Web Port Detected: $DETECTED_PORT (Preserving without alteration)${NC}"
+    
+    # Fallback to .env if nginx config not found
+    if [ "$DETECTED_PORT" = "3000" ]; then
+        if [ -f "$INSTALL_DIR/.env" ]; then
+            FOUND_P=$(grep -E '^(PORT|APP_PORT)=' "$INSTALL_DIR/.env" | head -n1 | cut -d= -f2 | tr -d ' "')
+            if [ -n "$FOUND_P" ]; then
+                DETECTED_PORT="$FOUND_P"
+            fi
+        elif [ -f "/etc/systemd/system/anbarpro.service" ]; then
+            FOUND_P=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service | cut -d= -f2)
+            if [ -n "$FOUND_P" ]; then
+                DETECTED_PORT="$FOUND_P"
+            fi
+        fi
+    fi
+    echo -e "${CYAN}🔌 Active Web Port Detected from Nginx/Env: $DETECTED_PORT (Preserving without alteration)${NC}"
 
     # Ensure .env exists and has the correct port
     if [ ! -f "$INSTALL_DIR/.env" ]; then
@@ -613,10 +630,15 @@ EOF
     systemctl daemon-reload
     systemctl enable anbarpro
 
-    echo -e "${YELLOW}🛡️ Restarting AnbarPro web service on Port $DETECTED_PORT and PM2 (if used)...${NC}"
-    # If PM2 is managing the process, restart PM2 with environment as well
+    echo -e "${YELLOW}🛡️ Restarting AnbarPro web service on Port $DETECTED_PORT...${NC}"
+    # Clean up legacy PM2 processes to prevent port conflicts with systemd (EADDRINUSE)
     if command -v pm2 &> /dev/null; then
-        pm2 restart all --update-env 2>/dev/null || pm2 restart anbarpro --update-env 2>/dev/null || true
+        echo -e "${YELLOW}🧹 Cleaning up legacy PM2 instances to prevent port conflicts...${NC}"
+        pm2 stop anbarpro 2>/dev/null || true
+        pm2 delete anbarpro 2>/dev/null || true
+        pm2 stop anbarmeh-app 2>/dev/null || true
+        pm2 delete anbarmeh-app 2>/dev/null || true
+        pm2 save 2>/dev/null || true
     fi
     systemctl daemon-reload
     systemctl restart anbarpro
@@ -634,6 +656,9 @@ EOF
     if [ -f "/etc/nginx/sites-available/anbarpro" ]; then
         echo -e "${YELLOW}🌐 Syncing Nginx reverse proxy to port $DETECTED_PORT...${NC}"
         sed -i -E "s|proxy_pass http://127.0.0.1:[0-9]+;|proxy_pass http://127.0.0.1:$DETECTED_PORT;|g" "/etc/nginx/sites-available/anbarpro"
+    elif [ -f "/etc/nginx/conf.d/anbarpro.conf" ]; then
+        echo -e "${YELLOW}🌐 Syncing Nginx reverse proxy to port $DETECTED_PORT...${NC}"
+        sed -i -E "s|proxy_pass http://127.0.0.1:[0-9]+;|proxy_pass http://127.0.0.1:$DETECTED_PORT;|g" "/etc/nginx/conf.d/anbarpro.conf"
     fi
 
     # Restart Nginx if present
@@ -663,9 +688,13 @@ change_port() {
         return 1
     fi
 
-    # Detect current port
+    # Detect current port from Nginx or Fallbacks
     local current_port="3000"
-    if [ -f "$INSTALL_DIR/.env" ]; then
+    if [ -f "/etc/nginx/sites-available/anbarpro" ]; then
+        current_port=$(grep -oE 'proxy_pass http://127.0.0.1:[0-9]+' /etc/nginx/sites-available/anbarpro | grep -oE '[0-9]+$')
+    elif [ -f "/etc/nginx/conf.d/anbarpro.conf" ]; then
+        current_port=$(grep -oE 'proxy_pass http://127.0.0.1:[0-9]+' /etc/nginx/conf.d/anbarpro.conf | grep -oE '[0-9]+$')
+    elif [ -f "$INSTALL_DIR/.env" ]; then
         current_port=$(grep -E '^(PORT|APP_PORT)=' "$INSTALL_DIR/.env" | head -n1 | cut -d= -f2 | tr -d ' "')
     elif [ -f "/etc/systemd/system/anbarpro.service" ]; then
         current_port=$(grep -o 'PORT=[0-9]\+' /etc/systemd/system/anbarpro.service | cut -d= -f2)
@@ -729,15 +758,23 @@ EOF
     # Update Nginx reverse proxy if configured
     if [ -f "/etc/nginx/sites-available/anbarpro" ]; then
         sed -i -E "s|proxy_pass http://127.0.0.1:[0-9]+;|proxy_pass http://127.0.0.1:$NEW_PORT;|g" "/etc/nginx/sites-available/anbarpro"
-        nginx -t &>/dev/null && systemctl reload nginx 2>/dev/null || true
+        nginx -t && systemctl reload nginx || echo -e "${RED}⚠️ Nginx reload failed. Check Nginx configuration.${NC}"
+    elif [ -f "/etc/nginx/conf.d/anbarpro.conf" ]; then
+        sed -i -E "s|proxy_pass http://127.0.0.1:[0-9]+;|proxy_pass http://127.0.0.1:$NEW_PORT;|g" "/etc/nginx/conf.d/anbarpro.conf"
+        nginx -t && systemctl reload nginx || echo -e "${RED}⚠️ Nginx reload failed. Check Nginx configuration.${NC}"
     fi
 
     # Restart Services
     systemctl daemon-reload
     systemctl restart anbarpro
 
+    # Clean up PM2 to avoid port conflicts
     if command -v pm2 &> /dev/null; then
-        pm2 restart all --update-env 2>/dev/null || pm2 restart anbarpro --update-env 2>/dev/null || true
+        pm2 stop anbarpro 2>/dev/null || true
+        pm2 delete anbarpro 2>/dev/null || true
+        pm2 stop anbarmeh-app 2>/dev/null || true
+        pm2 delete anbarmeh-app 2>/dev/null || true
+        pm2 save 2>/dev/null || true
     fi
 
     sleep 2
