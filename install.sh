@@ -507,6 +507,9 @@ update_anbarpro() {
         return 1
     fi
     
+    echo -e "${YELLOW}🛑 Stopping current service to free up memory for the update process...${NC}"
+    systemctl stop anbarpro 2>/dev/null || true
+    
     cd "$INSTALL_DIR"
     mkdir -p backups data
     echo -e "${YELLOW}📦 Creating backup before update...${NC}"
@@ -639,7 +642,17 @@ EOF
         pm2 stop anbarmeh-app 2>/dev/null || true
         pm2 delete anbarmeh-app 2>/dev/null || true
         pm2 save 2>/dev/null || true
+        pm2 kill 2>/dev/null || true
     fi
+    
+    echo -e "${YELLOW}🧹 Forcefully freeing port $DETECTED_PORT...${NC}"
+    if command -v fuser &> /dev/null; then
+        fuser -k -9 $DETECTED_PORT/tcp 2>/dev/null || true
+    else
+        apt-get install -y psmisc &>/dev/null || yum install -y psmisc &>/dev/null || true
+        fuser -k -9 $DETECTED_PORT/tcp 2>/dev/null || true
+    fi
+
     systemctl daemon-reload
     systemctl restart anbarpro
     
@@ -663,7 +676,12 @@ EOF
 
     # Restart Nginx if present
     if command -v nginx &> /dev/null; then
-        nginx -t &>/dev/null && systemctl reload nginx 2>/dev/null || true
+        echo -e "${YELLOW}🔄 Reloading Nginx...${NC}"
+        if nginx -t; then
+            systemctl reload nginx || systemctl restart nginx
+        else
+            echo -e "${RED}⚠️ Nginx configuration test failed! Check your Nginx config manually: nginx -t${NC}"
+        fi
     fi
     
     echo -e "${GREEN}==================================================================${NC}"
@@ -764,10 +782,6 @@ EOF
         nginx -t && systemctl reload nginx || echo -e "${RED}⚠️ Nginx reload failed. Check Nginx configuration.${NC}"
     fi
 
-    # Restart Services
-    systemctl daemon-reload
-    systemctl restart anbarpro
-
     # Clean up PM2 to avoid port conflicts
     if command -v pm2 &> /dev/null; then
         pm2 stop anbarpro 2>/dev/null || true
@@ -775,7 +789,20 @@ EOF
         pm2 stop anbarmeh-app 2>/dev/null || true
         pm2 delete anbarmeh-app 2>/dev/null || true
         pm2 save 2>/dev/null || true
+        pm2 kill 2>/dev/null || true
     fi
+
+    echo -e "${YELLOW}🧹 Forcefully freeing new port $NEW_PORT...${NC}"
+    if command -v fuser &> /dev/null; then
+        fuser -k -9 $NEW_PORT/tcp 2>/dev/null || true
+    else
+        apt-get install -y psmisc &>/dev/null || yum install -y psmisc &>/dev/null || true
+        fuser -k -9 $NEW_PORT/tcp 2>/dev/null || true
+    fi
+
+    # Restart Services
+    systemctl daemon-reload
+    systemctl restart anbarpro
 
     sleep 2
     if systemctl is-active --quiet anbarpro; then

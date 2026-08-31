@@ -1,0 +1,5 @@
+[Service]
+Type=simple
+EnvironmentFile=./test.env
+Environment=PORT=8888
+ExecStart=/usr/bin/env
