@@ -1,8 +1,6 @@
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
 import { MessengerBackupConfig, TelegramConfig, BaleConfig } from '../types';
 import { normalizeDigits, cleanBotToken, cleanChatId, escapeHtml, stripHtml } from '../utils/messengerUtils';
 
@@ -18,7 +16,7 @@ export interface SendResult {
 /**
  * Create Proxy Agent for HTTP/HTTPS/SOCKS requests
  */
-function getProxyAgent(proxyUrl?: string): http.Agent | https.Agent | undefined {
+async function getProxyAgent(proxyUrl?: string): Promise<http.Agent | https.Agent | undefined> {
   const activeProxy = proxyUrl?.trim() || 
                       process.env.HTTPS_PROXY || 
                       process.env.HTTP_PROXY || 
@@ -28,8 +26,10 @@ function getProxyAgent(proxyUrl?: string): http.Agent | https.Agent | undefined 
 
   try {
     if (activeProxy.startsWith('socks')) {
+      const { SocksProxyAgent } = await import('socks-proxy-agent');
       return new SocksProxyAgent(activeProxy);
     }
+    const { HttpsProxyAgent } = await import('https-proxy-agent');
     return new HttpsProxyAgent(activeProxy);
   } catch (err) {
     console.error('Error initializing proxy agent:', err);
@@ -53,7 +53,7 @@ async function executeHttpRequest(
   const parsedUrl = new URL(targetUrl);
   const isHttps = parsedUrl.protocol === 'https:';
   const timeout = options.timeoutMs || 20000;
-  const agent = getProxyAgent(options.proxyUrl);
+  const agent = await getProxyAgent(options.proxyUrl);
 
   return new Promise((resolve, reject) => {
     const reqOptions: https.RequestOptions = {
