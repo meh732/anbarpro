@@ -211,7 +211,7 @@ export const translations = {
     backupHistory: 'تاریخچه نسخه‌های پشتیبان',
     backupSuccessMsg: 'نسخه پشتیبان با موفقیت ایجاد و ذخیره شد.',
     restoreSuccessMsg: 'داده‌های سیستم با موفقیت بازیابی شدند.',
-    restoreErrorMsg: 'فایل پشتیبان انتخاب‌شده ساختار معتبر JSON داده‌های ElectroStock را ندارد.',
+    restoreErrorMsg: 'فایل پشتیبان انتخاب‌شده ساختار معتبر JSON داده‌های سامانه را ندارد.',
 
     // Linux Installer
     linuxInstallerTitle: 'دستورات نصب، آپدیت و مدیریت بر روی سرویس‌دهنده لینوکس',

@@ -3533,7 +3533,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const jsonContent = JSON.stringify(fullDb, null, 2);
     const sizeKb = Math.round(jsonContent.length / 1024);
     const nowIso = new Date().toISOString();
-    const fileName = `ElectroStock_Backup_${type}_${nowIso.substring(0, 10)}.json`;
+    const fileName = `AnbarPro_Backup_${type}_${nowIso.substring(0, 10)}.json`;
 
     const blob = new Blob([jsonContent], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -3584,8 +3584,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const importDatabaseJSON = (jsonStr: string): boolean => {
     try {
-      const data = JSON.parse(jsonStr);
-      if (data.items && data.warehouses && data.inventory) {
+      const parsed = JSON.parse(jsonStr);
+      const data = parsed.data || parsed;
+      if (data && data.items && data.warehouses && data.inventory) {
         setItems(data.items);
         setWarehouses(data.warehouses);
         setInventory(data.inventory);
