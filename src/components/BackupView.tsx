@@ -48,6 +48,9 @@ export const BackupView: React.FC = () => {
     message: ''
   });
 
+  const [includeChats, setIncludeChats] = useState(false);
+  const [includeAttachments, setIncludeAttachments] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCopy = (text: string, key: string) => {
@@ -1237,7 +1240,7 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">{t('manualBackup', 'پشتیبان‌گیری دستی')}</h3>
-                  <p className="text-xs text-slate-500">استخراج فوری تمام اطلاعات انبار، BOMها و پروژه‌ها در یک فایل JSON</p>
+                  <p className="text-xs text-slate-500">استخراج فوری تمام اطلاعات سامانه، کالاها، پروژه‌ها و مستندات در قالب یک فایل JSON جامع</p>
                 </div>
               </div>
 
@@ -1248,8 +1251,58 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                 </div>
               </div>
 
+              {/* Chat and Attachments Backup Filters */}
+              <div className="border-t border-slate-100 pt-3.5 space-y-3 bg-indigo-50/20 -mx-5 px-5 py-3 border-b">
+                <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1">
+                  <span className="text-indigo-600">⚙️</span>
+                  <span>فیلترهای حریم‌خصوصی و محتوای چت:</span>
+                </div>
+                
+                {/* Checkbox 1: Include Chats */}
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={includeChats}
+                    onChange={(e) => {
+                      setIncludeChats(e.target.checked);
+                      if (!e.target.checked) {
+                        setIncludeAttachments(false);
+                      }
+                    }}
+                    className="mt-1 rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                  />
+                  <div className="space-y-0.5 select-none">
+                    <span className="text-xs font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                      شامل تاریخچه پیام‌ها و گفتگوها (Chats)
+                    </span>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      اگر مایلید گفتگوهای کانال‌ها و پیام‌های پیام‌رسان داخلی نیز در فایل ذخیره شود، این گزینه را فعال کنید.
+                    </p>
+                  </div>
+                </label>
+
+                {/* Checkbox 2: Include Attachments */}
+                <label className={`flex items-start gap-3 cursor-pointer group transition-all ${!includeChats ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={includeAttachments}
+                    disabled={!includeChats}
+                    onChange={(e) => setIncludeAttachments(e.target.checked)}
+                    className="mt-1 rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                  />
+                  <div className="space-y-0.5 select-none">
+                    <span className="text-xs font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                      شامل فایل‌ها و پیوست‌های داخل گفتگو (Attachments)
+                    </span>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      شامل ارجاعات، فایل‌ها و پیوست‌های سیستمی رد و بدل شده در چت‌ها.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
               <button
-                onClick={() => exportDatabaseJSON('Manual')}
+                onClick={() => exportDatabaseJSON('Manual', { includeChats, includeAttachments })}
                 className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs cursor-pointer"
               >
                 <Download className="w-4 h-4" />

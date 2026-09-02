@@ -97,9 +97,13 @@ interface AppContextType {
   
   // Actions
   addMaterialHandover: (handover: Omit<MaterialHandover, 'id' | 'createdAt'>) => void;
-  addItem: (item: Omit<Item, 'id' | 'createdAt'>) => void;
+  addItem: (
+    item: Omit<Item, 'id' | 'createdAt'>, 
+    initialStock?: { quantity: number; warehouseId: string; notes?: string }
+  ) => void;
   updateItem: (id: string, updated: Partial<Item>) => void;
   deleteItem: (id: string) => void;
+  deleteItemsBatch: (ids: string[]) => void;
   
   addItemGroup: (group: Omit<ItemGroup, 'id'>) => void;
   updateItemGroup: (id: string, updated: Partial<ItemGroup>) => void;
@@ -264,7 +268,7 @@ interface AppContextType {
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
   resetToInitialData: () => void;
-  exportDatabaseJSON: (type?: 'Manual' | 'Auto') => void;
+  exportDatabaseJSON: (type?: 'Manual' | 'Auto', options?: { includeChats?: boolean; includeAttachments?: boolean }) => void;
   importDatabaseJSON: (jsonStr: string) => boolean;
   
   // Language & i18n
@@ -1574,14 +1578,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Item Management
-  const addItem = (itemData: Omit<Item, 'id' | 'createdAt'>) => {
+  const addItem = (
+    itemData: Omit<Item, 'id' | 'createdAt'>,
+    initialStock?: { quantity: number; warehouseId: string; notes?: string }
+  ) => {
+    const today = new Date().toISOString().substring(0, 10);
     const newItem: Item = {
       ...itemData,
       id: `item-${Date.now()}`,
-      createdAt: new Date().toISOString().substring(0, 10),
+      createdAt: today,
     };
     setItems(prev => [newItem, ...prev]);
     addAudit('تعریف کالای جدید', 'Item', newItem.code, `تعریف کالای ${newItem.name} با کد ${newItem.code}`);
+
+    // If initial stock was provided, register inventory balance and opening doc
+    if (initialStock && Number(initialStock.quantity) > 0 && initialStock.warehouseId) {
+      const qty = Number(initialStock.quantity);
+      const whId = initialStock.warehouseId;
+      
+      setInventory(prevInv => {
+        const existing = prevInv.find(i => i.warehouseId === whId && i.itemId === newItem.id);
+        if (existing) {
+          return prevInv.map(i => i.warehouseId === whId && i.itemId === newItem.id ? { ...i, quantity: i.quantity + qty, lastUpdated: today } : i);
+        }
+        return [...prevInv, {
+          warehouseId: whId,
+          itemId: newItem.id,
+          quantity: qty,
+          reservedQuantity: 0,
+          lastUpdated: today
+        }];
+      });
+
+      const openDocNum = `OPN-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(100 + Math.random() * 900)}`;
+      const newDoc: StockInDoc = {
+        id: `in-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        docNumber: openDocNum,
+        date: today,
+        supplier: 'سند افتتاحیه / ثبت اولیه کالا',
+        registeredBy: currentUser.fullName || 'مدیر انبار',
+        warehouseId: whId,
+        entryType: 'StockAdjustment',
+        status: 'Confirmed',
+        notes: initialStock.notes || `موجودی ابتدای دوره برای کالای جدید ${newItem.name}`,
+        items: [{
+          itemId: newItem.id,
+          quantity: qty,
+          unitPrice: newItem.unitPrice || 0,
+          notes: 'سند افتتاحیه'
+        }],
+        createdAt: today
+      };
+      setStockInDocs(prev => [newDoc, ...prev]);
+
+      const newTrace: TraceabilityEvent = {
+        id: `trc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        itemId: newItem.id,
+        eventType: 'StockIn',
+        quantity: qty,
+        targetWarehouseId: whId,
+        timestamp: new Date().toISOString(),
+        details: `ثبت موجودی اولیه کالای ${newItem.name} در انبار (${qty} ${newItem.unit || 'عدد'})`,
+        performedBy: currentUser.fullName || 'سیستم',
+        docNumber: openDocNum
+      };
+      setTraceabilityEvents(prev => [newTrace, ...prev]);
+    }
   };
 
   const updateItem = (id: string, updated: Partial<Item>) => {
@@ -1593,6 +1655,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = items.find(i => i.id === id);
     setItems(prev => prev.filter(it => it.id !== id));
     addAudit('حذف کالا', 'Item', id, `حذف کالا ${target?.name || id}`);
+  };
+
+  const deleteItemsBatch = (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    const count = ids.length;
+    setItems(prev => prev.filter(it => !idSet.has(it.id)));
+    addAudit('حذف دسته‌جمعی کالا', 'Item', `${count} کالا`, `حذف دسته‌جمعی ${count} قلم کالا از سامانه`);
   };
 
   // Item Group Management
@@ -3523,13 +3593,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const exportDatabaseJSON = (type: 'Manual' | 'Auto' = 'Manual') => {
+  const exportDatabaseJSON = (
+    type: 'Manual' | 'Auto' = 'Manual',
+    options?: { includeChats?: boolean; includeAttachments?: boolean }
+  ) => {
+    const includeChats = options?.includeChats !== false;
+    const includeAttachments = options?.includeAttachments !== false;
+
+    // Filter messages and channels if requested
+    let exportedMessages = messages;
+    if (!includeChats) {
+      exportedMessages = [];
+    } else if (!includeAttachments) {
+      exportedMessages = messages.map(msg => ({
+        ...msg,
+        attachments: msg.attachments ? msg.attachments.filter(att => att.type !== 'file') : []
+      }));
+    }
+
+    const exportedChannels = includeChats ? channels : [];
+
     const fullDb = {
-      items, warehouses, inventory, boms, projects, operators,
-      stockInDocs, stockOutDocs, transfers, purchaseRequests,
-      productionLogs, notifications, traceabilityEvents, auditLogs,
+      // Identity & Status
+      companyName,
+      isInstalled,
+      version: Date.now(),
       exportedAt: new Date().toISOString(),
+
+      // Core System Tables (Complete Backup)
+      users,
+      items,
+      itemGroups,
+      warehouses,
+      contractors,
+      contractorContracts,
+      contractorTransactions,
+      inventory,
+      boms,
+      projects,
+      operators,
+      stockCountings,
+      stockInDocs,
+      stockOutDocs,
+      transfers,
+      purchaseRequests,
+      productionLogs,
+      materialHandovers,
+      notifications,
+      traceabilityEvents,
+      auditLogs,
+
+      // Chat Data (Filtered based on options)
+      messages: exportedMessages,
+      channels: exportedChannels,
     };
+
     const jsonContent = JSON.stringify(fullDb, null, 2);
     const sizeKb = Math.round(jsonContent.length / 1024);
     const nowIso = new Date().toISOString();
@@ -3566,7 +3684,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type === 'Auto' ? 'پشتیبان‌گیری خودکار زمان‌بندی شده' : 'پشتیبان‌گیری دستی از داده‌ها', 
       'System', 
       'JSON', 
-      `تهیه فایل پشتیبان (${sizeKb} KB)`
+      `تهیه فایل پشتیبان کامل (${sizeKb} KB) - شامل گفتگوها: ${includeChats ? 'بله' : 'خیر'}، پیوست‌ها: ${includeAttachments ? 'بله' : 'خیر'}`
     );
   };
 
@@ -3727,7 +3845,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sendSystemNotification, browserNotificationPermission, requestNotificationPermission,
       soundEnabled, setSoundEnabled, testBrowserNotification, unreadCount,
       addMaterialHandover, deleteMaterialHandover, handoverStepMaterials, recordStepOutputReceipt, calculateProjectProgressSummary,
-      addItem, updateItem, deleteItem,
+      addItem, updateItem, deleteItem, deleteItemsBatch,
       addItemGroup, updateItemGroup, deleteItemGroup,
       addWarehouse, updateWarehouse, deleteWarehouse,
       addContractor, updateContractor, deleteContractor,

@@ -53,7 +53,7 @@ const BarcodeVisual: React.FC<{ code: string; name?: string; location?: string }
 
 export const ItemsView: React.FC = () => {
   const { 
-    items, itemGroups, inventory, warehouses, addItem, updateItem, deleteItem, 
+    items, itemGroups, inventory, warehouses, addItem, updateItem, deleteItem, deleteItemsBatch,
     addItemGroup, updateItemGroup, deleteItemGroup,
     searchQuery, setSearchQuery, language, t, hasActionPermission,
     traceabilityEvents
@@ -75,6 +75,15 @@ export const ItemsView: React.FC = () => {
   const [printableCatalogItem, setPrintableCatalogItem] = useState<Item | null>(null);
   const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
   const [isInitialStockModalOpen, setIsInitialStockModalOpen] = useState(false);
+
+  // Multi-selection for bulk actions
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+
+  // Initial stock inputs in Add Item modal
+  const [initialStockQty, setInitialStockQty] = useState<number>(0);
+  const [initialStockWarehouseId, setInitialStockWarehouseId] = useState<string>('');
+  const [initialStockNotes, setInitialStockNotes] = useState<string>('');
 
   const handleCloseViewing = () => {
     setViewingItem(null);
@@ -317,6 +326,34 @@ export const ItemsView: React.FC = () => {
     });
   }, [items, searchQuery, selectedType, selectedGroup]);
 
+  // Selection Handlers
+  const isAllFilteredSelected = filteredItems.length > 0 && filteredItems.every(it => selectedItemIds.includes(it.id));
+  const isSomeFilteredSelected = filteredItems.some(it => selectedItemIds.includes(it.id)) && !isAllFilteredSelected;
+
+  const handleToggleSelectAll = () => {
+    if (isAllFilteredSelected) {
+      const filteredSet = new Set(filteredItems.map(i => i.id));
+      setSelectedItemIds(prev => prev.filter(id => !filteredSet.has(id)));
+    } else {
+      const newSelected = new Set(selectedItemIds);
+      filteredItems.forEach(it => newSelected.add(it.id));
+      setSelectedItemIds(Array.from(newSelected));
+    }
+  };
+
+  const handleToggleSelectItem = (id: string) => {
+    setSelectedItemIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDeleteConfirm = () => {
+    if (selectedItemIds.length === 0) return;
+    deleteItemsBatch(selectedItemIds);
+    setSelectedItemIds([]);
+    setIsBulkDeleteModalOpen(false);
+  };
+
   const handleOpenAdd = () => {
     setEditingItem(null);
     const opts = getHierarchicalCategoryOptions(itemGroups);
@@ -332,6 +369,9 @@ export const ItemsView: React.FC = () => {
     }
     
     setSelectedCategoryValue(defaultCatId);
+    setInitialStockQty(0);
+    setInitialStockWarehouseId(warehouses[0]?.id || '');
+    setInitialStockNotes('');
     setFormData({
       code: `E-COMP-${Math.floor(100 + Math.random() * 900)}`,
       name: '',
@@ -359,6 +399,9 @@ export const ItemsView: React.FC = () => {
     });
     
     setSelectedCategoryValue(matchedOpt ? matchedOpt.id : '');
+    setInitialStockQty(0);
+    setInitialStockWarehouseId('');
+    setInitialStockNotes('');
     setFormData({
       code: item.code,
       name: item.name,
@@ -383,7 +426,14 @@ export const ItemsView: React.FC = () => {
     if (editingItem) {
       updateItem(editingItem.id, formData);
     } else {
-      addItem(formData);
+      addItem(
+        formData, 
+        initialStockQty > 0 && initialStockWarehouseId ? {
+          quantity: initialStockQty,
+          warehouseId: initialStockWarehouseId,
+          notes: initialStockNotes || undefined
+        } : undefined
+      );
     }
     setIsAddModalOpen(false);
   };
@@ -671,6 +721,16 @@ export const ItemsView: React.FC = () => {
           <table className={`w-full text-xs text-slate-700 ${isFa ? 'text-right' : 'text-left'}`}>
             <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
               <tr>
+                <th className="w-10 p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={isAllFilteredSelected}
+                    ref={el => { if (el) el.indeterminate = isSomeFilteredSelected; }}
+                    onChange={handleToggleSelectAll}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                    title={isFa ? 'انتخاب همه کالاهای نمایش داده شده' : 'Select all visible items'}
+                  />
+                </th>
                 <th className="whitespace-nowrap p-3.5">{t('itemCode', 'کد کالا')}</th>
                 <th className="whitespace-nowrap p-3.5">{t('itemName', 'نام کالا / قطعه')}</th>
                 <th className="whitespace-nowrap p-3.5">{t('itemType', 'نوع کالا')}</th>
@@ -685,12 +745,13 @@ export const ItemsView: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400">
+                  <td colSpan={10} className="p-8 text-center text-slate-400">
                     {isFa ? 'هیچ کالایی با مشخصات جستجو شده یافت نشد.' : 'No components found matching your search.'}
                   </td>
                 </tr>
               ) : (
                 filteredItems.map(item => {
+                  const isSelected = selectedItemIds.includes(item.id);
                   const totalStock = inventory
                     .filter(i => i.itemId === item.id)
                     .reduce((s, c) => s + c.quantity, 0);
@@ -702,7 +763,19 @@ export const ItemsView: React.FC = () => {
                   const safeUnitPrice = Number(item.unitPrice) || 0;
 
                   return (
-                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors cursor-pointer group" onClick={() => setViewingItem(item)}>
+                    <tr 
+                      key={item.id} 
+                      className={`transition-colors cursor-pointer group ${isSelected ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'hover:bg-slate-50/80'}`} 
+                      onClick={() => setViewingItem(item)}
+                    >
+                      <td className="w-10 p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectItem(item.id)}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="whitespace-nowrap p-3.5 font-mono font-bold text-indigo-600">{item.code}</td>
                       <td className="whitespace-nowrap p-3.5">
                         <div className="font-bold text-slate-800 hover:text-indigo-600 transition-colors flex items-center gap-1.5">
@@ -783,6 +856,91 @@ export const ItemsView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Floating Bulk Action Bar */}
+      {selectedItemIds.length > 0 && (
+        <div className="sticky bottom-4 z-40 bg-slate-900 text-white rounded-2xl shadow-2xl p-3 sm:px-5 flex flex-wrap items-center justify-between gap-3 border border-slate-700 animate-slideUp">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{selectedItemIds.length} {isFa ? 'کالا انتخاب شده' : 'items selected'}</span>
+            </div>
+            <span className="text-xs text-slate-300 hidden sm:inline">
+              {isFa ? 'می‌توانید عملیات حذف یا خروجی اکسل را روی کالاهای انتخاب‌شده اعمال کنید.' : 'Perform bulk actions on selected items.'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const selectedItems = items.filter(i => selectedItemIds.includes(i.id));
+                exportItemsToExcel(selectedItems, itemGroups);
+              }}
+              className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isFa ? 'خروجی اکسل موارد انتخابی' : 'Export Selected'}</span>
+            </button>
+
+            {canDelete && (
+              <button
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isFa ? `حذف دسته‌جمعی (${selectedItemIds.length})` : `Delete (${selectedItemIds.length})`}</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setSelectedItemIds([])}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+              title={isFa ? 'لغو انتخاب' : 'Clear selection'}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {isBulkDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-fadeIn">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-xl">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">{isFa ? 'تایید حذف دسته‌جمعی کالاها' : 'Confirm Bulk Deletion'}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{isFa ? 'عملیات حذف غیرقابل بازگشت است' : 'This action cannot be undone'}</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-700 leading-relaxed bg-rose-50/50 p-3 rounded-xl border border-rose-100">
+              {isFa ? (
+                <>آیا از حذف <strong>{selectedItemIds.length} قلم کالای انتخاب‌شده</strong> اطمینان دارید؟ تمام این کالاها از فهرست سیستم حذف خواهند شد.</>
+              ) : (
+                <>Are you sure you want to delete <strong>{selectedItemIds.length} selected items</strong>?</>
+              )}
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setIsBulkDeleteModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 cursor-pointer"
+              >
+                {isFa ? 'انصراف' : 'Cancel'}
+              </button>
+              <button
+                onClick={handleBulkDeleteConfirm}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isFa ? 'بله، حذف کن' : 'Yes, Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Manage Item Groups & Subgroups */}
       {isGroupModalOpen && (
@@ -1130,6 +1288,69 @@ export const ItemsView: React.FC = () => {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
                 ></textarea>
               </div>
+
+              {/* Initial Stock / Opening Balance Section (Only for new items) */}
+              {!editingItem && (
+                <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Boxes className="w-4 h-4 text-amber-600" />
+                      <span className="text-xs font-bold text-slate-800">
+                        {isFa ? 'موجودی اولیه در انبار (سند افتتاحیه / ثبت موجودی ابتدای دوره)' : 'Initial Stock (Opening Balance)'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full font-semibold">
+                      {isFa ? 'اختیاری' : 'Optional'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-normal">
+                    {isFa 
+                      ? 'اگر هم‌اکنون این کالا در انبار موجود است، موجودی اولیه و انبار نگهداری را وارد کنید تا همزمان با ثبت کالا، موجودی فیزیکی و سند افتتاحیه خودکار صادر گردد.'
+                      : 'If you already have this item in stock, specify quantity and warehouse to auto-create opening stock document.'}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        {isFa ? 'تعداد / مقدار موجودی اولیه' : 'Initial Quantity'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={initialStockQty || ''}
+                        onChange={(e) => setInitialStockQty(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-mono font-bold focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        {isFa ? 'انبار محل استقرار' : 'Target Warehouse'}
+                      </label>
+                      <select
+                        value={initialStockWarehouseId}
+                        onChange={(e) => setInitialStockWarehouseId(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-semibold focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      >
+                        {warehouses.map(w => (
+                          <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        {isFa ? 'یادداشت یا توضیحات سند افتتاحیه (اختیاری)' : 'Opening Notes (Optional)'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={isFa ? 'مثال: موجودی شمارش شده انبارگردانی یا سند افتتاحیه سال جاری' : 'e.g., Initial opening count'}
+                        value={initialStockNotes}
+                        onChange={(e) => setInitialStockNotes(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
                 <button

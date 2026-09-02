@@ -3,9 +3,12 @@ import { useApp } from '../context/AppContext';
 import { StockInType, StockOutType, StockInDoc, StockOutDoc } from '../types';
 import { 
   ArrowDownUp, ArrowDownLeft, ArrowUpRight, Plus, 
-  Search, Printer, CheckCircle2, FileText, Trash2, Pencil, X, Eye, Hash 
+  Search, Printer, CheckCircle2, FileText, Trash2, Pencil, X, Eye, Hash,
+  FileSpreadsheet, Download, CheckSquare, Square
 } from 'lucide-react';
 import { OfficialDocumentViewerModal, OfficialDocData } from './OfficialDocumentViewerModal';
+import { StockMovementExcelImportModal } from './StockMovementExcelImportModal';
+import { generateStockMovementItemsTemplate } from '../utils/excelUtils';
 
 export const StockMovementView: React.FC = () => {
   const { 
@@ -23,6 +26,11 @@ export const StockMovementView: React.FC = () => {
   // Official Printable Document Modal State
   const [activeOfficialDoc, setActiveOfficialDoc] = useState<OfficialDocData | null>(null);
 
+  // Excel Bulk Import Modal State
+  const [isExcelImportOpen, setIsExcelImportOpen] = useState(false);
+  const [excelDocType, setExcelDocType] = useState<'IN' | 'OUT'>('IN');
+  const [excelImportMode, setExcelImportMode] = useState<'apply_to_form' | 'create_new_doc'>('create_new_doc');
+
   // Form State for new Document
   const [docType, setDocType] = useState<'IN' | 'OUT'>('IN');
   const [docNumber, setDocNumber] = useState('');
@@ -36,6 +44,9 @@ export const StockMovementView: React.FC = () => {
   const [docItems, setDocItems] = useState<{ itemId: string; quantity: number; unitPrice: number; notes: string }[]>([
     { itemId: items[0]?.id || 'item-pcb-101', quantity: 100, unitPrice: items[0]?.unitPrice || 50000, notes: '' }
   ]);
+
+  // Selected item row indices for batch deletion inside document modal
+  const [selectedDocItemIndices, setSelectedDocItemIndices] = useState<number[]>([]);
 
   const stockInTypeLabels: Record<StockInType, string> = {
     Purchase: 'خرید جدید',
@@ -122,6 +133,7 @@ export const StockMovementView: React.FC = () => {
     setSelectedWarehouseId(warehouses[0]?.id || 'wh-raw');
     setDocNotes('');
     setDocItems([{ itemId: items[0]?.id || '', quantity: 100, unitPrice: items[0]?.unitPrice || 10000, notes: '' }]);
+    setSelectedDocItemIndices([]);
     setIsDocModalOpen(true);
   };
 
@@ -141,6 +153,7 @@ export const StockMovementView: React.FC = () => {
       unitPrice: it.unitPrice,
       notes: it.notes || ''
     })));
+    setSelectedDocItemIndices([]);
     setIsDocModalOpen(true);
   };
 
@@ -160,6 +173,7 @@ export const StockMovementView: React.FC = () => {
       unitPrice: it.unitPrice,
       notes: it.notes || ''
     })));
+    setSelectedDocItemIndices([]);
     setIsDocModalOpen(true);
   };
 
@@ -184,6 +198,54 @@ export const StockMovementView: React.FC = () => {
 
   const handleRemoveItemLine = (idx: number) => {
     setDocItems(prev => prev.filter((_, i) => i !== idx));
+    setSelectedDocItemIndices(prev => prev.filter(i => i !== idx).map(i => i > idx ? i - 1 : i));
+  };
+
+  // Doc items batch selection and delete handlers
+  const handleToggleSelectDocItem = (idx: number) => {
+    setSelectedDocItemIndices(prev => 
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    );
+  };
+
+  const handleToggleSelectAllDocItems = () => {
+    if (selectedDocItemIndices.length === docItems.length) {
+      setSelectedDocItemIndices([]);
+    } else {
+      setSelectedDocItemIndices(docItems.map((_, idx) => idx));
+    }
+  };
+
+  const handleBulkDeleteDocItems = () => {
+    if (selectedDocItemIndices.length === 0) return;
+    const selectedSet = new Set(selectedDocItemIndices);
+    const remaining = docItems.filter((_, idx) => !selectedSet.has(idx));
+    if (remaining.length === 0) {
+      setDocItems([{ itemId: items[0]?.id || '', quantity: 1, unitPrice: items[0]?.unitPrice || 0, notes: '' }]);
+    } else {
+      setDocItems(remaining);
+    }
+    setSelectedDocItemIndices([]);
+  };
+
+  // Open Excel Import Modal
+  const handleOpenExcelImport = (type: 'IN' | 'OUT', mode: 'apply_to_form' | 'create_new_doc') => {
+    setExcelDocType(type);
+    setExcelImportMode(mode);
+    setIsExcelImportOpen(true);
+  };
+
+  // Apply parsed Excel items to the open document modal form
+  const handleApplyExcelItemsToForm = (importedLines: { itemId: string; quantity: number; unitPrice: number; notes: string }[]) => {
+    if (importedLines.length === 0) return;
+    setDocItems(prev => {
+      // If previous has just 1 default line, replace it
+      if (prev.length === 1 && prev[0].quantity === 100 && (!prev[0].notes || prev[0].notes === '')) {
+        return importedLines;
+      }
+      return [...prev, ...importedLines];
+    });
+    alert(`${importedLines.length} قلم کالا با موفقیت از فایل اکسل به لیست اقلام سند جاری اضافه شد.`);
   };
 
   const handleSubmitDoc = (e: React.FormEvent) => {
@@ -261,17 +323,43 @@ export const StockMovementView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Excel Import & Template buttons */}
+          <button
+            onClick={() => generateStockMovementItemsTemplate(activeSubTab, items, warehouses)}
+            title="دانلود قالب استاندارد اکسل برای ورود/خروج اقلام"
+            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden sm:inline">دانلود فایل نمونه اکسل</span>
+          </button>
+
+          <button
+            onClick={() => handleOpenExcelImport('IN', 'create_new_doc')}
+            className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-emerald-300"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>ورود اکسل رسید ورود</span>
+          </button>
+
+          <button
+            onClick={() => handleOpenExcelImport('OUT', 'create_new_doc')}
+            className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-rose-300"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-rose-600" />
+            <span>ورود اکسل حواله خروج</span>
+          </button>
+
           <button
             onClick={() => handleOpenNewDoc('IN')}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-2xs active:scale-95"
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 cursor-pointer"
           >
             <ArrowDownLeft className="w-4 h-4" />
             ثبت رسید جدید (ورود)
           </button>
           <button
             onClick={() => handleOpenNewDoc('OUT')}
-            className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-2xs active:scale-95"
+            className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 cursor-pointer"
           >
             <ArrowUpRight className="w-4 h-4" />
             ثبت حواله جدید (خروج)
@@ -602,42 +690,101 @@ export const StockMovementView: React.FC = () => {
 
               {/* Items Table Lines */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800">اقلام و قطعات سند:</span>
-                  <button
-                    type="button"
-                    onClick={handleAddItemLine}
-                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    افزودن سطر جدید
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100/70 p-2.5 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800">اقلام و قطعات سند ({docItems.length}):</span>
+                    {docItems.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleToggleSelectAllDocItems}
+                        className="text-[11px] font-semibold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer"
+                      >
+                        {selectedDocItemIndices.length === docItems.length ? (
+                          <>
+                            <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>لغو انتخاب همه</span>
+                          </>
+                        ) : (
+                          <>
+                            <Square className="w-3.5 h-3.5" />
+                            <span>انتخاب همه</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {selectedDocItemIndices.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleBulkDeleteDocItems}
+                        className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>حذف ردیف‌های انتخاب‌شده ({selectedDocItemIndices.length})</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenExcelImport(docType, 'apply_to_form')}
+                      className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                      title="بارگذاری دسته‌جمعی اقلام این سند از فایل اکسل"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>بارگذاری اقلام از فایل اکسل</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleAddItemLine}
+                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      افزودن دستی سطر
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                   {docItems.map((line, idx) => {
-                    const itm = items.find(i => i.id === line.itemId);
+                    const itm = items.find(i => i.id === line.itemId || i.code === line.itemId);
+                    const isSelected = selectedDocItemIndices.includes(idx);
                     return (
-                      <div key={idx} className="flex flex-col sm:grid sm:grid-cols-12 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 items-start sm:items-center">
-                        <div className="w-full sm:col-span-5">
-                          <label className="block text-[10px] text-slate-500 mb-0.5">انتخاب کالا / قطعه</label>
-                          <select
-                            value={line.itemId}
-                            onChange={(e) => {
-                              const selected = items.find(i => i.id === e.target.value);
-                              const copy = [...docItems];
-                              copy[idx].itemId = e.target.value;
-                              if (selected) copy[idx].unitPrice = selected.unitPrice;
-                              setDocItems(copy);
-                            }}
-                            className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800"
-                          >
-                            {items.map(i => (
-                              <option key={i.id} value={i.id}>
-                                {i.name} ({i.code})
-                              </option>
-                            ))}
-                          </select>
+                      <div 
+                        key={idx} 
+                        className={`flex flex-col sm:grid sm:grid-cols-12 gap-2 p-2.5 rounded-xl border items-start sm:items-center transition-colors ${
+                          isSelected ? 'bg-indigo-50/80 border-indigo-300' : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <div className="w-full sm:col-span-5 flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectDocItem(idx)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer shrink-0 mt-3 sm:mt-0"
+                          />
+                          <div className="flex-1">
+                            <label className="block text-[10px] text-slate-500 mb-0.5">انتخاب کالا / قطعه</label>
+                            <select
+                              value={line.itemId}
+                              onChange={(e) => {
+                                const selected = items.find(i => i.id === e.target.value);
+                                const copy = [...docItems];
+                                copy[idx].itemId = e.target.value;
+                                if (selected) copy[idx].unitPrice = selected.unitPrice;
+                                setDocItems(copy);
+                              }}
+                              className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800 font-semibold"
+                            >
+                              {items.map(i => (
+                                <option key={i.id} value={i.id}>
+                                  {i.name} ({i.code})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
 
                         <div className="w-full sm:col-span-2">
@@ -651,7 +798,7 @@ export const StockMovementView: React.FC = () => {
                               copy[idx].quantity = Number(e.target.value);
                               setDocItems(copy);
                             }}
-                            className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800 font-mono text-center"
+                            className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800 font-mono text-center font-bold"
                           />
                         </div>
 
@@ -674,7 +821,8 @@ export const StockMovementView: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleRemoveItemLine(idx)}
-                              className="text-rose-600 hover:text-rose-700 p-1 flex items-center justify-center gap-1 w-full sm:w-auto"
+                              className="text-rose-600 hover:text-rose-700 p-1 flex items-center justify-center gap-1 w-full sm:w-auto cursor-pointer"
+                              title="حذف این ردیف"
                             >
                               <Trash2 className="w-4 h-4 mx-auto" />
                               <span className="inline sm:hidden text-[10px] font-bold">حذف این ردیف</span>
@@ -728,6 +876,17 @@ export const StockMovementView: React.FC = () => {
           allWarehouses={warehouses}
           companyName={companyName}
           onClose={() => setActiveOfficialDoc(null)}
+        />
+      )}
+
+      {/* Excel Bulk Stock Movement Import Modal */}
+      {isExcelImportOpen && (
+        <StockMovementExcelImportModal
+          isOpen={isExcelImportOpen}
+          initialDocType={excelDocType}
+          mode={excelImportMode}
+          onClose={() => setIsExcelImportOpen(false)}
+          onApplyItems={handleApplyExcelItemsToForm}
         />
       )}
     </div>

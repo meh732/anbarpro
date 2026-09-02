@@ -1170,3 +1170,215 @@ export async function parseBOMsFromExcel(
     };
   }
 }
+
+// =========================================================================
+//  STOCK MOVEMENT (STOCK IN / STOCK OUT) EXCEL UTILITIES
+// =========================================================================
+
+export interface StockMovementParsedItem {
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  notes: string;
+}
+
+/**
+ * Generate Excel Template for Stock In (رسید ورود) or Stock Out (حواله خروج)
+ */
+export function generateStockMovementItemsTemplate(
+  type: 'IN' | 'OUT',
+  items: Item[],
+  warehouses: Warehouse[] = []
+): void {
+  const isStockIn = type === 'IN';
+  const typeTitleFa = isStockIn ? 'رسید ورود کالا' : 'حواله خروج کالا';
+
+  const sampleRows = [
+    {
+      'کد کالا': items[0]?.code || 'E-COMP-101',
+      'نام کالا (اختیاری)': items[0]?.name || 'تراشه میکروکنترلر',
+      'تعداد / مقدار': 150,
+      'قیمت واحد (تومان - اختیاری)': isStockIn ? (items[0]?.unitPrice || 75000) : 0,
+      'توضیحات / شماره ردیف / علت': isStockIn ? 'پارت اول خرید فاکتور ۱۲۳۴' : 'تحویل به خط مونتاژ'
+    },
+    {
+      'کد کالا': items[1]?.code || 'E-RES-10K',
+      'نام کالا (اختیاری)': items[1]?.name || 'مقاومت SMD',
+      'تعداد / مقدار': 500,
+      'قیمت واحد (تومان - اختیاری)': isStockIn ? (items[1]?.unitPrice || 500) : 0,
+      'توضیحات / شماره ردیف / علت': isStockIn ? 'خرید دوره دوم' : 'مصرف آزمایشی'
+    }
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(sampleRows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, `اقلام ${typeTitleFa}`);
+
+  // Reference Items Sheet
+  const itemsRef = items.map(i => ({
+    'کد کالا': i.code,
+    'نام کالا': i.name,
+    'واحد سنجش': i.unit || 'عدد',
+    'قیمت واحد پایه': i.unitPrice || 0,
+    'گروه کالا': i.group || 'عمومی',
+    'بارکد': i.barcode || ''
+  }));
+  const itemsWs = XLSX.utils.json_to_sheet(itemsRef);
+  XLSX.utils.book_append_sheet(workbook, itemsWs, 'لیست کدهای معتبر کالا');
+
+  if (warehouses && warehouses.length > 0) {
+    const whRef = warehouses.map(w => ({
+      'کد انبار': w.code,
+      'نام انبار': w.name,
+      'نوع انبار': w.warehouseType || 'مرکزی',
+      'مکان': w.location || ''
+    }));
+    const whWs = XLSX.utils.json_to_sheet(whRef);
+    XLSX.utils.book_append_sheet(workbook, whWs, 'لیست انبارها');
+  }
+
+  const fileName = isStockIn 
+    ? `قالب_اکسل_اقلام_رسید_ورود_${new Date().toISOString().substring(0, 10)}.xlsx`
+    : `قالب_اکسل_اقلام_حواله_خروج_${new Date().toISOString().substring(0, 10)}.xlsx`;
+
+  XLSX.writeFile(workbook, fileName);
+}
+
+/**
+ * Parse Excel file containing items for Stock In or Stock Out document
+ */
+export async function parseStockMovementItemsFromExcel(
+  file: File | ArrayBuffer,
+  items: Item[]
+): Promise<{
+  success: boolean;
+  parsedItems: StockMovementParsedItem[];
+  errors: string[];
+  warnings: string[];
+  totalRows: number;
+  totalQuantity: number;
+  totalCalculatedValue: number;
+}> {
+  try {
+    let dataBuffer: ArrayBuffer;
+    if (file instanceof File) {
+      dataBuffer = await file.arrayBuffer();
+    } else {
+      dataBuffer = file;
+    }
+
+    const workbook = XLSX.read(dataBuffer, { type: 'array' });
+    const { rawRows } = extractRowsFromWorkbook(workbook);
+
+    if (!rawRows || rawRows.length === 0) {
+      return {
+        success: false,
+        parsedItems: [],
+        errors: ['هیچ ردیف داده‌ای در فایل اکسل یافت نشد.'],
+        warnings: [],
+        totalRows: 0,
+        totalQuantity: 0,
+        totalCalculatedValue: 0
+      };
+    }
+
+    const parsedItems: StockMovementParsedItem[] = [];
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    let totalQuantity = 0;
+    let totalCalculatedValue = 0;
+
+    // Build lookup maps for rapid matching
+    const itemByCode = new Map<string, Item>();
+    const itemByName = new Map<string, Item>();
+    const itemByBarcode = new Map<string, Item>();
+    const itemById = new Map<string, Item>();
+
+    items.forEach(it => {
+      if (it.code) itemByCode.set(cleanHeaderKey(it.code), it);
+      if (it.name) itemByName.set(cleanHeaderKey(it.name), it);
+      if (it.barcode) itemByBarcode.set(cleanHeaderKey(it.barcode), it);
+      if (it.id) itemById.set(it.id, it);
+    });
+
+    rawRows.forEach((row, idx) => {
+      const rowNum = idx + 2;
+
+      // 1. Find Item
+      const rawCode = getRowField(row, ['کد کالا', 'کد قطعه', 'کد', 'itemCode', 'code', 'partNumber', 'شناسه کالا', 'کدکالا']);
+      const rawName = getRowField(row, ['نام کالا', 'نام قطعه', 'عنوان کالا', 'شرح کالا', 'itemName', 'name', 'title', 'نام']);
+      const rawBarcode = getRowField(row, ['بارکد', 'barcode', 'کد میله‌ای']);
+
+      let matchedItem: Item | undefined = undefined;
+
+      if (rawCode) {
+        matchedItem = itemByCode.get(cleanHeaderKey(rawCode)) || itemById.get(String(rawCode).trim());
+      }
+      if (!matchedItem && rawBarcode) {
+        matchedItem = itemByBarcode.get(cleanHeaderKey(rawBarcode));
+      }
+      if (!matchedItem && rawName) {
+        matchedItem = itemByName.get(cleanHeaderKey(rawName));
+      }
+
+      if (!matchedItem) {
+        errors.push(`ردیف ${rowNum}: کالایی با کد "${rawCode || rawName || 'نامشخص'}" در سامانه یافت نشد.`);
+        return;
+      }
+
+      // 2. Quantity
+      const rawQty = getRowField(row, ['تعداد / مقدار', 'تعداد', 'مقدار', 'تعداد اقلام', 'quantity', 'qty', 'count', 'amount']);
+      const qty = parseSafeNumber(rawQty, 0);
+
+      if (qty <= 0) {
+        errors.push(`ردیف ${rowNum}: تعداد برای کالای "${matchedItem.name}" باید بزرگتر از صفر باشد (مقدار دریافتی: ${rawQty}).`);
+        return;
+      }
+
+      // 3. Unit Price
+      const rawUnitPrice = getRowField(row, ['قیمت واحد (تومان - اختیاری)', 'قیمت واحد', 'فی', 'قیمت', 'مبلغ واحد', 'unitPrice', 'price', 'rate']);
+      const parsedUnitPrice = rawUnitPrice !== undefined ? parseSafeNumber(rawUnitPrice, matchedItem.unitPrice || 0) : (matchedItem.unitPrice || 0);
+
+      // 4. Notes
+      const rawNotes = getRowField(row, ['توضیحات / شماره ردیف / علت', 'توضیحات', 'یادداشت', 'شرح', 'علت', 'ردیف', 'notes', 'description', 'reason', 'memo']);
+      const notes = parseSafeString(rawNotes, '');
+
+      parsedItems.push({
+        itemId: matchedItem.id,
+        itemCode: matchedItem.code,
+        itemName: matchedItem.name,
+        unit: matchedItem.unit || 'عدد',
+        quantity: qty,
+        unitPrice: parsedUnitPrice,
+        notes: notes
+      });
+
+      totalQuantity += qty;
+      totalCalculatedValue += (qty * parsedUnitPrice);
+    });
+
+    return {
+      success: parsedItems.length > 0 && errors.length === 0,
+      parsedItems,
+      errors,
+      warnings,
+      totalRows: rawRows.length,
+      totalQuantity,
+      totalCalculatedValue
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      parsedItems: [],
+      errors: [`خطا در تحلیل فایل اکسل اقلام رسید/حواله: ${err?.message || 'قالب نامعتبر است'}`],
+      warnings: [],
+      totalRows: 0,
+      totalQuantity: 0,
+      totalCalculatedValue: 0
+    };
+  }
+}
+
