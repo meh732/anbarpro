@@ -102,9 +102,14 @@ echo "=> Application directory: $APP_DIR"
 # Ensure swap is setup to avoid freeze during build/npm install
 setup_swap_if_needed
 
+# Configure fast NPM mirror and timeout settings
+npm config set registry https://registry.npmmirror.com/ 2>/dev/null || true
+npm config set fetch-retries 5 2>/dev/null || true
+npm config set fetch-retry-mintimeout 15000 2>/dev/null || true
+
 # Install dependencies
-echo "=> Installing project dependencies..."
-npm install
+echo "=> Installing project dependencies (using high-speed mirror)..."
+npm install --legacy-peer-deps
 
 # Build the application
 echo "=> Building the application..."

@@ -86,6 +86,41 @@ check_node() {
     return 0
 }
 
+# Setup high-speed NPM mirrors (especially for Iranian servers) and anti-sanction DNS
+configure_fast_network() {
+    echo -e "\n${YELLOW}⚡ Configuring network & high-speed NPM mirrors...${NC}"
+    
+    # 1. Test international registries vs high-speed mirror
+    # In Iran, registry.npmmirror.com is accessible via high-speed CDN and never gets blocked or throttled
+    local mirror="https://registry.npmmirror.com/"
+    local default_reg="https://registry.npmjs.org/"
+
+    # Set npm timeout & retry settings to prevent hanging
+    npm config set fetch-retries 5 2>/dev/null || true
+    npm config set fetch-retry-mintimeout 15000 2>/dev/null || true
+    npm config set fetch-retry-maxtimeout 60000 2>/dev/null || true
+    npm config set audit false 2>/dev/null || true
+    npm config set fund false 2>/dev/null || true
+
+    # Check latency to npmmirror
+    if curl -m 3 -sSf "${mirror}react" >/dev/null 2>&1; then
+        npm config set registry "$mirror" 2>/dev/null || true
+        echo -e "   ${GREEN}🚀 High-speed mirror activated: $mirror${NC}"
+    elif curl -m 3 -sSf "${default_reg}react" >/dev/null 2>&1; then
+        npm config set registry "$default_reg" 2>/dev/null || true
+        echo -e "   ${GREEN}🌐 Standard registry connected: $default_reg${NC}"
+    else
+        # If neither responds, apply anti-sanction / bypass DNS (Shecan & 403)
+        echo -e "   ${YELLOW}⚠️ Registries slow or blocked. Enabling Shecan/403 anti-sanction DNS...${NC}"
+        if [ -w /etc/resolv.conf ]; then
+            [ ! -f /etc/resolv.conf.anbarbak ] && cp /etc/resolv.conf /etc/resolv.conf.anbarbak 2>/dev/null || true
+            echo -e "nameserver 178.22.122.100\nnameserver 185.51.200.2\nnameserver 10.202.10.202\nnameserver 8.8.8.8" > /etc/resolv.conf 2>/dev/null || true
+        fi
+        npm config set registry "$mirror" 2>/dev/null || true
+        echo -e "   ${GREEN}🚀 High-speed mirror activated: $mirror${NC}"
+    fi
+}
+
 # Run NPM command with compact, single-line in-place progress that never wraps
 run_npm_with_progress() {
     local cmd="$1"
@@ -94,7 +129,7 @@ run_npm_with_progress() {
     echo -e "\n${YELLOW}⚙️ $desc...${NC}"
     
     # Run the npm command in the background
-    eval "$cmd" > /dev/null 2>&1 &
+    eval "$cmd" > /tmp/npm_run.log 2>&1 &
     local PID=$!
     
     local elapsed=0
@@ -136,8 +171,18 @@ run_npm_with_progress() {
         echo -e "   ${GREEN}✅ Done in ${elapsed}s (Total: ${final_mb} MB)${NC}"
         return 0
     else
-        echo -e "   ${RED}❌ Failed after ${elapsed}s.${NC}"
-        return $exit_code
+        echo -e "   ${YELLOW}⚠️ Initial attempt completed with code $exit_code. Retrying with high-speed mirror...${NC}"
+        npm config set registry https://registry.npmmirror.com/ 2>/dev/null || true
+        eval "$cmd --registry=https://registry.npmmirror.com/" > /tmp/npm_retry.log 2>&1
+        local retry_code=$?
+        if [ $retry_code -eq 0 ]; then
+            echo -e "   ${GREEN}✅ Retry succeeded with high-speed mirror!${NC}"
+            return 0
+        else
+            echo -e "   ${RED}❌ Failed after retry. Last log lines:${NC}"
+            tail -n 5 /tmp/npm_retry.log 2>/dev/null || tail -n 5 /tmp/npm_run.log 2>/dev/null || true
+            return $retry_code
+        fi
     fi
 }
 
@@ -381,13 +426,8 @@ install_anbarpro() {
     
     cd "$INSTALL_DIR"
     
-    # Remove package-lock.json if it exists to prevent Tailwind v4 native binary compilation bugs
-    if [ -f "package-lock.json" ]; then
-        echo -e "${YELLOW}🗑️ Removing package-lock.json to reload OS native bindings...${NC}"
-        rm -f package-lock.json
-    fi
-    
-    # 4. Install NPM Dependencies
+    # 4. Configure High-speed Mirror & Install NPM Dependencies
+    configure_fast_network
     run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing main NPM dependencies"
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
@@ -621,13 +661,8 @@ update_anbarpro() {
         echo -e "${GREEN}✅ Active business database preserved safely.${NC}"
     fi
     
-    # Remove package-lock.json if it exists to prevent Tailwind v4 native binary compilation bugs
-    if [ -f "package-lock.json" ]; then
-        echo -e "${YELLOW}🗑️ Removing package-lock.json to reload OS native bindings...${NC}"
-        rm -f package-lock.json
-    fi
-    
-    # 4. Install NPM Dependencies
+    # 4. Configure High-speed Mirror & Install NPM Dependencies
+    configure_fast_network
     run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing/Updating main NPM dependencies"
     
     # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
