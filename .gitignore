@@ -7,4 +7,8 @@ coverage/
 .env*
 !.env.example
 firebase-applet-config.json
+data/server_database.json*
+data/backups/
+backups/
+*.tar.gz
 

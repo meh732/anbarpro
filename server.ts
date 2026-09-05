@@ -8,7 +8,15 @@ import { serverStore, getDefaultServerState } from './src/server/serverStore.ts'
 import { 
   dispatchBackupToMessengers, sendTelegramMessage, sendBaleMessage, generateBackupSummary 
 } from './src/server/messengerService.ts';
+import { MessengerBackupConfig } from './src/types';
 import { db } from './src/db/index.ts';
+
+const DEFAULT_MESSENGER_CONFIG: MessengerBackupConfig = {
+  telegram: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
+  bale: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
+  autoSendIntervalHours: 24,
+  includeSummaryText: true,
+};
 import { 
   warehouses, items, itemGroups, inventory, transfers, 
   contractors, boms, purchaseRequests, stockCounts, operatorLogs, projects, backups 
@@ -202,9 +210,42 @@ async function startServer() {
     }
   });
 
-  // 5. POST /api/reset-data - Reset server database to default factory state
-  app.post('/api/reset-data', (req, res) => {
+  // 4.1 POST /api/pre-update-backup - Trigger an emergency backup to file and messenger bots prior to updating or restarting
+  app.post('/api/pre-update-backup', async (req, res) => {
     try {
+      const state = serverStore.getState();
+      const snapshotFile = serverStore.createSnapshotBackup('pre_update_manual');
+      const config = state.messengerConfig || DEFAULT_MESSENGER_CONFIG;
+      
+      const results = await dispatchBackupToMessengers(config, state, {
+        target: 'all',
+        title: `🚨 پشتیبان خودکار پیش از اعمال بروزرسانی سامانه انبارمه (${new Date().toLocaleTimeString('fa-IR')})`
+      });
+
+      res.json({
+        success: true,
+        message: 'پشتیبان با موفقیت بر روی دیسک ذخیره و به ربات‌ها ارسال گردید.',
+        snapshotFile,
+        results
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/pre-update-backup:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 5. POST /api/reset-data - Reset server database to default factory state
+  app.post('/api/reset-data', async (req, res) => {
+    try {
+      // Send emergency backup to bots before resetting!
+      const preState = serverStore.getState();
+      if (preState.messengerConfig) {
+        dispatchBackupToMessengers(preState.messengerConfig, preState, {
+          target: 'all',
+          title: '🚨 پشتیبان اضطراری پیش از بازنشانی داده‌های سرور'
+        }).catch(() => {});
+      }
+
       const defaultState = serverStore.resetToDefault();
       res.json({
         success: true,
@@ -218,9 +259,19 @@ async function startServer() {
   });
 
   // 5.1 POST /api/reset-empty - Reset server database to completely clean/raw empty state
-  app.post('/api/reset-empty', (req, res) => {
+  app.post('/api/reset-empty', async (req, res) => {
     try {
       const { keepUsers = true, companyName } = req.body || {};
+      
+      // Send emergency backup to bots before wiping!
+      const preState = serverStore.getState();
+      if (preState.messengerConfig) {
+        dispatchBackupToMessengers(preState.messengerConfig, preState, {
+          target: 'all',
+          title: '🚨 پشتیبان اضطراری پیش از تخلیه و خام‌سازی دیتابیس'
+        }).catch(() => {});
+      }
+
       const emptyState = serverStore.resetToEmpty(keepUsers, companyName);
       res.json({
         success: true,
@@ -297,7 +348,7 @@ async function startServer() {
   app.get('/api/messenger/config', (req, res) => {
     try {
       const state = serverStore.getState();
-      const config = state.messengerConfig || {
+      const baseConfig = state.messengerConfig || {
         telegram: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
         bale: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
         autoSendIntervalHours: 24,
@@ -307,7 +358,27 @@ async function startServer() {
         lastTelegramStatus: null,
         lastBaleStatus: null,
       };
-      res.json({ success: true, config });
+
+      const resolvedConfig = {
+        ...baseConfig,
+        telegram: {
+          ...baseConfig.telegram,
+          botToken: baseConfig.telegram?.botToken || process.env.TELEGRAM_BOT_TOKEN || '',
+          adminChatId: baseConfig.telegram?.adminChatId || process.env.TELEGRAM_CHAT_ID || '',
+          proxyUrl: baseConfig.telegram?.proxyUrl || process.env.TELEGRAM_PROXY_URL || '',
+          apiBaseUrl: baseConfig.telegram?.apiBaseUrl || process.env.TELEGRAM_API_BASE_URL || '',
+          enabled: baseConfig.telegram?.enabled ?? Boolean(baseConfig.telegram?.botToken || process.env.TELEGRAM_BOT_TOKEN),
+        },
+        bale: {
+          ...baseConfig.bale,
+          botToken: baseConfig.bale?.botToken || process.env.BALE_BOT_TOKEN || '',
+          adminChatId: baseConfig.bale?.adminChatId || process.env.BALE_CHAT_ID || '',
+          apiBaseUrl: baseConfig.bale?.apiBaseUrl || process.env.BALE_API_BASE_URL || '',
+          enabled: baseConfig.bale?.enabled ?? Boolean(baseConfig.bale?.botToken || process.env.BALE_BOT_TOKEN),
+        }
+      };
+
+      res.json({ success: true, config: resolvedConfig });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -887,6 +958,39 @@ async function startServer() {
     console.log(` Multi-client Real-Time Sync: ENABLED`);
     console.log(`=======================================================`);
   });
+
+  let isShuttingDown = false;
+  async function handleGracefulShutdown(signal: string) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[Server] Received ${signal}. Executing pre-update emergency backup...`);
+    try {
+      const state = serverStore.getState();
+      serverStore.createSnapshotBackup('pre_shutdown');
+      const config = state.messengerConfig || DEFAULT_MESSENGER_CONFIG;
+      const tgToken = config.telegram?.botToken || process.env.TELEGRAM_BOT_TOKEN;
+      const baleToken = config.bale?.botToken || process.env.BALE_BOT_TOKEN;
+      if (tgToken || baleToken) {
+        console.log('[Server] Dispatching pre-update backup to messenger bots...');
+        await Promise.race([
+          dispatchBackupToMessengers(config, state, {
+            target: 'all',
+            title: `🚨 پشتیبان خودکار پیش از ری‌استارت/آپدیت سرور (${new Date().toLocaleTimeString('fa-IR')})`
+          }),
+          new Promise(resolve => setTimeout(resolve, 8000))
+        ]);
+        console.log('[Server] Pre-update messenger backup dispatch finished.');
+      }
+    } catch (err) {
+      console.error('[Server] Error during pre-update backup dispatch:', err);
+    } finally {
+      process.exit(0);
+    }
+  }
+
+  process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
+  process.on('SIGHUP', () => handleGracefulShutdown('SIGHUP'));
 
   serverInstance.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {

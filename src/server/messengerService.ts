@@ -612,33 +612,62 @@ export async function dispatchBackupToMessengers(
     summary: caption,
   };
 
+  // Resolve Telegram config with process.env fallbacks
+  const tgToken = config.telegram?.botToken || process.env.TELEGRAM_BOT_TOKEN || '';
+  const tgChatId = config.telegram?.adminChatId || process.env.TELEGRAM_CHAT_ID || '';
+  const tgProxy = config.telegram?.proxyUrl || process.env.TELEGRAM_PROXY_URL || '';
+  const tgApiBase = config.telegram?.apiBaseUrl || process.env.TELEGRAM_API_BASE_URL || '';
+  const tgEnabled = config.telegram?.enabled ?? Boolean(tgToken && tgChatId);
+
+  // Resolve Bale config with process.env fallbacks
+  const baleToken = config.bale?.botToken || process.env.BALE_BOT_TOKEN || '';
+  const baleChatId = config.bale?.adminChatId || process.env.BALE_CHAT_ID || '';
+  const baleApiBase = config.bale?.apiBaseUrl || process.env.BALE_API_BASE_URL || '';
+  const baleEnabled = config.bale?.enabled ?? Boolean(baleToken && baleChatId);
+
   // Dispatch to Telegram
-  if ((target === 'all' || target === 'telegram') && config.telegram?.enabled && config.telegram?.botToken && config.telegram?.adminChatId) {
-    results.telegram = await sendTelegramDocument(
-      config.telegram.botToken,
-      config.telegram.adminChatId,
-      filename,
-      jsonContent,
-      caption,
-      {
-        apiBaseUrl: config.telegram.apiBaseUrl,
-        proxyUrl: config.telegram.proxyUrl
-      }
-    );
+  if ((target === 'all' || target === 'telegram') && tgEnabled && tgToken && tgChatId) {
+    try {
+      results.telegram = await sendTelegramDocument(
+        tgToken,
+        tgChatId,
+        filename,
+        jsonContent,
+        caption,
+        {
+          apiBaseUrl: tgApiBase,
+          proxyUrl: tgProxy
+        }
+      );
+    } catch (err: any) {
+      results.telegram = {
+        success: false,
+        message: `خطای ارسال تلگرام: ${err.message}`,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   // Dispatch to Bale
-  if ((target === 'all' || target === 'bale') && config.bale?.enabled && config.bale?.botToken && config.bale?.adminChatId) {
-    results.bale = await sendBaleDocument(
-      config.bale.botToken,
-      config.bale.adminChatId,
-      filename,
-      jsonContent,
-      caption,
-      {
-        apiBaseUrl: config.bale.apiBaseUrl
-      }
-    );
+  if ((target === 'all' || target === 'bale') && baleEnabled && baleToken && baleChatId) {
+    try {
+      results.bale = await sendBaleDocument(
+        baleToken,
+        baleChatId,
+        filename,
+        jsonContent,
+        caption,
+        {
+          apiBaseUrl: baleApiBase
+        }
+      );
+    } catch (err: any) {
+      results.bale = {
+        success: false,
+        message: `خطای ارسال بله: ${err.message}`,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   return results;

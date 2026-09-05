@@ -671,18 +671,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (stored) {
         return JSON.parse(stored);
       }
-      const isInstalledCheck = localStorage.getItem(`${STORAGE_KEY}_is_installed`) === 'true';
-      if (!isInstalledCheck) {
-        const businessTables = [
-          'users', 'items', 'itemGroups', 'warehouses', 'contractors', 'contractorContracts', 'contractorTransactions', 'inventory', 
-          'boms', 'projects', 'operators', 'stockCountings', 'stockInDocs', 'stockOutDocs', 
-          'transfers', 'purchaseRequests', 'productionLogs', 'materialHandovers', 
-          'notifications', 'traceabilityEvents', 'auditLogs'
-        ];
-        if (businessTables.includes(key)) {
-          return [] as unknown as T;
-        }
-      }
       return fallback;
     } catch {
       return fallback;
@@ -734,15 +722,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const applyServerState = useCallback((data: any, version: number) => {
     if (!data) return;
     isRemoteUpdatingRef.current = true;
-    if (data.items) setItems(data.items);
-    if (data.itemGroups) setItemGroups(data.itemGroups);
-    if (data.warehouses) setWarehouses(data.warehouses);
-    if (data.contractors) setContractors(data.contractors);
+    // Anti-wipe shield: never overwrite non-empty client data with empty server arrays!
+    if (data.items) {
+      if (data.items.length > 0) {
+        setItems(data.items);
+      } else {
+        setItems(prev => prev.length === 0 ? [] : prev);
+      }
+    }
+    if (data.itemGroups) {
+      if (data.itemGroups.length > 0) {
+        setItemGroups(data.itemGroups);
+      } else {
+        setItemGroups(prev => prev.length === 0 ? [] : prev);
+      }
+    }
+    if (data.warehouses) {
+      if (data.warehouses.length > 0) {
+        setWarehouses(data.warehouses);
+      } else {
+        setWarehouses(prev => prev.length === 0 ? [] : prev);
+      }
+    }
+    if (data.contractors) {
+      if (data.contractors.length > 0) {
+        setContractors(data.contractors);
+      } else {
+        setContractors(prev => prev.length === 0 ? [] : prev);
+      }
+    }
     if (data.contractorContracts) setContractorContracts(data.contractorContracts);
     if (data.contractorTransactions) setContractorTransactions(data.contractorTransactions);
-    if (data.inventory) setInventory(data.inventory);
-    if (data.boms) setBoms(data.boms);
-    if (data.projects) setProjects(data.projects);
+    if (data.inventory) {
+      if (data.inventory.length > 0) {
+        setInventory(data.inventory);
+      } else {
+        setInventory(prev => prev.length === 0 ? [] : prev);
+      }
+    }
+    if (data.boms) {
+      if (data.boms.length > 0) {
+        setBoms(data.boms);
+      } else {
+        setBoms(prev => prev.length === 0 ? [] : prev);
+      }
+    }
+    if (data.projects) {
+      if (data.projects.length > 0) {
+        setProjects(data.projects);
+      } else {
+        setProjects(prev => prev.length === 0 ? [] : prev);
+      }
+    }
     if (data.operators) setOperators(data.operators);
     if (data.stockCountings) setStockCountings(data.stockCountings);
     if (data.stockInDocs) setStockInDocs(data.stockInDocs);
@@ -769,8 +800,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.lastBackupTimestamp) setLastBackupTimestamp(data.lastBackupTimestamp);
     if (data.backupHistory) setBackupHistory(data.backupHistory);
     if (data.messengerConfig) {
-      setMessengerConfigState(data.messengerConfig);
-      localStorage.setItem(`${STORAGE_KEY}_messengerConfig`, JSON.stringify(data.messengerConfig));
+      setMessengerConfigState(prev => {
+        const merged = {
+          ...prev,
+          ...data.messengerConfig,
+          telegram: {
+            ...prev.telegram,
+            ...(data.messengerConfig.telegram || {}),
+            botToken: data.messengerConfig.telegram?.botToken || prev.telegram?.botToken || '',
+            adminChatId: data.messengerConfig.telegram?.adminChatId || prev.telegram?.adminChatId || '',
+          },
+          bale: {
+            ...prev.bale,
+            ...(data.messengerConfig.bale || {}),
+            botToken: data.messengerConfig.bale?.botToken || prev.bale?.botToken || '',
+            adminChatId: data.messengerConfig.bale?.adminChatId || prev.bale?.adminChatId || '',
+          }
+        };
+        localStorage.setItem(`${STORAGE_KEY}_messengerConfig`, JSON.stringify(merged));
+        return merged;
+      });
     }
 
     serverVersionRef.current = version;
@@ -1030,7 +1079,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (res.ok) {
           const json = await res.json();
           if (json.success && json.data) {
-            applyServerState(json.data, json.version || Date.now());
+            const serverHasItems = Array.isArray(json.data.items) && json.data.items.length > 0;
+            const clientStoredItemsRaw = localStorage.getItem(`${STORAGE_KEY}_items`);
+            let clientHasItems = false;
+            try {
+              const parsed = clientStoredItemsRaw ? JSON.parse(clientStoredItemsRaw) : [];
+              clientHasItems = Array.isArray(parsed) && parsed.length > 0;
+            } catch {}
+
+            if (!serverHasItems && clientHasItems) {
+              console.warn('[ServerSync] Server database has no items but browser cache contains active items. Restoring server database from client...');
+              isInitialServerSyncDoneRef.current = true;
+              pushStateToServer();
+            } else {
+              applyServerState(json.data, json.version || Date.now());
+            }
           }
         } else {
           setServerSyncStatus('offline');

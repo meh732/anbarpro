@@ -195,12 +195,97 @@ setup_swap_if_needed() {
     fi
 }
 
+# Automatically clean junk files, npm cache, journal logs, and apt cache to prevent ENOSPC (No space left on device)
+cleanup_disk_space() {
+    echo -e "\n${YELLOW}🧹 Analyzing disk space and performing automatic garbage collection...${NC}"
+    # 1. Vacuum systemd journal logs (frequently takes 2-10GB on Linux servers)
+    if command -v journalctl &>/dev/null; then
+        journalctl --vacuum-size=50M 2>/dev/null || true
+    fi
+    # 2. Clean npm caches and debug logs
+    if command -v npm &>/dev/null; then
+        npm cache clean --force 2>/dev/null || true
+    fi
+    rm -rf /root/.npm/_cacache /root/.npm/_logs /root/.npm/_npx 2>/dev/null || true
+    # 3. Clean apt cache and unused packages
+    if command -v apt-get &>/dev/null; then
+        apt-get clean 2>/dev/null || true
+        apt-get autoremove -y 2>/dev/null || true
+    elif command -v yum &>/dev/null; then
+        yum clean all 2>/dev/null || true
+    fi
+    # 4. Prune old pre-update backup archives (keep newest 2)
+    if [ -d "backups" ]; then
+        ls -t backups/AnbarMeh_AutoBackup_PreUpdate_*.tar.gz 2>/dev/null | tail -n +3 | xargs rm -f 2>/dev/null || true
+    fi
+    # 5. Clean tmp directory
+    rm -rf /tmp/anbar_* /tmp/npm-* 2>/dev/null || true
+
+    local free_mb=$(df -m / 2>/dev/null | awk 'NR==2 {print $4}')
+    free_mb=${free_mb:-0}
+    echo -e "   ${GREEN}💾 Free Disk Space on root partition (/): ${free_mb} MB${NC}"
+    if [ "$free_mb" -lt 500 ]; then
+        echo -e "   ${RED}⚠️ WARNING: Disk space is critically low (< 500 MB remaining)!${NC}"
+        find /var/log -type f -name "*.gz" -delete 2>/dev/null || true
+        find /var/log -type f -name "*.1" -delete 2>/dev/null || true
+        free_mb=$(df -m / 2>/dev/null | awk 'NR==2 {print $4}')
+        echo -e "   ${GREEN}💾 Free Disk Space after emergency purge: ${free_mb} MB${NC}"
+    fi
+}
+
+# Robust systemd service unit writer with unmasking and error verification
+unmask_and_write_service() {
+    local target_port="$1"
+    local install_dir="$2"
+    local node_path=$(command -v node || echo "/usr/bin/node")
+
+    echo -e "${YELLOW}⚙️ Writing and configuring systemd unit (anbarpro.service) on port $target_port...${NC}"
+    # Unmask unit if it was masked due to previous crashes or 0-byte writes
+    systemctl unmask anbarpro 2>/dev/null || true
+    if [ -L "/etc/systemd/system/anbarpro.service" ]; then
+        rm -f "/etc/systemd/system/anbarpro.service"
+    fi
+    rm -f "/etc/systemd/system/anbarpro.service" 2>/dev/null || true
+
+    cat > /etc/systemd/system/anbarpro.service <<EOF
+[Unit]
+Description=AnbarMeh Smart Enterprise ERP Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$install_dir
+ExecStart=$node_path dist/server.cjs
+Restart=always
+RestartSec=5
+EnvironmentFile=-$install_dir/.env
+Environment=NODE_ENV=production PORT=$target_port
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    if [ ! -s "/etc/systemd/system/anbarpro.service" ]; then
+        echo -e "${RED}❌ Error: /etc/systemd/system/anbarpro.service was written with 0 bytes or failed! Check disk space with: df -h /${NC}"
+        return 1
+    fi
+
+    systemctl daemon-reload
+    systemctl unmask anbarpro 2>/dev/null || true
+    systemctl enable anbarpro 2>/dev/null || true
+    return 0
+}
+
 # Fresh installation process
 install_anbarpro() {
     echo -e "\n${YELLOW}🔄 Starting AnbarPro installation process...${NC}"
     
     # Ensure swap is setup to avoid freeze during build/npm install
     setup_swap_if_needed
+    
+    # Run automatic garbage collection to prevent ENOSPC (Disk Full)
+    cleanup_disk_space
     
     # 1. Ask for destination directory
     read -p "📂 Enter installation directory [Default: /usr/local/anbarpro]: " INSTALL_DIR
@@ -332,27 +417,7 @@ APP_DOMAIN=$APP_DOMAIN
 EOF
     chmod 600 "$INSTALL_DIR/.env"
 
-    cat > /etc/systemd/system/anbarpro.service <<EOF
-[Unit]
-Description=AnbarMeh Smart Enterprise ERP Application
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$NODE_BIN_PATH dist/server.cjs
-Restart=always
-RestartSec=5
-EnvironmentFile=-$INSTALL_DIR/.env
-Environment=NODE_ENV=production PORT=$APP_PORT
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    systemctl daemon-reload
-    systemctl enable anbarpro
+    unmask_and_write_service "$APP_PORT" "$INSTALL_DIR"
     systemctl restart anbarpro
     
     # 6.1 Open firewall ports (UFW / Firewalld)
@@ -501,6 +566,9 @@ update_anbarpro() {
     # Ensure swap is setup to avoid freeze during update build/npm install
     setup_swap_if_needed
     
+    # Run automatic garbage collection to prevent ENOSPC (Disk Full)
+    cleanup_disk_space
+    
     INSTALL_DIR="/usr/local/anbarpro"
     if [ ! -d "$INSTALL_DIR" ]; then
         read -p "📂 Enter AnbarPro installation folder path [/usr/local/anbarpro]: " INPUT_DIR
@@ -519,16 +587,16 @@ update_anbarpro() {
     systemctl stop anbarpro 2>/dev/null || true
     
     cd "$INSTALL_DIR"
-    mkdir -p backups data
+    mkdir -p backups data /var/backups/anbarpro
     echo -e "${YELLOW}📦 Creating backup before update...${NC}"
     if command -v tar &> /dev/null; then
         tar -czf backups/AnbarMeh_AutoBackup_PreUpdate_$(date +%Y%m%d%H%M%S).tar.gz --exclude='./node_modules' --exclude='./dist' . 2>/dev/null || true
         echo -e "${GREEN}✅ Backup saved successfully in the backups folder.${NC}"
     fi
 
-    # Preserve database during git reset
-    if [ -f "data/server_database.json" ]; then
-        cp -f "data/server_database.json" "/tmp/anbar_db_update_temp.json" 2>/dev/null || true
+    # Safe preservation of active business database to permanent system backup directory
+    if [ -s "data/server_database.json" ]; then
+        cp -f "data/server_database.json" "/var/backups/anbarpro/server_database_update_safe.json" 2>/dev/null || true
     fi
     
     echo -e "${YELLOW}📥 Fetching the latest application codes from GitHub main repository...${NC}"
@@ -536,10 +604,9 @@ update_anbarpro() {
     git reset --hard origin/main || git pull --force
     
     # Restore preserved active database
-    if [ -f "/tmp/anbar_db_update_temp.json" ]; then
+    if [ -s "/var/backups/anbarpro/server_database_update_safe.json" ]; then
         mkdir -p data
-        cp -f "/tmp/anbar_db_update_temp.json" "data/server_database.json"
-        rm -f "/tmp/anbar_db_update_temp.json"
+        cp -f "/var/backups/anbarpro/server_database_update_safe.json" "data/server_database.json"
         echo -e "${GREEN}✅ Active business database preserved safely.${NC}"
     fi
     
@@ -561,6 +628,8 @@ update_anbarpro() {
         run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
     fi
     
+    # Clean previous build to verify success
+    rm -f dist/server.cjs
     echo -e "${YELLOW}📦 Compiling project and building production assets (Vite & Server)...${NC}"
     NODE_OPTIONS="--max-old-space-size=1536" npm run build
     
@@ -573,6 +642,8 @@ update_anbarpro() {
     
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${RED}❌ Critical Error: Update build failed! dist/server.cjs was not created.${NC}"
+        echo -e "${YELLOW}Checking root partition disk space:${NC}"
+        df -h /
         read -p "Press [Enter] to return..." DUMMY
         return 1
     fi
@@ -618,28 +689,8 @@ NODE_ENV=production
 EOF
     fi
 
-    # Ensure systemd service exists and is configured properly with preserved PORT
-    NODE_BIN_PATH=$(command -v node || echo "/usr/bin/node")
-    cat > /etc/systemd/system/anbarpro.service <<EOF
-[Unit]
-Description=AnbarMeh Smart Enterprise ERP Application
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$NODE_BIN_PATH dist/server.cjs
-Restart=always
-RestartSec=5
-EnvironmentFile=-$INSTALL_DIR/.env
-Environment=NODE_ENV=production PORT=$DETECTED_PORT
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl daemon-reload
-    systemctl enable anbarpro
+    # Ensure systemd service exists and is configured properly with preserved PORT (unmasked)
+    unmask_and_write_service "$DETECTED_PORT" "$INSTALL_DIR"
 
     echo -e "${YELLOW}🛡️ Restarting AnbarPro web service on Port $DETECTED_PORT...${NC}"
     # Clean up legacy PM2 processes to prevent port conflicts with systemd (EADDRINUSE)
@@ -756,25 +807,7 @@ EOF
     chmod 600 "$INSTALL_DIR/.env"
 
     # Update systemd unit
-    NODE_BIN_PATH=$(command -v node || echo "/usr/bin/node")
-    cat > /etc/systemd/system/anbarpro.service <<EOF
-[Unit]
-Description=AnbarMeh Smart Enterprise ERP Application
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$NODE_BIN_PATH dist/server.cjs
-Restart=always
-RestartSec=5
-EnvironmentFile=-$INSTALL_DIR/.env
-Environment=NODE_ENV=production PORT=$NEW_PORT
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    unmask_and_write_service "$NEW_PORT" "$INSTALL_DIR"
 
     # Update firewall rules
     if command -v ufw &> /dev/null; then
