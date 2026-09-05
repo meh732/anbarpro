@@ -430,15 +430,6 @@ install_anbarpro() {
     configure_fast_network
     run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing main NPM dependencies"
     
-    # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
-    ARCH=$(uname -m)
-    echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
-    if [ "$ARCH" = "x86_64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide"
-    elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
-    fi
-    
     # 5. Build
     echo -e "\n${YELLOW}📦 Compiling project and building assets (Vite)...${NC}"
     NODE_OPTIONS="--max-old-space-size=1536" npm run build
@@ -446,7 +437,7 @@ install_anbarpro() {
     # Auto-repair fallback if native binary fails during build
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${YELLOW}🔄 Attempting automatic native bindings repair and rebuilding...${NC}"
-        npm install --save-dev --force @tailwindcss/oxide @tailwindcss/oxide-linux-x64-gnu
+        npm install --save-dev @tailwindcss/oxide-linux-x64-gnu --registry=https://registry.npmmirror.com/ 2>/dev/null || true
         NODE_OPTIONS="--max-old-space-size=1536" npm run build
     fi
     
@@ -665,15 +656,6 @@ update_anbarpro() {
     configure_fast_network
     run_npm_with_progress "npm install --production=false --legacy-peer-deps" "Installing/Updating main NPM dependencies"
     
-    # Force install the correct Tailwind CSS v4 Rust native bindings based on CPU architecture
-    ARCH=$(uname -m)
-    echo -e "${YELLOW}🖥️ Detecting CPU architecture: $ARCH${NC}"
-    if [ "$ARCH" = "x86_64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-x64-gnu" "Installing native Linux x64 bindings for @tailwindcss/oxide"
-    elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        run_npm_with_progress "npm install --save-dev --force @tailwindcss/oxide-linux-arm64-gnu" "Installing native Linux ARM64 bindings for @tailwindcss/oxide"
-    fi
-    
     # Clean previous build to verify success
     rm -f dist/server.cjs
     echo -e "${YELLOW}📦 Compiling project and building production assets (Vite & Server)...${NC}"
@@ -682,7 +664,7 @@ update_anbarpro() {
     # Auto-repair fallback if native binary fails during build
     if [ ! -f "dist/server.cjs" ]; then
         echo -e "\n${YELLOW}🔄 Attempting automatic native bindings repair and rebuilding...${NC}"
-        npm install --save-dev --force @tailwindcss/oxide @tailwindcss/oxide-linux-x64-gnu
+        npm install --save-dev @tailwindcss/oxide-linux-x64-gnu --registry=https://registry.npmmirror.com/ 2>/dev/null || true
         NODE_OPTIONS="--max-old-space-size=1536" npm run build
     fi
     
