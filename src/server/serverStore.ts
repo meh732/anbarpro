@@ -174,8 +174,8 @@ class ServerStoreManager {
       fs.writeFileSync(targetPath, JSON.stringify(stateToDump, null, 2), 'utf-8');
       console.log(`[ServerStore] Saved local snapshot backup: ${filename} (Reason: ${reason})`);
       
-      // Rotate backups to keep max 30
-      this.rotateBackups(30);
+      // Rotate backups to keep max 10 lightweight snapshots
+      this.rotateBackups(10);
       return targetPath;
     } catch (err) {
       console.error('[ServerStore] Error creating snapshot backup:', err);

@@ -198,9 +198,18 @@ setup_swap_if_needed() {
 # Automatically clean junk files, npm cache, journal logs, and apt cache to prevent ENOSPC (No space left on device)
 cleanup_disk_space() {
     echo -e "\n${YELLOW}🧹 Analyzing disk space and performing automatic garbage collection...${NC}"
-    # 1. Vacuum systemd journal logs (frequently takes 2-10GB on Linux servers)
+    # 0. Fix any broken package managers from aborted OS upgrades (e.g. linux-headers)
+    if command -v dpkg &>/dev/null; then
+        dpkg --configure -a 2>/dev/null || true
+    fi
+    if command -v apt-get &>/dev/null; then
+        apt-get install -f -y 2>/dev/null || true
+    fi
+
+    # 1. Vacuum systemd journal logs aggressively
     if command -v journalctl &>/dev/null; then
-        journalctl --vacuum-size=50M 2>/dev/null || true
+        journalctl --vacuum-time=1d 2>/dev/null || true
+        journalctl --vacuum-size=20M 2>/dev/null || true
     fi
     # 2. Clean npm caches and debug logs
     if command -v npm &>/dev/null; then
@@ -214,22 +223,27 @@ cleanup_disk_space() {
     elif command -v yum &>/dev/null; then
         yum clean all 2>/dev/null || true
     fi
-    # 4. Prune old pre-update backup archives (keep newest 2)
-    if [ -d "backups" ]; then
-        ls -t backups/AnbarMeh_AutoBackup_PreUpdate_*.tar.gz 2>/dev/null | tail -n +3 | xargs rm -f 2>/dev/null || true
+    # 4. Permanently purge all legacy multi-gigabyte tar.gz archives that ate all VPS disk space
+    rm -rf backups/*.tar.gz /usr/local/anbarpro/backups/*.tar.gz /usr/local/anbarpro_backup_* 2>/dev/null || true
+    # 5. Clean snapshot json backups, keep only 5 newest to prevent inode / disk bloat
+    if [ -d "data/backups" ]; then
+        ls -t data/backups/*.json 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
     fi
-    # 5. Clean tmp directory
-    rm -rf /tmp/anbar_* /tmp/npm-* 2>/dev/null || true
+    if [ -d "/usr/local/anbarpro/data/backups" ]; then
+        ls -t /usr/local/anbarpro/data/backups/*.json 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+    fi
+    # 6. Clean tmp directory and compressed old system logs
+    rm -rf /tmp/anbar_* /tmp/npm-* /tmp/* 2>/dev/null || true
+    find /var/log -type f -name "*.gz" -delete 2>/dev/null || true
+    find /var/log -type f -name "*.1" -delete 2>/dev/null || true
 
     local free_mb=$(df -m / 2>/dev/null | awk 'NR==2 {print $4}')
     free_mb=${free_mb:-0}
-    echo -e "   ${GREEN}💾 Free Disk Space on root partition (/): ${free_mb} MB${NC}"
+    local free_inodes=$(df -i / 2>/dev/null | awk 'NR==2 {print $4}')
+    free_inodes=${free_inodes:-0}
+    echo -e "   ${GREEN}💾 Free Disk Space on root partition (/): ${free_mb} MB (Free Inodes: ${free_inodes})${NC}"
     if [ "$free_mb" -lt 500 ]; then
         echo -e "   ${RED}⚠️ WARNING: Disk space is critically low (< 500 MB remaining)!${NC}"
-        find /var/log -type f -name "*.gz" -delete 2>/dev/null || true
-        find /var/log -type f -name "*.1" -delete 2>/dev/null || true
-        free_mb=$(df -m / 2>/dev/null | awk 'NR==2 {print $4}')
-        echo -e "   ${GREEN}💾 Free Disk Space after emergency purge: ${free_mb} MB${NC}"
     fi
 }
 
@@ -587,16 +601,13 @@ update_anbarpro() {
     systemctl stop anbarpro 2>/dev/null || true
     
     cd "$INSTALL_DIR"
-    mkdir -p backups data /var/backups/anbarpro
-    echo -e "${YELLOW}📦 Creating backup before update...${NC}"
-    if command -v tar &> /dev/null; then
-        tar -czf backups/AnbarMeh_AutoBackup_PreUpdate_$(date +%Y%m%d%H%M%S).tar.gz --exclude='./node_modules' --exclude='./dist' . 2>/dev/null || true
-        echo -e "${GREEN}✅ Backup saved successfully in the backups folder.${NC}"
-    fi
-
+    mkdir -p data/backups /var/backups/anbarpro
+    echo -e "${YELLOW}📦 Preserving database snapshot safely before update...${NC}"
     # Safe preservation of active business database to permanent system backup directory
     if [ -s "data/server_database.json" ]; then
         cp -f "data/server_database.json" "/var/backups/anbarpro/server_database_update_safe.json" 2>/dev/null || true
+        cp -f "data/server_database.json" "data/backups/db_snapshot_pre_update.json" 2>/dev/null || true
+        echo -e "${GREEN}✅ Database preserved safely (Lightweight snapshot, zero disk bloat).${NC}"
     fi
     
     echo -e "${YELLOW}📥 Fetching the latest application codes from GitHub main repository...${NC}"
@@ -925,7 +936,7 @@ stop_service() {
     sleep 2
 }
 
-# Manual backup
+# Manual lightweight database backup
 manual_backup() {
     INSTALL_DIR="/usr/local/anbarpro"
     if [ ! -d "$INSTALL_DIR" ]; then
@@ -934,11 +945,15 @@ manual_backup() {
         return 1
     fi
     cd "$INSTALL_DIR"
-    mkdir -p backups
-    BACKUP_FILE="backups/AnbarMeh_ManualBackup_$(date +%Y%m%d%H%M%S).tar.gz"
-    tar -czf "$BACKUP_FILE" --exclude='./node_modules' --exclude='./dist' .
-    echo -e "${GREEN}✅ Manual compressed backup saved successfully: $BACKUP_FILE${NC}"
-    sleep 3
+    mkdir -p data/backups
+    local BACKUP_FILE="data/backups/manual_backup_$(date +%Y%m%d%H%M%S).json"
+    if [ -s "data/server_database.json" ]; then
+        cp -f "data/server_database.json" "$BACKUP_FILE"
+        echo -e "${GREEN}✅ Database backup saved cleanly (Lightweight JSON snapshot, zero disk bloat): $BACKUP_FILE${NC}"
+    else
+        echo -e "${RED}❌ Active database file (data/server_database.json) not found!${NC}"
+    fi
+    sleep 2
 }
 
 # Restore database from backup
@@ -950,25 +965,30 @@ restore_backup() {
         return 1
     fi
     
-    echo -e "\n${CYAN}🔎 Searching for available backups in system...${NC}"
+    echo -e "\n${CYAN}🔎 Searching for available database backups in system...${NC}"
     
     local count=0
     local backup_paths=()
     local backup_types=()
     
-    # 1. Search for previous renamed directories:
-    for dir in $(ls -d /usr/local/anbarpro_backup_* 2>/dev/null); do
-        if [ -f "$dir/data/server_database.json" ]; then
-            backup_paths+=("$dir/data/server_database.json")
-            backup_types+=("Full directory backup: $dir")
-            ((count++))
-        fi
+    # 1. Search permanent system-level pre-update safety backup:
+    if [ -s "/var/backups/anbarpro/server_database_update_safe.json" ]; then
+        backup_paths+=("/var/backups/anbarpro/server_database_update_safe.json")
+        backup_types+=("Safety Pre-Update Database (Permanent System Copy)")
+        ((count++))
+    fi
+
+    # 2. Search snapshot JSON files in data/backups:
+    for json_file in $(ls -t "$INSTALL_DIR/data/backups/"*.json 2>/dev/null); do
+        backup_paths+=("$json_file")
+        backup_types+=("Database Snapshot: $(basename "$json_file")")
+        ((count++))
     done
     
-    # 2. Search for tar.gz backups inside backups directory
+    # 3. Search for legacy tar.gz backups inside backups directory if any exist
     for archive in $(ls -t "$INSTALL_DIR/backups/"*.tar.gz 2>/dev/null); do
         backup_paths+=("$archive")
-        backup_types+=("Compressed backup archive: $(basename "$archive")")
+        backup_types+=("Legacy archive: $(basename "$archive")")
         ((count++))
     done
     
