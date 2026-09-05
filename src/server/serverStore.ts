@@ -212,42 +212,33 @@ class ServerStoreManager {
         if (parsed && typeof parsed === 'object') {
           const defaultState = getDefaultServerState();
           
-          // Anti-Wipe Protection: Check if parsed data was completely empty (e.g. wiped to raw)
-          const parsedHasItems = Array.isArray(parsed.items) && parsed.items.length > 0;
-          const parsedHasWarehouses = Array.isArray(parsed.warehouses) && parsed.warehouses.length > 0;
-          
-          if (!parsedHasItems && !parsedHasWarehouses) {
-            console.warn('[ServerStore] Detected empty or unseeded database on disk. Searching for latest non-empty backup...');
-            const restoredFromBackup = this.tryRecoverFromBackups();
-            if (restoredFromBackup) {
-              console.log('[ServerStore] Successfully recovered full database from previous backup snapshot!');
-              return restoredFromBackup;
-            }
-            console.log('[ServerStore] No previous backup found. Merging with full baseline dataset to prevent blank state.');
-            const merged = {
-              ...defaultState,
-              ...parsed,
-              isInstalled: true,
-              companyName: parsed.companyName || defaultState.companyName,
-              items: defaultState.items,
-              itemGroups: defaultState.itemGroups,
-              warehouses: defaultState.warehouses,
-              contractors: defaultState.contractors,
-              inventory: defaultState.inventory,
-              boms: defaultState.boms,
-              projects: defaultState.projects,
-              version: Date.now(),
-              lastUpdated: new Date().toISOString(),
-            };
-            this.saveToDiskSync(merged);
-            return merged;
-          }
-
-          console.log(`[ServerStore] Successfully loaded central database from ${this.filePath} (Version: ${parsed.version || 'initial'}, Items: ${parsed.items?.length || 0})`);
+          // Valid state loaded directly from disk
+          console.log(`[ServerStore] Successfully loaded central database from ${this.filePath} (Version: ${parsed.version || 'initial'}, Items: ${parsed.items?.length ?? 0}, Warehouses: ${parsed.warehouses?.length ?? 0})`);
           
           return {
             ...defaultState,
             ...parsed,
+            // Ensure empty arrays remain empty (do not overwrite user's raw empty state with defaults)
+            items: parsed.items !== undefined ? parsed.items : defaultState.items,
+            itemGroups: parsed.itemGroups !== undefined ? parsed.itemGroups : defaultState.itemGroups,
+            warehouses: parsed.warehouses !== undefined ? parsed.warehouses : defaultState.warehouses,
+            contractors: parsed.contractors !== undefined ? parsed.contractors : defaultState.contractors,
+            inventory: parsed.inventory !== undefined ? parsed.inventory : defaultState.inventory,
+            boms: parsed.boms !== undefined ? parsed.boms : defaultState.boms,
+            projects: parsed.projects !== undefined ? parsed.projects : defaultState.projects,
+            operators: parsed.operators !== undefined ? parsed.operators : defaultState.operators,
+            stockCountings: parsed.stockCountings !== undefined ? parsed.stockCountings : defaultState.stockCountings,
+            stockInDocs: parsed.stockInDocs !== undefined ? parsed.stockInDocs : defaultState.stockInDocs,
+            stockOutDocs: parsed.stockOutDocs !== undefined ? parsed.stockOutDocs : defaultState.stockOutDocs,
+            transfers: parsed.transfers !== undefined ? parsed.transfers : defaultState.transfers,
+            purchaseRequests: parsed.purchaseRequests !== undefined ? parsed.purchaseRequests : defaultState.purchaseRequests,
+            productionLogs: parsed.productionLogs !== undefined ? parsed.productionLogs : defaultState.productionLogs,
+            materialHandovers: parsed.materialHandovers !== undefined ? parsed.materialHandovers : defaultState.materialHandovers,
+            notifications: parsed.notifications !== undefined ? parsed.notifications : defaultState.notifications,
+            messages: parsed.messages !== undefined ? parsed.messages : defaultState.messages,
+            channels: parsed.channels !== undefined ? parsed.channels : defaultState.channels,
+            traceabilityEvents: parsed.traceabilityEvents !== undefined ? parsed.traceabilityEvents : defaultState.traceabilityEvents,
+            auditLogs: parsed.auditLogs !== undefined ? parsed.auditLogs : defaultState.auditLogs,
             isInstalled: true,
             version: parsed.version || Date.now(),
             lastUpdated: parsed.lastUpdated || new Date().toISOString(),
@@ -467,7 +458,7 @@ class ServerStoreManager {
       materialHandovers: [],
       notifications: [],
       messages: [],
-      channels: INITIAL_CHANNELS,
+      channels: [],
       traceabilityEvents: [],
       auditLogs: [{
         id: `log-${Date.now()}-wipe`,

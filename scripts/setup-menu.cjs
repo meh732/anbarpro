@@ -255,6 +255,16 @@ async function handleUpdate() {
   console.log('\x1b[33m%s\x1b[0m', '🛡️ Mandatory security backup starting before update begins...');
   const backedUp = createBackup('PRE_UPDATE');
 
+  // Also dispatch backup to configured bot (Telegram / Bale)
+  try {
+    const prebuildScript = path.join(process.cwd(), 'scripts', 'prebuild-backup.cjs');
+    if (fs.existsSync(prebuildScript)) {
+      execSync(`node "${prebuildScript}"`, { stdio: 'inherit' });
+    }
+  } catch (e) {
+    // Non-blocking
+  }
+
   if (!backedUp) {
     const override = await askQuestion('⚠️ Backup failed! Do you still want to proceed with the update? (y/N): ');
     if (override.toLowerCase() !== 'y') {

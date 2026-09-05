@@ -931,6 +931,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setProductionLogs([]);
       setMaterialHandovers([]);
       setNotifications([]);
+      setMessages([]);
+      setChannels([]);
       setTraceabilityEvents([]);
 
       const initialLog: AuditLog = {
@@ -942,16 +944,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         action: 'تخلیه و خام‌سازی پایگاه داده',
         targetEntity: 'System',
         targetId: 'DATABASE_WIPED',
-        details: 'تمامی اطلاعات آزمایشی و فرآیندهای انبار پاکسازی شدند و سیستم در وضعیت کاملاً خام (صفر) قرار گرفت.'
+        details: 'تمامی اطلاعات آزمایشی، انبارها، کالاها، پروژه‌ها و فرمول‌ها پاکسازی شدند و سیستم در وضعیت کاملاً خام (صفر) قرار گرفت.'
       };
       setAuditLogs([initialLog]);
 
-      // Clear operational data from localStorage
+      // Clear all operational and transaction data from localStorage
       const operationalKeys = [
         'items', 'itemGroups', 'warehouses', 'contractors', 'inventory', 'boms', 
         'projects', 'operators', 'stockCountings', 'stockInDocs', 'stockOutDocs', 
         'transfers', 'purchaseRequests', 'productionLogs', 'materialHandovers', 
-        'notifications', 'traceabilityEvents'
+        'notifications', 'messages', 'channels', 'traceabilityEvents'
       ];
       operationalKeys.forEach(k => {
         try {

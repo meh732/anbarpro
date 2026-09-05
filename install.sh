@@ -74,7 +74,8 @@ show_menu() {
     echo -e "   ${CYAN}[6]${NC} Stop Web Service (Stop Service)"
     echo -e "   ${CYAN}[7]${NC} Create Manual System Backup (Backup)"
     echo -e "   ${GREEN}[8]${NC} Restore Database from Backup (Restore Data)"
-    echo -e "   ${RED}[9]${NC} Uninstall System Completely (Uninstall)"
+    echo -e "   ${YELLOW}[9]${NC} Wipe & Reset Database to 100% Raw State (خام‌سازی کامل دیتابیس)"
+    echo -e "   ${RED}[10]${NC} Uninstall System Completely (حذف کامل سامانه)"
     echo -e "   ${RED}[0]${NC} Exit Installer (Exit)"
     echo -e "${CYAN}==================================================================${NC}"
 }
@@ -632,24 +633,41 @@ update_anbarpro() {
     systemctl stop anbarpro 2>/dev/null || true
     
     cd "$INSTALL_DIR"
-    mkdir -p data/backups /var/backups/anbarpro
-    echo -e "${YELLOW}📦 Preserving database snapshot safely before update...${NC}"
-    # Safe preservation of active business database to permanent system backup directory
+    mkdir -p data/backups /var/backups/anbarpro /tmp
+    
+    echo -e "\n${CYAN}==================================================================${NC}"
+    echo -e "${CYAN}🤖 1. Checking Database & Dispatching Pre-Update Backup to Bot...${NC}"
+    echo -e "${CYAN}==================================================================${NC}"
+    
+    # 1. First preserve active user database in multiple permanent and temp locations
     if [ -s "data/server_database.json" ]; then
         cp -f "data/server_database.json" "/var/backups/anbarpro/server_database_update_safe.json" 2>/dev/null || true
+        cp -f "data/server_database.json" "/tmp/server_database_update_safe.json" 2>/dev/null || true
         cp -f "data/server_database.json" "data/backups/db_snapshot_pre_update.json" 2>/dev/null || true
-        echo -e "${GREEN}✅ Database preserved safely (Lightweight snapshot, zero disk bloat).${NC}"
+        echo -e "${GREEN}✅ Active database safely snapshotted to /var/backups/anbarpro and /tmp${NC}"
+    elif [ -s "/var/backups/anbarpro/server_database_update_safe.json" ]; then
+        echo -e "${GREEN}✅ Preserved database snapshot found in /var/backups/anbarpro${NC}"
+        cp -f "/var/backups/anbarpro/server_database_update_safe.json" "data/server_database.json" 2>/dev/null || true
     fi
     
-    echo -e "${YELLOW}📥 Fetching the latest application codes from GitHub main repository...${NC}"
+    # 2. Call the bot backup dispatcher to read messenger settings and send the backup to Telegram/Bale
+    if [ -f "scripts/prebuild-backup.cjs" ]; then
+        node scripts/prebuild-backup.cjs || true
+    fi
+    
+    echo -e "\n${YELLOW}📥 2. Fetching the latest application codes from GitHub main repository...${NC}"
     git fetch --all
     git reset --hard origin/main || git pull --force
     
-    # Restore preserved active database
+    # 3. Strictly restore preserved active database
+    echo -e "\n${YELLOW}🛡️ 3. Strictly restoring and preserving your active business database...${NC}"
+    mkdir -p data
     if [ -s "/var/backups/anbarpro/server_database_update_safe.json" ]; then
-        mkdir -p data
         cp -f "/var/backups/anbarpro/server_database_update_safe.json" "data/server_database.json"
-        echo -e "${GREEN}✅ Active business database preserved safely.${NC}"
+        echo -e "${GREEN}✅ Active business database strictly preserved and restored (Size: $(ls -lh data/server_database.json | awk '{print $5}')).${NC}"
+    elif [ -s "/tmp/server_database_update_safe.json" ]; then
+        cp -f "/tmp/server_database_update_safe.json" "data/server_database.json"
+        echo -e "${GREEN}✅ Active business database restored from temporary backup.${NC}"
     fi
     
     # 4. Configure High-speed Mirror & Install NPM Dependencies
@@ -1098,10 +1116,133 @@ restore_backup() {
     sleep 3
 }
 
+# Wipe database completely to 100% clean raw state (خام‌سازی کامل دیتابیس)
+wipe_anbarpro_database() {
+    INSTALL_DIR="/usr/local/anbarpro"
+    if [ ! -d "$INSTALL_DIR" ]; then
+        echo -e "${RED}❌ Application folder not found!${NC}"
+        sleep 2
+        return 1
+    fi
+
+    echo -e "\n${RED}==================================================================${NC}"
+    echo -e "${RED}⚠️  WIPE & RESET DATABASE TO 100% RAW STATE (خام‌سازی کامل دیتابیس)${NC}"
+    echo -e "${RED}==================================================================${NC}"
+    echo -e "این عملیات تمامی کالاها، انبارها، پروژه‌ها، اسناد انبارداری، فرمول‌های ساخت و لاگ‌ها را"
+    echo -e "کاملاً پاک و صفر می‌کند و دیتابیس را به وضعیت ۱۰۰٪ خام و بدون داده تبدیل می‌نماید."
+    echo -e "${CYAN}🔹 اطلاعات حساب کاربری مدیر ارشد (admin) و نام شرکت حفظ خواهند شد.${NC}"
+    echo -e "${RED}==================================================================${NC}"
+    
+    read -p "⚠️ آیا از پاکسازی ۱۰۰٪ و خام کردن کامل دیتابیس مطمئن هستید؟ (yes/no): " CONFIRM_WIPE
+    if [ "$CONFIRM_WIPE" != "yes" ]; then
+        echo -e "${YELLOW}عملیات خام‌سازی لغو گردید.${NC}"
+        sleep 1.5
+        return 0
+    fi
+
+    cd "$INSTALL_DIR"
+    mkdir -p data/backups /var/backups/anbarpro
+
+    # 1. Take safety backup and dispatch to bot first
+    if [ -s "data/server_database.json" ]; then
+        cp -f "data/server_database.json" "/var/backups/anbarpro/server_database_pre_wipe.json" 2>/dev/null || true
+        cp -f "data/server_database.json" "data/backups/pre_wipe_$(date +%Y%m%d_%H%M%S).json" 2>/dev/null || true
+        echo -e "${GREEN}💾 پشتیبان امنیتی پیش از خام‌سازی در دیسک ذخیره شد.${NC}"
+    fi
+
+    echo -e "${CYAN}🤖 فراخوانی ربات و ارسال نسخه پشتیبان پیش از خام‌سازی...${NC}"
+    if [ -f "scripts/prebuild-backup.cjs" ]; then
+        node scripts/prebuild-backup.cjs || true
+    fi
+
+    # 2. Reset database file directly using Node helper
+    node -e "
+    const fs = require('fs');
+    const path = require('path');
+    const dbPath = path.join(process.cwd(), 'data', 'server_database.json');
+    let db = {};
+    if (fs.existsSync(dbPath)) {
+      try { db = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch(e) {}
+    }
+    const adminUser = (db.users && db.users.find(u => u.role === 'SystemAdmin')) || {
+      id: 'usr-1',
+      username: 'admin',
+      fullName: 'مدیر ارشد سیستم',
+      role: 'SystemAdmin',
+      department: 'مدیریت',
+      email: 'admin@local.host',
+      allowedTabs: ['*'],
+      isActive: true,
+      canAdd: true,
+      canEdit: true,
+      canDelete: true,
+      canExport: true
+    };
+    const cleanDb = {
+      version: Date.now(),
+      lastUpdated: new Date().toISOString(),
+      isInstalled: true,
+      companyName: db.companyName || 'سامانه مدیریت انبار و تولید',
+      autoBackupIntervalHours: 24,
+      lastBackupTimestamp: new Date().toISOString(),
+      backupHistory: [],
+      messengerConfig: db.messengerConfig || {},
+      users: [adminUser],
+      items: [],
+      itemGroups: [],
+      warehouses: [],
+      contractors: [],
+      inventory: [],
+      boms: [],
+      projects: [],
+      operators: [],
+      stockCountings: [],
+      stockInDocs: [],
+      stockOutDocs: [],
+      transfers: [],
+      purchaseRequests: [],
+      productionLogs: [],
+      materialHandovers: [],
+      notifications: [],
+      messages: [],
+      channels: [],
+      traceabilityEvents: [],
+      auditLogs: [{
+        id: 'log-' + Date.now() + '-wipe',
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        userId: adminUser.id,
+        userName: adminUser.fullName,
+        role: adminUser.role,
+        action: 'تخلیه و خام‌سازی کامل دیتابیس',
+        targetEntity: 'System',
+        targetId: 'DATABASE_WIPED',
+        details: 'تمامی اطلاعات آزمایشی، انبارها، کالاها و پروژه‌ها پاک شدند و پایگاه داده ۱۰۰٪ خام شد.'
+      }]
+    };
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    fs.writeFileSync(dbPath, JSON.stringify(cleanDb, null, 2), 'utf8');
+    console.log('✅ پایگاه داده ۱۰۰٪ تخلیه و به فایل خام تبدیل شد.');
+    "
+
+    # Also sync /var/backups/anbarpro/server_database_update_safe.json so updates preserve the clean raw state
+    if [ -s "data/server_database.json" ]; then
+        cp -f "data/server_database.json" "/var/backups/anbarpro/server_database_update_safe.json" 2>/dev/null || true
+    fi
+
+    echo -e "${YELLOW}⚡ اعمال تغییرات و راه‌اندازی مجدد سرویس...${NC}"
+    systemctl restart anbarpro 2>/dev/null || true
+
+    echo -e "\n${GREEN}==================================================================${NC}"
+    echo -e "${GREEN}🎉 دیتابیس با موفقیت ۱۰۰٪ خام و صفر شد!${NC}"
+    echo -e "اکنون سامانه کاملاً خالی و آماده ورود اطلاعات و ساختار واقعی انبار شماست."
+    echo -e "${GREEN}==================================================================${NC}\n"
+    read -p "برای بازگشت به منو [Enter] را بزنید..." DUMMY
+}
+
 # Core menu loop
 while true; do
     show_menu
-    read -p "🔢 Please select an option [0-9]: " CHOICE
+    read -p "🔢 Please select an option [0-10]: " CHOICE
     case $CHOICE in
         1)
             install_anbarpro
@@ -1128,6 +1269,9 @@ while true; do
             restore_backup
             ;;
         9)
+            wipe_anbarpro_database
+            ;;
+        10)
             uninstall_anbarpro
             ;;
         0)
