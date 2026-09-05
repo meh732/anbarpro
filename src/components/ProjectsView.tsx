@@ -18,6 +18,177 @@ import {
   ProjectStageProgressReportModal 
 } from './ProjectStageModals';
 
+// Sub-stage dedicated harmonious color palettes for visual separation & ergonomics
+export interface SubStageTheme {
+  name: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+  borderRight: string;
+  cardBg: string;
+  cardBorder: string;
+  cardHoverBorder: string;
+  indicatorBg: string;
+  indicatorText: string;
+  indicatorBorder: string;
+  accentDot: string;
+  connectorLine: string;
+  treeCardBg: string;
+  treeCardBorder: string;
+}
+
+export const SUB_STAGE_THEMES: SubStageTheme[] = [
+  // 1. Sky / Blue
+  {
+    name: 'آبی آسمانی',
+    badgeBg: 'bg-sky-100 text-sky-900 border-sky-300',
+    badgeText: 'text-sky-900',
+    badgeBorder: 'border-sky-300',
+    borderRight: 'border-r-sky-500',
+    cardBg: 'bg-sky-50/50 hover:bg-sky-50/80',
+    cardBorder: 'border-sky-200/90',
+    cardHoverBorder: 'hover:border-sky-300',
+    indicatorBg: 'bg-sky-100 text-sky-900 border-sky-300',
+    indicatorText: 'text-sky-900',
+    indicatorBorder: 'border-sky-300',
+    accentDot: 'bg-sky-500',
+    connectorLine: 'bg-sky-500',
+    treeCardBg: 'bg-sky-50/80',
+    treeCardBorder: 'border-sky-300 ring-1 ring-sky-200'
+  },
+  // 2. Purple / Violet
+  {
+    name: 'بنفش ارغوانی',
+    badgeBg: 'bg-purple-100 text-purple-900 border-purple-300',
+    badgeText: 'text-purple-900',
+    badgeBorder: 'border-purple-300',
+    borderRight: 'border-r-purple-500',
+    cardBg: 'bg-purple-50/50 hover:bg-purple-50/80',
+    cardBorder: 'border-purple-200/90',
+    cardHoverBorder: 'hover:border-purple-300',
+    indicatorBg: 'bg-purple-100 text-purple-900 border-purple-300',
+    indicatorText: 'text-purple-900',
+    indicatorBorder: 'border-purple-300',
+    accentDot: 'bg-purple-500',
+    connectorLine: 'bg-purple-500',
+    treeCardBg: 'bg-purple-50/80',
+    treeCardBorder: 'border-purple-300 ring-1 ring-purple-200'
+  },
+  // 3. Amber / Warm Gold
+  {
+    name: 'کهربایی زرین',
+    badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
+    badgeText: 'text-amber-900',
+    badgeBorder: 'border-amber-300',
+    borderRight: 'border-r-amber-500',
+    cardBg: 'bg-amber-50/50 hover:bg-amber-50/80',
+    cardBorder: 'border-amber-200/90',
+    cardHoverBorder: 'hover:border-amber-300',
+    indicatorBg: 'bg-amber-100 text-amber-900 border-amber-300',
+    indicatorText: 'text-amber-900',
+    indicatorBorder: 'border-amber-300',
+    accentDot: 'bg-amber-500',
+    connectorLine: 'bg-amber-500',
+    treeCardBg: 'bg-amber-50/80',
+    treeCardBorder: 'border-amber-300 ring-1 ring-amber-200'
+  },
+  // 4. Emerald / Mint
+  {
+    name: 'سبز زمردی',
+    badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+    badgeText: 'text-emerald-900',
+    badgeBorder: 'border-emerald-300',
+    borderRight: 'border-r-emerald-500',
+    cardBg: 'bg-emerald-50/50 hover:bg-emerald-50/80',
+    cardBorder: 'border-emerald-200/90',
+    cardHoverBorder: 'hover:border-emerald-300',
+    indicatorBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+    indicatorText: 'text-emerald-900',
+    indicatorBorder: 'border-emerald-300',
+    accentDot: 'bg-emerald-500',
+    connectorLine: 'bg-emerald-500',
+    treeCardBg: 'bg-emerald-50/80',
+    treeCardBorder: 'border-emerald-300 ring-1 ring-emerald-200'
+  },
+  // 5. Rose / Coral
+  {
+    name: 'گلبهی مرجانی',
+    badgeBg: 'bg-rose-100 text-rose-900 border-rose-300',
+    badgeText: 'text-rose-900',
+    badgeBorder: 'border-rose-300',
+    borderRight: 'border-r-rose-500',
+    cardBg: 'bg-rose-50/50 hover:bg-rose-50/80',
+    cardBorder: 'border-rose-200/90',
+    cardHoverBorder: 'hover:border-rose-300',
+    indicatorBg: 'bg-rose-100 text-rose-900 border-rose-300',
+    indicatorText: 'text-rose-900',
+    indicatorBorder: 'border-rose-300',
+    accentDot: 'bg-rose-500',
+    connectorLine: 'bg-rose-500',
+    treeCardBg: 'bg-rose-50/80',
+    treeCardBorder: 'border-rose-300 ring-1 ring-rose-200'
+  },
+  // 6. Teal / Cyan
+  {
+    name: 'فیروزه‌ای دریایی',
+    badgeBg: 'bg-teal-100 text-teal-900 border-teal-300',
+    badgeText: 'text-teal-900',
+    badgeBorder: 'border-teal-300',
+    borderRight: 'border-r-teal-500',
+    cardBg: 'bg-teal-50/50 hover:bg-teal-50/80',
+    cardBorder: 'border-teal-200/90',
+    cardHoverBorder: 'hover:border-teal-300',
+    indicatorBg: 'bg-teal-100 text-teal-900 border-teal-300',
+    indicatorText: 'text-teal-900',
+    indicatorBorder: 'border-teal-300',
+    accentDot: 'bg-teal-500',
+    connectorLine: 'bg-teal-500',
+    treeCardBg: 'bg-teal-50/80',
+    treeCardBorder: 'border-teal-300 ring-1 ring-teal-200'
+  },
+  // 7. Orange / Tangerine
+  {
+    name: 'نارنجی پرتغالی',
+    badgeBg: 'bg-orange-100 text-orange-900 border-orange-300',
+    badgeText: 'text-orange-900',
+    badgeBorder: 'border-orange-300',
+    borderRight: 'border-r-orange-500',
+    cardBg: 'bg-orange-50/50 hover:bg-orange-50/80',
+    cardBorder: 'border-orange-200/90',
+    cardHoverBorder: 'hover:border-orange-300',
+    indicatorBg: 'bg-orange-100 text-orange-900 border-orange-300',
+    indicatorText: 'text-orange-900',
+    indicatorBorder: 'border-orange-300',
+    accentDot: 'bg-orange-500',
+    connectorLine: 'bg-orange-500',
+    treeCardBg: 'bg-orange-50/80',
+    treeCardBorder: 'border-orange-300 ring-1 ring-orange-200'
+  },
+  // 8. Indigo / Violet
+  {
+    name: 'نیلی لاجوردی',
+    badgeBg: 'bg-indigo-100 text-indigo-900 border-indigo-300',
+    badgeText: 'text-indigo-900',
+    badgeBorder: 'border-indigo-300',
+    borderRight: 'border-r-indigo-500',
+    cardBg: 'bg-indigo-50/50 hover:bg-indigo-50/80',
+    cardBorder: 'border-indigo-200/90',
+    cardHoverBorder: 'hover:border-indigo-300',
+    indicatorBg: 'bg-indigo-100 text-indigo-900 border-indigo-300',
+    indicatorText: 'text-indigo-900',
+    indicatorBorder: 'border-indigo-300',
+    accentDot: 'bg-indigo-500',
+    connectorLine: 'bg-indigo-500',
+    treeCardBg: 'bg-indigo-50/80',
+    treeCardBorder: 'border-indigo-300 ring-1 ring-indigo-200'
+  }
+];
+
+export const getSubStageTheme = (subIndex: number = 0, depth: number = 1): SubStageTheme => {
+  const index = Math.abs((depth - 1) * 3 + subIndex) % SUB_STAGE_THEMES.length;
+  return SUB_STAGE_THEMES[index];
+};
+
 // Helper Component for True 2D Graphical Organizational Tree Diagram with Connecting Branch Lines
 const GraphicalOrgTreeNode: React.FC<{
   step: ProjectStep;
@@ -28,6 +199,8 @@ const GraphicalOrgTreeNode: React.FC<{
   contractors: any[];
   statusFilter: string;
   typeFilter: string;
+  depth?: number;
+  subIndex?: number;
   updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
   setAddingSubStepTo: (val: { projectId: string; parentStepId: string } | null) => void;
   onEditStep?: (step: ProjectStep, projectId: string) => void;
@@ -41,6 +214,8 @@ const GraphicalOrgTreeNode: React.FC<{
   contractors,
   statusFilter,
   typeFilter,
+  depth = 0,
+  subIndex = 0,
   updateProjectStep,
   setAddingSubStepTo,
   onEditStep,
@@ -57,20 +232,27 @@ const GraphicalOrgTreeNode: React.FC<{
   const matchedBom = boms.find(b => b.finishedItemId === step.outputItemId && b.isActive);
   const contractor = contractors.find(c => c.id === step.contractorId);
 
+  const isSubStage = depth > 0;
+  const theme = isSubStage ? getSubStageTheme(subIndex, depth) : null;
+
   return (
     <div className="flex flex-col items-center relative">
       {/* Step Card Box */}
       <div className={`w-64 p-3 rounded-2xl border transition-all duration-200 shadow-sm relative z-10 hover:shadow-md hover:scale-[1.02] ${
         step.status === 'Completed'
-          ? 'bg-emerald-50 border-emerald-300 text-emerald-950 ring-2 ring-emerald-200'
+          ? `bg-emerald-50 border-emerald-300 text-emerald-950 ring-2 ring-emerald-200 ${isSubStage ? `border-r-4 ${theme?.borderRight}` : ''}`
           : step.status === 'InProgress'
-          ? 'bg-indigo-50 border-indigo-300 text-indigo-950 ring-2 ring-indigo-300'
+          ? `bg-indigo-50 border-indigo-300 text-indigo-950 ring-2 ring-indigo-300 ${isSubStage ? `border-r-4 ${theme?.borderRight}` : ''}`
+          : isSubStage
+          ? `${theme?.treeCardBg} ${theme?.treeCardBorder} border-r-4 ${theme?.borderRight} text-slate-900`
           : 'bg-white border-slate-300 text-slate-800'
       }`}>
         <div className="flex items-center justify-between gap-1 mb-1.5">
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-200">
-              مرحله {codePrefix}
+            <span className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${
+              isSubStage ? theme?.indicatorBg : 'bg-indigo-100 text-indigo-900 border-indigo-200'
+            }`}>
+              {isSubStage ? `زیرمرحله ${codePrefix}` : `مرحله ${codePrefix}`}
             </span>
             {subSteps.length > 0 && (
               <button
@@ -213,27 +395,32 @@ const GraphicalOrgTreeNode: React.FC<{
             <div className="absolute top-0 left-32 right-32 h-0.5 bg-indigo-400 z-0"></div>
           )}
 
-          {subSteps.map((sub, idx) => (
-            <div key={sub.id} className="flex flex-col items-center relative">
-              {/* Vertical line connecting from horizontal branch line down to child card */}
-              <div className="absolute -top-6 w-0.5 h-6 bg-indigo-400 z-0"></div>
+          {subSteps.map((sub, idx) => {
+            const childTheme = getSubStageTheme(idx, depth + 1);
+            return (
+              <div key={sub.id} className="flex flex-col items-center relative">
+                {/* Vertical line connecting from horizontal branch line down to child card with child theme color */}
+                <div className={`absolute -top-6 w-0.5 h-6 ${childTheme.connectorLine} z-0`}></div>
 
-              <GraphicalOrgTreeNode
-                step={sub}
-                projectId={projectId}
-                codePrefix={`${codePrefix}.${idx + 1}`}
-                items={items}
-                boms={boms}
-                contractors={contractors}
-                statusFilter={statusFilter}
-                typeFilter={typeFilter}
-                updateProjectStep={updateProjectStep}
-                setAddingSubStepTo={setAddingSubStepTo}
-                onEditStep={onEditStep}
-                onDeleteStep={onDeleteStep}
-              />
-            </div>
-          ))}
+                <GraphicalOrgTreeNode
+                  step={sub}
+                  projectId={projectId}
+                  codePrefix={`${codePrefix}.${idx + 1}`}
+                  depth={depth + 1}
+                  subIndex={idx}
+                  items={items}
+                  boms={boms}
+                  contractors={contractors}
+                  statusFilter={statusFilter}
+                  typeFilter={typeFilter}
+                  updateProjectStep={updateProjectStep}
+                  setAddingSubStepTo={setAddingSubStepTo}
+                  onEditStep={onEditStep}
+                  onDeleteStep={onDeleteStep}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -246,6 +433,7 @@ const LinearStepCard: React.FC<{
   projectId: string;
   project?: Project;
   depth?: number;
+  subIndex?: number;
   stepCodeStr?: string;
   items: any[];
   boms: any[];
@@ -263,6 +451,7 @@ const LinearStepCard: React.FC<{
   projectId,
   project,
   depth = 0,
+  subIndex = 0,
   stepCodeStr = '1',
   items,
   boms,
@@ -282,6 +471,9 @@ const LinearStepCard: React.FC<{
   const hasSubSteps = Boolean(step.subSteps && step.subSteps.length > 0);
   const stepBomItems = step.bomItems || [];
 
+  const isSubStage = depth > 0;
+  const subStageTheme = isSubStage ? getSubStageTheme(subIndex, depth) : null;
+
   const stepTarget = step.outputQuantity || step.targetQuantity || targetQuantity || 1;
   const stepCompleted = step.completedQuantity || (step.status === 'Completed' ? stepTarget : 0);
   const stepScrap = step.scrapQuantity || 0;
@@ -289,13 +481,21 @@ const LinearStepCard: React.FC<{
 
   return (
     <div className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
-      depth > 0 ? 'mr-3 sm:mr-4 border-r-4 border-indigo-400/80 bg-slate-50/90 shadow-2xs my-2' : 'shadow-2xs my-1'
-    } ${
-      step.status === 'Completed'
-        ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
-        : step.status === 'InProgress'
-        ? 'border-indigo-200 bg-indigo-50/40 hover:border-indigo-300 ring-1 ring-indigo-200/50'
-        : 'border-slate-200/90 bg-white hover:border-slate-300'
+      isSubStage
+        ? `mr-3 sm:mr-6 border-r-[5px] ${subStageTheme?.borderRight} ${
+            step.status === 'Completed'
+              ? 'bg-emerald-50/40 border-emerald-200/90 hover:border-emerald-300'
+              : step.status === 'InProgress'
+              ? `${subStageTheme?.cardBg} border-indigo-300/90 ring-2 ring-indigo-200/60 shadow-xs`
+              : `${subStageTheme?.cardBg} ${subStageTheme?.cardBorder} ${subStageTheme?.cardHoverBorder}`
+          } shadow-2xs my-2.5`
+        : `shadow-2xs my-1.5 ${
+            step.status === 'Completed'
+              ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
+              : step.status === 'InProgress'
+              ? 'border-indigo-200 bg-indigo-50/40 hover:border-indigo-300 ring-1 ring-indigo-200/50'
+              : 'border-slate-200/90 bg-white hover:border-slate-300'
+          }`
     }`}>
       {/* Linear Header Row (Click to toggle expansion) */}
       <div 
@@ -309,6 +509,8 @@ const LinearStepCard: React.FC<{
               ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
               : step.status === 'InProgress'
               ? 'bg-indigo-600 text-white border-indigo-600'
+              : isSubStage
+              ? `${subStageTheme?.badgeBg} ${subStageTheme?.badgeBorder}`
               : 'bg-slate-100 text-slate-700 border-slate-200'
           }`}>
             {stepCodeStr}
@@ -319,6 +521,14 @@ const LinearStepCard: React.FC<{
               <h4 className="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
                 {step.name || step.title}
               </h4>
+
+              {/* Sub-Stage Indicator Badge */}
+              {isSubStage && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1.5 shrink-0 shadow-2xs ${subStageTheme?.indicatorBg}`}>
+                  <span className={`w-2 h-2 rounded-full ${subStageTheme?.accentDot} ring-1 ring-white/90`} />
+                  <span>زیرمرحله {subIndex + 1}</span>
+                </span>
+              )}
 
               {/* Badges */}
               {step.isOutsourced || step.contractorId ? (
@@ -352,9 +562,25 @@ const LinearStepCard: React.FC<{
                 </span>
               )}
 
-              {hasSubSteps && (
+              {hasSubSteps && !isSubStage && (
+                <span className="text-[10px] font-bold text-slate-700 bg-slate-100/95 px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-1.5 shrink-0 shadow-2xs">
+                  <GitBranch className="w-3 h-3 text-indigo-600" />
+                  <span className="flex items-center gap-1">
+                    {step.subSteps?.slice(0, 5).map((_, i) => (
+                      <span 
+                        key={i} 
+                        className={`w-2 h-2 rounded-full ${getSubStageTheme(i, depth + 1).accentDot} ring-1 ring-white`}
+                        title={`زیرمرحله ${i + 1}`}
+                      />
+                    ))}
+                    {(step.subSteps?.length || 0) > 5 && <span className="text-[9px] text-slate-400 font-mono">+</span>}
+                  </span>
+                  <span>{step.subSteps?.length} زیرمرحله</span>
+                </span>
+              )}
+              {hasSubSteps && isSubStage && (
                 <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200 font-mono shrink-0">
-                  {step.subSteps?.length} زیرمرحله
+                  {step.subSteps?.length} زیرمرحله داخلی
                 </span>
               )}
             </div>
@@ -462,7 +688,9 @@ const LinearStepCard: React.FC<{
 
       {/* Expanded Accordion Body */}
       {isOpen && (
-        <div className="p-4 sm:p-5 bg-slate-50/80 border-t border-slate-200/90 space-y-4 animate-fadeIn">
+        <div className={`p-4 sm:p-5 ${
+          isSubStage ? `${subStageTheme?.cardBg} border-t ${subStageTheme?.cardBorder}` : 'bg-slate-50/80 border-t border-slate-200/90'
+        } space-y-4 animate-fadeIn`}>
           {/* Automated Stage Progress & Handover Banner */}
           <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-4 rounded-2xl shadow-sm space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
@@ -634,21 +862,40 @@ const LinearStepCard: React.FC<{
 
           {/* SubSteps Rendering */}
           {hasSubSteps && (
-            <div className="pt-2 border-t border-slate-200/80 space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-indigo-900">
-                <span className="flex items-center gap-1.5">
-                  <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>زیرمراحل این بخش ({step.subSteps?.length} زیرمرحله):</span>
+            <div className="pt-3 border-t border-slate-200/80 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-800 bg-white/90 p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="flex items-center gap-2">
+                  <GitBranch className="w-4 h-4 text-indigo-600" />
+                  <span>زیرمراحل این بخش ({step.subSteps?.length} زیرمرحله با تفکیک رنگی اختصاصی):</span>
                 </span>
+
+                {/* Sub-stages color preview tags */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {step.subSteps?.map((sub, sIdx) => {
+                    const th = getSubStageTheme(sIdx, depth + 1);
+                    return (
+                      <span
+                        key={sub.id || sIdx}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 shadow-2xs ${th.indicatorBg}`}
+                        title={`زیرمرحله ${sIdx + 1}: ${sub.name || sub.title} (${th.name})`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${th.accentDot}`} />
+                        <span>{sIdx + 1}. {sub.name ? (sub.name.length > 14 ? sub.name.substring(0, 14) + '...' : sub.name) : `زیرمرحله ${sIdx + 1}`}</span>
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="space-y-2 pr-2">
+              <div className="space-y-2.5 pr-1 sm:pr-2 border-r-2 border-dashed border-indigo-200/80 mr-1 sm:mr-2">
                 {step.subSteps?.map((sub, sIdx) => (
                   <LinearStepCard
                     key={sub.id}
                     step={sub}
                     projectId={projectId}
+                    project={project}
                     depth={depth + 1}
+                    subIndex={sIdx}
                     stepCodeStr={`${stepCodeStr}.${sIdx + 1}`}
                     items={items}
                     boms={boms}
@@ -658,6 +905,9 @@ const LinearStepCard: React.FC<{
                     setAddingSubStepTo={setAddingSubStepTo}
                     onEditStep={onEditStep}
                     onDeleteStep={onDeleteStep}
+                    onHandoverStep={onHandoverStep}
+                    onRecordOutput={onRecordOutput}
+                    canAddSubStep={canAddSubStep}
                   />
                 ))}
               </div>
@@ -830,13 +1080,13 @@ export const ProjectsView: React.FC = () => {
     }
   };
 
-  const flattenProjectSteps = (steps: ProjectStep[] = [], prefix = '1', depth = 0): Array<{ step: ProjectStep; code: string; depth: number }> => {
-    let list: Array<{ step: ProjectStep; code: string; depth: number }> = [];
+  const flattenProjectSteps = (steps: ProjectStep[] = [], prefix = '', depth = 0): Array<{ step: ProjectStep; code: string; depth: number; subIndex: number }> => {
+    let list: Array<{ step: ProjectStep; code: string; depth: number; subIndex: number }> = [];
     if (!steps || !Array.isArray(steps)) return list;
     steps.forEach((s, idx) => {
       if (!s) return;
       const code = prefix ? `${prefix}.${idx + 1}` : `${idx + 1}`;
-      list.push({ step: s, code, depth });
+      list.push({ step: s, code, depth, subIndex: idx });
       if (s.subSteps && Array.isArray(s.subSteps) && s.subSteps.length > 0) {
         list = list.concat(flattenProjectSteps(s.subSteps, code, depth + 1));
       }
@@ -1898,6 +2148,7 @@ export const ProjectsView: React.FC = () => {
                         projectId={activeProj.id}
                         project={activeProj}
                         depth={0}
+                        subIndex={idx}
                         stepCodeStr={`${step.stepNumber || idx + 1}`}
                         items={items}
                         boms={boms}
@@ -2068,6 +2319,7 @@ export const ProjectsView: React.FC = () => {
                           projectId={proj.id}
                           project={proj}
                           depth={0}
+                          subIndex={idx}
                           stepCodeStr={`${step.stepNumber || idx + 1}`}
                           items={items}
                           boms={boms}
@@ -3123,7 +3375,7 @@ export const ProjectsView: React.FC = () => {
       {treeReportProject && (() => {
         const finishedTargetItem = (items || []).find(i => i.id === treeReportProject.targetFinishedItemId);
         const kpis = (() => {
-          const flattened = flattenProjectSteps(treeReportProject.steps || [], '1', 0);
+          const flattened = flattenProjectSteps(treeReportProject.steps || [], '', 0);
           const totalSteps = flattened.length;
           const completedSteps = flattened.filter(f => f?.step?.status === 'Completed').length;
           const inProgressSteps = flattened.filter(f => f?.step?.status === 'InProgress').length;
@@ -3446,18 +3698,29 @@ export const ProjectsView: React.FC = () => {
                             <div className="space-y-2.5">
                               <span className="text-xs font-black text-slate-800 block">ساختار شکست کار و درخت مراحل پروژه:</span>
                               <div className="space-y-1.5 max-h-[350px] overflow-y-auto custom-scrollbar pr-1 divide-y divide-slate-100/60">
-                                {kpis.flattened.map(({ step, code, depth }) => {
+                                {kpis.flattened.map(({ step, code, depth, subIndex }) => {
+                                  const isSubStage = depth > 0;
+                                  const theme = isSubStage ? getSubStageTheme(subIndex, depth) : null;
                                   return (
                                     <div 
                                       key={step.id} 
-                                      className="flex items-center justify-between text-xs py-2 transition-colors hover:bg-slate-50"
-                                      style={{ paddingRight: `${depth * 16}px` }}
+                                      className={`flex items-center justify-between text-xs py-2 transition-colors rounded-xl px-2.5 my-1 ${
+                                        isSubStage ? `${theme?.cardBg} border-r-4 ${theme?.borderRight} border border-slate-200/50` : 'hover:bg-slate-50'
+                                      }`}
+                                      style={{ paddingRight: `${depth * 18 + 8}px` }}
                                     >
                                       <div className="flex items-center gap-2 truncate">
-                                        <span className="font-mono font-bold text-indigo-700 text-[10px] bg-indigo-50/55 px-1.5 py-0.5 rounded border border-indigo-100">
+                                        <span className={`font-mono font-bold text-[10px] px-1.5 py-0.5 rounded border ${
+                                          isSubStage ? theme?.indicatorBg : 'text-indigo-700 bg-indigo-50/55 border-indigo-100'
+                                        }`}>
                                           {depth > 0 && "└─ "}{code}
                                         </span>
                                         <span className="font-bold text-slate-900 truncate">{step.name || step.title}</span>
+                                        {isSubStage && (
+                                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${theme?.indicatorBg}`}>
+                                            زیرمرحله {subIndex + 1}
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="flex items-center gap-2 shrink-0">
                                         {step.status === 'Completed' ? (
@@ -3515,6 +3778,8 @@ export const ProjectsView: React.FC = () => {
                                       step={step}
                                       projectId={treeReportProject.id}
                                       codePrefix={`${idx + 1}`}
+                                      depth={0}
+                                      subIndex={idx}
                                       items={items}
                                       boms={boms}
                                       contractors={contractors}
@@ -3735,16 +4000,33 @@ export const ProjectsView: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {kpis.flattened.map(({ step, code, depth }) => {
+                          {kpis.flattened.map(({ step, code, depth, subIndex }) => {
+                            const isSubStage = depth > 0;
+                            const theme = isSubStage ? getSubStageTheme(subIndex, depth) : null;
                             const outputItem = items.find(i => i.id === step.outputItemId);
                             return (
-                              <tr key={step.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="whitespace-nowrap p-2.5 font-mono text-[11px] font-bold text-indigo-700">
-                                  {code}
+                              <tr key={step.id} className={`transition-colors ${isSubStage ? `${theme?.cardBg} hover:bg-slate-100/90` : 'hover:bg-slate-50'}`}>
+                                <td className="whitespace-nowrap p-2.5 font-mono text-[11px] font-bold">
+                                  {isSubStage ? (
+                                    <span className={`px-2 py-0.5 rounded-md border font-mono ${theme?.indicatorBg}`}>
+                                      {code}
+                                    </span>
+                                  ) : (
+                                    <span className="text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-md border border-indigo-100 font-mono font-extrabold">
+                                      {code}
+                                    </span>
+                                  )}
                                 </td>
-                                <td className="whitespace-nowrap p-2.5 font-semibold text-slate-900" style={{ paddingRight: `${(depth * 16) + 10}px` }}>
-                                  {depth > 0 && <span className="text-indigo-400 font-mono ml-1">└─</span>}
-                                  {step.name || step.title}
+                                <td className="whitespace-nowrap p-2.5 font-semibold text-slate-900" style={{ paddingRight: `${(depth * 18) + 10}px` }}>
+                                  {isSubStage && (
+                                    <span className={`font-mono font-bold ml-1.5 ${theme?.indicatorText}`}>└─</span>
+                                  )}
+                                  <span>{step.name || step.title}</span>
+                                  {isSubStage && (
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border mr-2 ${theme?.indicatorBg}`}>
+                                      زیرمرحله {subIndex + 1}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="whitespace-nowrap p-2.5 text-center">
                                   {step.isOutsourced || step.contractorId ? (
