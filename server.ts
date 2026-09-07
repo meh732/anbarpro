@@ -855,6 +855,7 @@ async function startServer() {
         timestamp: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
         createdAt: new Date().toISOString(),
         isRead: false,
+        readBy: [senderId],
       };
 
       const updatedMsgs = [...currentMsgs, newMsg];

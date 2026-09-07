@@ -7,6 +7,7 @@ import {
   FileText, Boxes, Warehouse, Calendar, CheckSquare, 
   ArrowLeftRight, FileCheck, X, Sparkles, Building2, UserCheck
 } from 'lucide-react';
+import { printElement } from '../utils/printEngine';
 
 export const OperatorLoggerView: React.FC = () => {
   const { 
@@ -929,7 +930,7 @@ export const OperatorLoggerView: React.FC = () => {
             </div>
 
             {/* PRINTABLE RECEIPT CONTENT */}
-            <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-slate-900 text-xs dir-rtl">
+            <div id="printable-material-handover" className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-slate-900 text-xs dir-rtl">
               {/* Header Box */}
               <div className="border-2 border-slate-900 p-4 rounded-xl flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-3">
@@ -1019,14 +1020,14 @@ export const OperatorLoggerView: React.FC = () => {
             <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-3 print:hidden">
               <button
                 onClick={() => setPrintableHandover(null)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs"
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs cursor-pointer"
               >
                 بستن
               </button>
               
               <button
-                onClick={() => window.print()}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md"
+                onClick={() => printElement('printable-material-handover', { title: `برگه_تحویل_مواد_${printableHandover.docNumber}`, orientation: 'portrait' })}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>چاپ برگه تحویل (پرینت A4/A5)</span>
@@ -1041,18 +1042,18 @@ export const OperatorLoggerView: React.FC = () => {
          ========================================================= */}
       {printableProdLog && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] print:fixed print:inset-0 print:m-0 print:p-8 print:w-full print:max-w-none print:shadow-none print:border-none print:rounded-none print:bg-white print:z-[99999]">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
             <div className="p-4 bg-emerald-600 text-white flex items-center justify-between print:hidden">
               <div className="flex items-center gap-2">
                 <Printer className="w-5 h-5" />
                 <h3 className="font-bold text-sm">رسید چاپی تحویل قطعه نیمه‌ساخته/نهایی به سرشیفت و انبار</h3>
               </div>
-              <button onClick={() => setPrintableProdLog(null)} className="text-white/80 hover:text-white">
+              <button onClick={() => setPrintableProdLog(null)} className="text-white/80 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-slate-900 text-xs dir-rtl">
+            <div id="printable-production-log" className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-slate-900 text-xs dir-rtl">
               <div className="border-2 border-slate-900 p-4 rounded-xl flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-emerald-600 text-white font-black text-xl flex items-center justify-center rounded-xl font-mono">
@@ -1172,14 +1173,14 @@ export const OperatorLoggerView: React.FC = () => {
             <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-3 print:hidden">
               <button
                 onClick={() => setPrintableProdLog(null)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs"
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs cursor-pointer"
               >
                 بستن
               </button>
               
               <button
-                onClick={() => window.print()}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md"
+                onClick={() => printElement('printable-production-log', { title: `رسید_تولید_${printableProdLog.id}`, orientation: 'portrait' })}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>چاپ رسید تحویل کالا (پرینت)</span>

@@ -8,6 +8,7 @@ import {
 import { Item, Warehouse } from '../types';
 import { formatPersianAmountWithWords } from '../utils/persianUtils';
 import { exportElementToPdf } from '../utils/pdfExport';
+import { printElement } from '../utils/printEngine';
 
 export type OfficialDocType = 'STOCK_IN' | 'STOCK_OUT' | 'PURCHASE_REQUEST' | 'TRANSFER' | 'BOM';
 
@@ -153,8 +154,10 @@ export const OfficialDocumentViewerModal: React.FC<Props> = ({
   }, []);
 
   const handlePrint = () => {
-    document.body.classList.add('printing-modal');
-    window.print();
+    printElement('printable-official-doc', {
+      title: `سند_${doc.docNumber || 'رسمی'}_${doc.type}`,
+      orientation: 'portrait'
+    });
   };
 
   const handleExportPdf = async () => {

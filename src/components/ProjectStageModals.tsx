@@ -6,6 +6,7 @@ import {
   X, Check, Factory, Users, ShieldAlert, ArrowRight, Layers, 
   FileSpreadsheet, Printer, Download, Sparkles, TrendingUp
 } from 'lucide-react';
+import { printElement } from '../utils/printEngine';
 
 // ============================================================================
 // 1. STEP MATERIAL HANDOVER MODAL (تحویل قطعات و شروع مرحله)
@@ -764,173 +765,176 @@ export const ProjectStageProgressReportModal: React.FC<{
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportCSV}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
               <span>خروجی اکسل</span>
             </button>
             <button
-              onClick={() => window.print()}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+              onClick={() => printElement(`printable-project-progress-${project.id}`, { title: `گزارش_پیشرفت_پروژه_${project.code}`, orientation: 'portrait' })}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4 text-indigo-300" />
               <span>چاپ</span>
             </button>
-            <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors">
+            <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-xl transition-colors cursor-pointer">
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Printable Official Header */}
-        <div className="hidden print:flex justify-between items-center border-b pb-4 border-slate-300 p-4">
-          <div>
-            <h1 className="text-lg font-bold">گزارش کنترل پیشرفت مراحل پروژه: {project.name} ({project.code})</h1>
-            <p className="text-xs text-slate-600">کارفرما: {project.client} | محصول نهایی: {finishedItem?.name}</p>
-          </div>
-          <div className="text-left font-mono text-xs">
-            <div>تاریخ گزارش: {new Date().toLocaleDateString('fa-IR')}</div>
-            <div>درصد پیشرفت کل: {summary.averageProgressPercent}٪</div>
-          </div>
-        </div>
-
-        {/* Body Content */}
-        <div className="p-5 overflow-y-auto space-y-5 text-xs flex-1">
-          {/* Summary KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-2xl text-center">
-              <span className="text-[11px] text-indigo-800 font-bold block mb-1">میانگین پیشرفت کل</span>
-              <strong className="text-xl font-black font-mono text-indigo-950">{summary.averageProgressPercent}%</strong>
+        {/* Printable Area Wrapper */}
+        <div id={`printable-project-progress-${project.id}`} className="flex-1 flex flex-col overflow-y-auto">
+          {/* Printable Official Header */}
+          <div className="flex justify-between items-center border-b pb-4 border-slate-300 p-5">
+            <div>
+              <h1 className="text-lg font-bold text-slate-900">گزارش کنترل پیشرفت مراحل پروژه: {project.name} ({project.code})</h1>
+              <p className="text-xs text-slate-600 mt-1">کارفرما: {project.client} | محصول نهایی: {finishedItem?.name}</p>
             </div>
-
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center">
-              <span className="text-[11px] text-slate-600 font-bold block mb-1">تعداد کل مراحل</span>
-              <strong className="text-xl font-bold font-mono text-slate-900">{summary.totalSteps}</strong>
-            </div>
-
-            <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-2xl text-center">
-              <span className="text-[11px] text-emerald-800 font-bold block mb-1">مراحل تکمیل شده</span>
-              <strong className="text-xl font-bold font-mono text-emerald-700">{summary.completedSteps}</strong>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-100 p-3 rounded-2xl text-center">
-              <span className="text-[11px] text-amber-800 font-bold block mb-1">در حال انجام</span>
-              <strong className="text-xl font-bold font-mono text-amber-700">{summary.inProgressSteps}</strong>
-            </div>
-
-            <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl text-center">
-              <span className="text-[11px] text-rose-800 font-bold block mb-1">در انتظار</span>
-              <strong className="text-xl font-bold font-mono text-rose-700">{summary.pendingSteps}</strong>
+            <div className="text-left font-mono text-xs text-slate-600 space-y-1">
+              <div>تاریخ گزارش: {new Date().toLocaleDateString('fa-IR')}</div>
+              <div>درصد پیشرفت کل: <strong className="text-indigo-900">{summary.averageProgressPercent}٪</strong></div>
             </div>
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center justify-between print:hidden">
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500 font-bold text-[11px]">فیلتر وضعیت:</span>
-              <button
-                type="button"
-                onClick={() => setFilterStatus('all')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${filterStatus === 'all' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                همه ({summary.totalSteps})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterStatus('Completed')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${filterStatus === 'Completed' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                تکمیل شده ({summary.completedSteps})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterStatus('InProgress')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${filterStatus === 'InProgress' ? 'bg-amber-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                در حال اجرا ({summary.inProgressSteps})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterStatus('Pending')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${filterStatus === 'Pending' ? 'bg-slate-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                در انتظار ({summary.pendingSteps})
-              </button>
-            </div>
-          </div>
+          {/* Body Content */}
+          <div className="p-5 space-y-5 text-xs flex-1">
+            {/* Summary KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-2xl text-center">
+                <span className="text-[11px] text-indigo-800 font-bold block mb-1">میانگین پیشرفت کل</span>
+                <strong className="text-xl font-black font-mono text-indigo-950">{summary.averageProgressPercent}%</strong>
+              </div>
 
-          {/* Detailed Step-by-Step Matrix Table */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs print:border-slate-400">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px] print:bg-slate-200 print:text-black">
-                <tr>
-                  <th className="p-3 w-10 text-center">#</th>
-                  <th className="p-3">عنوان و نام مرحله ساخت</th>
-                  <th className="p-3 w-28 text-center">تیراژ هدف</th>
-                  <th className="p-3 w-28 text-center">تکمیل شده</th>
-                  <th className="p-3 w-20 text-center">ضایعات</th>
-                  <th className="p-3 w-44">درصد پیشرفت کار</th>
-                  <th className="p-3 w-28 text-center">وضعیت اجرایی</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 print:divide-slate-300">
-                {filteredSteps.map((st, idx) => (
-                  <tr key={st.stepId} className="hover:bg-slate-50/80">
-                    <td className="p-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
-                    <td className="p-3">
-                      <div className="font-bold text-slate-900">{st.stepName}</div>
-                    </td>
-                    <td className="p-3 text-center font-mono font-bold text-slate-800">
-                      {st.targetQuantity.toLocaleString('fa-IR')}
-                    </td>
-                    <td className="p-3 text-center font-mono font-bold text-emerald-700">
-                      {st.completedQuantity.toLocaleString('fa-IR')}
-                    </td>
-                    <td className="p-3 text-center font-mono text-amber-700">
-                      {st.scrapQuantity > 0 ? st.scrapQuantity.toLocaleString('fa-IR') : '-'}
-                    </td>
-                    <td className="p-3">
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-center text-[10px] font-mono">
-                          <span className="text-slate-500">{st.completedQuantity} / {st.targetQuantity}</span>
-                          <span className="font-bold text-indigo-700">{st.progressPercent}%</span>
-                        </div>
-                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
-                          <div 
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              st.progressPercent === 100 
-                                ? 'bg-emerald-500' 
-                                : st.progressPercent > 0 
-                                ? 'bg-indigo-600' 
-                                : 'bg-slate-200'
-                            }`}
-                            style={{ width: `${st.progressPercent}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-3 text-center">
-                      {st.status === 'Completed' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          تکمیل شده
-                        </span>
-                      ) : st.status === 'InProgress' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                          <Clock className="w-3 h-3 text-indigo-600" />
-                          در حال انجام
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                          <PlayCircle className="w-3 h-3 text-slate-400" />
-                          در انتظار
-                        </span>
-                      )}
-                    </td>
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center">
+                <span className="text-[11px] text-slate-600 font-bold block mb-1">تعداد کل مراحل</span>
+                <strong className="text-xl font-bold font-mono text-slate-900">{summary.totalSteps}</strong>
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-2xl text-center">
+                <span className="text-[11px] text-emerald-800 font-bold block mb-1">مراحل تکمیل شده</span>
+                <strong className="text-xl font-bold font-mono text-emerald-700">{summary.completedSteps}</strong>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-100 p-3 rounded-2xl text-center">
+                <span className="text-[11px] text-amber-800 font-bold block mb-1">در حال انجام</span>
+                <strong className="text-xl font-bold font-mono text-amber-700">{summary.inProgressSteps}</strong>
+              </div>
+
+              <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl text-center">
+                <span className="text-[11px] text-rose-800 font-bold block mb-1">در انتظار</span>
+                <strong className="text-xl font-bold font-mono text-rose-700">{summary.pendingSteps}</strong>
+              </div>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center justify-between print:hidden">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500 font-bold text-[11px]">فیلتر وضعیت:</span>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus('all')}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${filterStatus === 'all' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  همه ({summary.totalSteps})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus('Completed')}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${filterStatus === 'Completed' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  تکمیل شده ({summary.completedSteps})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus('InProgress')}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${filterStatus === 'InProgress' ? 'bg-amber-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  در حال اجرا ({summary.inProgressSteps})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus('Pending')}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${filterStatus === 'Pending' ? 'bg-slate-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  در انتظار ({summary.pendingSteps})
+                </button>
+              </div>
+            </div>
+
+            {/* Detailed Step-by-Step Matrix Table */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                  <tr>
+                    <th className="p-3 w-10 text-center">#</th>
+                    <th className="p-3">عنوان و نام مرحله ساخت</th>
+                    <th className="p-3 w-28 text-center">تیراژ هدف</th>
+                    <th className="p-3 w-28 text-center">تکمیل شده</th>
+                    <th className="p-3 w-20 text-center">ضایعات</th>
+                    <th className="p-3 w-44">درصد پیشرفت کار</th>
+                    <th className="p-3 w-28 text-center">وضعیت اجرایی</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredSteps.map((st, idx) => (
+                    <tr key={st.stepId} className="hover:bg-slate-50/80">
+                      <td className="p-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                      <td className="p-3">
+                        <div className="font-bold text-slate-900">{st.stepName}</div>
+                      </td>
+                      <td className="p-3 text-center font-mono font-bold text-slate-800">
+                        {st.targetQuantity.toLocaleString('fa-IR')}
+                      </td>
+                      <td className="p-3 text-center font-mono font-bold text-emerald-700">
+                        {st.completedQuantity.toLocaleString('fa-IR')}
+                      </td>
+                      <td className="p-3 text-center font-mono text-amber-700">
+                        {st.scrapQuantity > 0 ? st.scrapQuantity.toLocaleString('fa-IR') : '-'}
+                      </td>
+                      <td className="p-3">
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center text-[10px] font-mono">
+                            <span className="text-slate-500">{st.completedQuantity} / {st.targetQuantity}</span>
+                            <span className="font-bold text-indigo-700">{st.progressPercent}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                st.progressPercent === 100 
+                                  ? 'bg-emerald-500' 
+                                  : st.progressPercent > 0 
+                                  ? 'bg-indigo-600' 
+                                  : 'bg-slate-200'
+                              }`}
+                              style={{ width: `${st.progressPercent}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        {st.status === 'Completed' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            تکمیل شده
+                          </span>
+                        ) : st.status === 'InProgress' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            <Clock className="w-3 h-3 text-indigo-600" />
+                            در حال انجام
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                            <PlayCircle className="w-3 h-3 text-slate-400" />
+                            در انتظار
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 

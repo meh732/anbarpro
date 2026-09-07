@@ -1599,6 +1599,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
       createdAt: new Date().toISOString(),
       isRead: false,
+      readBy: [currentUser.id, currentUser.username].filter(Boolean) as string[],
     };
 
     // Mark as seen immediately so our own sent message NEVER triggers incoming alerts for us
@@ -1672,9 +1673,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const markChatAsRead = async (options?: { channelId?: string; senderId?: string; messageIds?: string[] }) => {
+  const markChatAsRead = useCallback(async (options?: { channelId?: string; senderId?: string; messageIds?: string[] }) => {
     if (!currentUser?.id) return;
     const { channelId, senderId, messageIds } = options || {};
+    const myIds = [currentUser.id, currentUser.username].filter(Boolean) as string[];
 
     // 1. Optimistically update local messages in state
     setMessages(prev => prev.map(msg => {
@@ -1684,20 +1686,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (channelId) {
         shouldMark = msg.channelId === channelId;
       } else if (senderId) {
-        shouldMark = (msg.senderId === senderId && msg.recipientId === currentUser.id) ||
-                     (msg.senderId === currentUser.id && msg.recipientId === senderId);
+        shouldMark = (myIds.includes(msg.senderId) && msg.recipientId === senderId) ||
+                     (msg.senderId === senderId && (msg.recipientId ? myIds.includes(msg.recipientId) : true));
       } else {
-        shouldMark = msg.recipientId === currentUser.id || (!msg.recipientId && msg.senderId !== currentUser.id);
+        shouldMark = true;
       }
 
       if (shouldMark) {
-        const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
-        const isDirect = msg.recipientId === currentUser.id;
-        if (!readBy.includes(currentUser.id) || (isDirect && !msg.isRead)) {
+        const currentReadBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+        const isDirect = msg.recipientId && myIds.includes(msg.recipientId);
+        const hasAllIds = myIds.every(id => currentReadBy.includes(id));
+        
+        if (!hasAllIds || (isDirect && !msg.isRead)) {
           return {
             ...msg,
-            isRead: isDirect ? true : msg.isRead,
-            readBy: readBy.includes(currentUser.id) ? readBy : [...readBy, currentUser.id]
+            isRead: true,
+            readBy: Array.from(new Set([...currentReadBy, ...myIds]))
           };
         }
       }
@@ -1707,9 +1711,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2. Optimistically mark chat notifications as read
     setNotifications(prev => prev.map(n => {
       if (n.type === 'ChatMessage' && !n.isRead) {
-        if (n.targetUserId === currentUser.id) return { ...n, isRead: true };
+        if (n.targetUserId && myIds.includes(n.targetUserId)) return { ...n, isRead: true };
         if (channelId && n.metadata?.channelId === channelId) return { ...n, isRead: true };
-        if (senderId && n.metadata?.senderId === senderId && n.targetUserId === currentUser.id) return { ...n, isRead: true };
+        if (senderId && n.metadata?.senderId === senderId) return { ...n, isRead: true };
         if (!channelId && !senderId) return { ...n, isRead: true };
       }
       return n;
@@ -1730,24 +1734,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.error('Failed to sync mark-read to server:', e);
     }
-  };
+  }, [currentUser?.id, currentUser?.username, serverUrl]);
 
   const unreadMessagesCount = useMemo(() => {
     if (!currentUser?.id) return 0;
+    const myIds = [currentUser.id, currentUser.username].filter(Boolean) as string[];
+    const myName = currentUser.fullName?.trim().toLowerCase();
+
     return messages.filter(m => {
-      // Never count own sent messages
-      if (m.senderId === currentUser.id) return false;
-      // If user has read it in channel or direct
-      if (m.readBy && Array.isArray(m.readBy) && m.readBy.includes(currentUser.id)) return false;
-      // If direct message targeted to current user and marked isRead
-      if (m.recipientId === currentUser.id && m.isRead) return false;
-      // If direct message targeted to someone else
-      if (m.recipientId && m.recipientId !== currentUser.id) return false;
-      // Legacy fallback
-      if (!m.channelId && m.isRead) return false;
+      // 1. NEVER count user's own sent messages!
+      if (myIds.includes(m.senderId)) return false;
+      if (myName && m.senderName && m.senderName.trim().toLowerCase() === myName) return false;
+
+      // 2. If direct message sent to someone else (not targeted to current user), ignore
+      if (m.recipientId && !myIds.includes(m.recipientId)) return false;
+
+      // 3. If user has already read it in channel or direct chat
+      if (m.readBy && Array.isArray(m.readBy)) {
+        if (myIds.some(id => m.readBy.includes(id))) return false;
+      }
+
+      // 4. If direct message targeted to user and isRead is already true
+      if (m.recipientId && myIds.includes(m.recipientId) && m.isRead) return false;
+
+      // 5. Legacy broadcast message marked read
+      if (!m.channelId && !m.recipientId && m.isRead) return false;
+
       return true;
     }).length;
-  }, [messages, currentUser?.id]);
+  }, [messages, currentUser?.id, currentUser?.username, currentUser?.fullName]);
 
   // Filtered notifications specifically intended for current user (guaranteed no self-sent notifications)
   const userNotifications = useMemo(() => {

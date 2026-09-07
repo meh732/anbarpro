@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import { exportElementToPdf } from '../utils/pdfExport';
+import { printElement } from '../utils/printEngine';
 
 export const KardexView: React.FC = () => {
   const { 
@@ -399,8 +400,8 @@ export const KardexView: React.FC = () => {
             خروجی اکسل کاردکس
           </button>
           <button
-            onClick={() => window.print()}
-            className="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-2xl text-xs flex items-center gap-2 transition-all shadow-md active:scale-95"
+            onClick={() => printElement('printable-kardex-sheet', { title: `کاردکس_${selectedItem?.name || selectedItem?.code || 'کالا'}`, orientation: 'portrait' })}
+            className="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-2xl text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <Printer className="w-4 h-4" />
             چاپ رسمی سند کاردکس (A4)

@@ -11,6 +11,7 @@ import {
   Printer, UserPlus
 } from 'lucide-react';
 import { soundEngine } from '../utils/browserNotifications';
+import { printElement } from '../utils/printEngine';
 
 export const ChatView: React.FC = () => {
   const {
@@ -33,6 +34,7 @@ export const ChatView: React.FC = () => {
     setSoundEnabled,
     activeChatRecipientId,
     setActiveChatRecipientId,
+    companyName,
     setIsScannerOpen
   } = useApp();
 
@@ -1945,7 +1947,7 @@ export const ChatView: React.FC = () => {
                   )}
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={() => printElement('printable-shift-staff-list', { title: 'لیست_پرسنل_حاضر_در_شیفت', orientation: 'portrait' })}
                     disabled={presentStaffList.length === 0}
                     className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
                   >
@@ -2117,6 +2119,60 @@ export const ChatView: React.FC = () => {
                     </tbody>
                   </table>
                 )}
+              </div>
+
+              {/* Hidden Dedicated Printable Shift Staff Roster */}
+              <div id="printable-shift-staff-list" className="hidden print:block space-y-6 p-6">
+                <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900">{companyName || 'شرکت تولیدی و صنعتی'}</h2>
+                    <h1 className="text-xl font-black text-slate-800 mt-1">صورت‌جلسه حضور پرسنل در شیفت کاری</h1>
+                    <p className="text-xs text-slate-500 mt-1">گزارش رسمی حضور و غیاب و ثبت تردد پرسنل</p>
+                  </div>
+                  <div className="text-left font-mono text-xs space-y-1">
+                    <div>تاریخ گزارش: {new Date().toLocaleDateString('fa-IR')}</div>
+                    <div>ساعت گزارش: {new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div>تعداد حاضرین: <strong className="text-sm font-bold">{presentStaffList.length} نفر</strong></div>
+                  </div>
+                </div>
+
+                <table className="w-full text-right text-xs border border-slate-300">
+                  <thead className="bg-slate-100 border-b border-slate-300 font-bold">
+                    <tr>
+                      <th className="p-2.5 border-l border-slate-300 text-center w-12">ردیف</th>
+                      <th className="p-2.5 border-l border-slate-300">نام و نام خانوادگی</th>
+                      <th className="p-2.5 border-l border-slate-300">سمت / نقش</th>
+                      <th className="p-2.5 border-l border-slate-300">شیفت کاری</th>
+                      <th className="p-2.5 border-l border-slate-300">ایستگاه استقرار</th>
+                      <th className="p-2.5 border-l border-slate-300 text-center">زمان ورود</th>
+                      <th className="p-2.5 text-center w-28">امضای پرسنل</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {presentStaffList.map((staff, idx) => (
+                      <tr key={staff.id} className="h-10">
+                        <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
+                        <td className="p-2 border-l border-slate-300 font-bold text-slate-900">{staff.name}</td>
+                        <td className="p-2 border-l border-slate-300">{staff.role}</td>
+                        <td className="p-2 border-l border-slate-300">{staff.shift}</td>
+                        <td className="p-2 border-l border-slate-300">{staff.station}</td>
+                        <td className="p-2 border-l border-slate-300 text-center font-mono font-bold text-emerald-800">{staff.entryTime}</td>
+                        <td className="p-2 text-center"></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="grid grid-cols-2 gap-8 pt-12 border-t border-slate-300 text-xs text-center">
+                  <div className="space-y-8">
+                    <div className="font-bold text-slate-700">سرپرست شیفت / کارگاه</div>
+                    <div className="text-slate-400">نام، امضا و تایید</div>
+                  </div>
+                  <div className="space-y-8">
+                    <div className="font-bold text-slate-700">واحد امور اداری و منابع انسانی</div>
+                    <div className="text-slate-400">امضا و مهر تایید</div>
+                  </div>
+                </div>
               </div>
 
             </div>

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../utils/security';
 import { exportElementToPdf } from '../utils/pdfExport';
+import { printElement } from '../utils/printEngine';
 
 export const ReportsView: React.FC = () => {
   const { 
@@ -114,7 +115,10 @@ export const ReportsView: React.FC = () => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const handlePrint = () => {
-    window.print();
+    printElement('printable-report-area', {
+      title: `گزارش_${activeReportTab}_${new Date().toISOString().substring(0, 10)}`,
+      orientation: 'portrait'
+    });
   };
 
   const handleExportPdf = async () => {

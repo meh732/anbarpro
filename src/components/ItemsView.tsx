@@ -13,6 +13,7 @@ import { InitialStockExcelImportModal } from './InitialStockExcelImportModal';
 import { exportItemsToExcel } from '../utils/excelUtils';
 import { BatchBarcodePrintModal } from './BatchBarcodePrintModal';
 import { SvgBarcode } from './SvgBarcode';
+import { printElement } from '../utils/printEngine';
 
 const BarcodeVisual: React.FC<{ code: string; name?: string; location?: string }> = ({ code, name, location }) => {
   return (
@@ -1755,7 +1756,7 @@ export const ItemsView: React.FC = () => {
             </div>
 
             {/* Printable Graphic */}
-            <div className="p-4 border border-dashed border-slate-400 rounded-xl bg-white space-y-4 text-center">
+            <div id="printable-single-item-label" className="p-4 border border-dashed border-slate-400 rounded-xl bg-white space-y-4 text-center">
               <div className="text-[11px] font-extrabold text-slate-800 tracking-wider">
                 سیستم هوشمند ردیابی انبار انبارمه
               </div>
@@ -1785,7 +1786,7 @@ export const ItemsView: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => printElement('printable-single-item-label', { title: `برچسب_${printableLabelItem.code}`, orientation: 'portrait' })}
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-2xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
@@ -1811,7 +1812,7 @@ export const ItemsView: React.FC = () => {
             </div>
 
             {/* Printable Sheet */}
-            <div className="p-6 border border-slate-300 rounded-xl bg-white space-y-6 text-xs text-slate-800">
+            <div id="printable-single-item-catalog" className="p-6 border border-slate-300 rounded-xl bg-white space-y-6 text-xs text-slate-800">
               {/* Sheet Header */}
               <div className="flex items-center justify-between border-b-2 border-slate-800 pb-4">
                 <div>
@@ -1865,7 +1866,7 @@ export const ItemsView: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => printElement('printable-single-item-catalog', { title: `کاتالوگ_${printableCatalogItem.code}`, orientation: 'portrait' })}
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-2xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />

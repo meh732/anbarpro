@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { Item } from '../types';
 import { SvgBarcode } from './SvgBarcode';
 import { exportElementToPdf } from '../utils/pdfExport';
+import { printElement } from '../utils/printEngine';
 import { 
   X, Printer, Barcode, CheckSquare, Square, Layers, Search, 
   Settings2, Sliders, Filter, Eye, Hash, MapPin, Building2, 
@@ -281,8 +282,10 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
 
   // Execute print cleanly
   const handleTriggerPrint = () => {
-    document.body.classList.add('printing-batch-barcodes', 'printing-modal');
-    window.print();
+    printElement('printable-batch-barcodes', {
+      title: 'چاپ_گروهی_بارکدها',
+      orientation: paperLayout === 'roll' ? 'portrait' : 'portrait'
+    });
   };
 
   if (!isOpen) return null;

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../utils/security';
 import { exportElementToPdf } from '../utils/pdfExport';
+import { printElement } from '../utils/printEngine';
 
 interface ContractorFinancialStatementModalProps {
   contractor: Contractor;
@@ -278,8 +279,10 @@ export const ContractorFinancialStatementModal: React.FC<ContractorFinancialStat
 
   // Print function
   const handlePrint = () => {
-    document.body.classList.add('printing-modal');
-    window.print();
+    printElement('printable-contractor-statement', {
+      title: `صورتحساب_${contractor.name || contractor.code}`,
+      orientation: 'portrait'
+    });
   };
 
   // Direct PDF Export

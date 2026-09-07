@@ -10,6 +10,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { DEFAULT_BARCODE_SCANNERS, BarcodeScannerProfile } from '../data/barcodeScannerProfiles';
 import { SvgBarcode } from './SvgBarcode';
 import { exportElementToPdf } from '../utils/pdfExport';
+import { printElement } from '../utils/printEngine';
 
 export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
   const { 
@@ -873,13 +874,10 @@ export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) =>
 
                   <button
                     onClick={() => {
-                      document.body.classList.add('printing-modal');
-                      setTimeout(() => {
-                        window.print();
-                        setTimeout(() => {
-                          document.body.classList.remove('printing-modal');
-                        }, 1000);
-                      }, 150);
+                      printElement('single-thermal-barcode-label', {
+                        title: `لیبل_بارکد_${printItem?.code || 'کالا'}`,
+                        orientation: 'portrait'
+                      });
                     }}
                     className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
                   >

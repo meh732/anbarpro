@@ -8,6 +8,7 @@ import {
   Building2, UserCheck, ShieldCheck, Phone, Info,
   Layers, Package, Check, Eye
 } from 'lucide-react';
+import { printElement } from '../utils/printEngine';
 
 export const TransfersView: React.FC = () => {
   const { 
@@ -1125,79 +1126,81 @@ export const TransfersView: React.FC = () => {
       {/* ========================================================================= */}
       {printPickingChecklist && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl p-8 space-y-6 max-h-[95vh] overflow-y-auto print:p-0 print:shadow-none">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl p-8 space-y-6 max-h-[95vh] overflow-y-auto">
+            <div id="printable-transfer-picking-list" className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">{companyName || 'شرکت تولیدی و صنعتی'}</h2>
+                  <h1 className="text-xl font-black text-amber-700 mt-1">چک‌لیست جمع‌آوری و خروج کالا از انبار مرکزی (Picking List)</h1>
+                  <p className="text-xs text-slate-500 mt-1">فرآیند کنترل اقلام و صدور حواله انتقال به انبار پروژه</p>
+                </div>
+                <div className="text-left font-mono text-xs space-y-1">
+                  <div>شماره سند: <strong className="text-sm text-slate-900">{printPickingChecklist.docNumber}</strong></div>
+                  <div>تاریخ صدور: {printPickingChecklist.date}</div>
+                  <div>پروژه: {printPickingChecklist.projectName || 'عمومی'}</div>
+                </div>
+              </div>
+
+              {/* Warehouse & Driver Info */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+                <div><span className="text-slate-500 block">انبار مبدا:</span><strong>{warehouses.find(w => w.id === printPickingChecklist.sourceWarehouseId)?.name}</strong></div>
+                <div><span className="text-slate-500 block">انبار مقصد:</span><strong>{warehouses.find(w => w.id === printPickingChecklist.targetWarehouseId)?.name}</strong></div>
+                <div><span className="text-slate-500 block">درخواست‌کننده:</span><strong>{printPickingChecklist.requestedBy}</strong></div>
+                <div><span className="text-slate-500 block">راننده / مسئول حمل:</span><strong>{printPickingChecklist.handlerName} ({printPickingChecklist.driverPhone || '-'})</strong></div>
+              </div>
+
+              {/* Checklist Table */}
               <div>
-                <h2 className="text-base font-black text-slate-900">{companyName || 'شرکت تولیدی و صنعتی'}</h2>
-                <h1 className="text-xl font-black text-amber-700 mt-1">چک‌لیست جمع‌آوری و خروج کالا از انبار مرکزی (Picking List)</h1>
-                <p className="text-xs text-slate-500 mt-1">فرآیند کنترل اقلام و صدور حواله انتقال به انبار پروژه</p>
+                <table className="w-full text-right text-xs border border-slate-300">
+                  <thead className="bg-slate-100 border-b border-slate-300 font-bold">
+                    <tr>
+                      <th className="p-2 border-l border-slate-300 text-center w-10">ردیف</th>
+                      <th className="p-2 border-l border-slate-300">کد کالا</th>
+                      <th className="p-2 border-l border-slate-300">نام و مشخصات فنی کالا</th>
+                      <th className="p-2 border-l border-slate-300 text-center">محل در قفسه</th>
+                      <th className="p-2 border-l border-slate-300 text-center">واحد</th>
+                      <th className="p-2 border-l border-slate-300 text-center">تعداد درخواستی</th>
+                      <th className="p-2 border-l border-slate-300 text-center w-24">شمارش فیزیکی</th>
+                      <th className="p-2 text-center w-20">تیک کنترل</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {printPickingChecklist.items.map((it, idx) => {
+                      const itemObj = items.find(i => i.id === it.itemId);
+                      return (
+                        <tr key={idx} className="h-10">
+                          <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
+                          <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code}</td>
+                          <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name}</td>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono">{itemObj?.locationInRack || '-'}</td>
+                          <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit}</td>
+                          <td className="p-2 border-l border-slate-300 text-center font-bold font-mono text-sm">{it.quantity}</td>
+                          <td className="p-2 border-l border-slate-300 text-center border-dashed"></td>
+                          <td className="p-2 text-center">
+                            <div className="w-5 h-5 border-2 border-slate-400 rounded mx-auto"></div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="text-left font-mono text-xs space-y-1">
-                <div>شماره سند: <strong className="text-sm text-slate-900">{printPickingChecklist.docNumber}</strong></div>
-                <div>تاریخ صدور: {printPickingChecklist.date}</div>
-                <div>پروژه: {printPickingChecklist.projectName || 'عمومی'}</div>
-              </div>
-            </div>
 
-            {/* Warehouse & Driver Info */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
-              <div><span className="text-slate-500 block">انبار مبدا:</span><strong>{warehouses.find(w => w.id === printPickingChecklist.sourceWarehouseId)?.name}</strong></div>
-              <div><span className="text-slate-500 block">انبار مقصد:</span><strong>{warehouses.find(w => w.id === printPickingChecklist.targetWarehouseId)?.name}</strong></div>
-              <div><span className="text-slate-500 block">درخواست‌کننده:</span><strong>{printPickingChecklist.requestedBy}</strong></div>
-              <div><span className="text-slate-500 block">راننده / مسئول حمل:</span><strong>{printPickingChecklist.handlerName} ({printPickingChecklist.driverPhone || '-'})</strong></div>
-            </div>
-
-            {/* Checklist Table */}
-            <div>
-              <table className="w-full text-right text-xs border border-slate-300">
-                <thead className="bg-slate-100 border-b border-slate-300 font-bold">
-                  <tr>
-                    <th className="p-2 border-l border-slate-300 text-center w-10">ردیف</th>
-                    <th className="p-2 border-l border-slate-300">کد کالا</th>
-                    <th className="p-2 border-l border-slate-300">نام و مشخصات فنی کالا</th>
-                    <th className="p-2 border-l border-slate-300 text-center">محل در قفسه</th>
-                    <th className="p-2 border-l border-slate-300 text-center">واحد</th>
-                    <th className="p-2 border-l border-slate-300 text-center">تعداد درخواستی</th>
-                    <th className="p-2 border-l border-slate-300 text-center w-24">شمارش فیزیکی</th>
-                    <th className="p-2 text-center w-20">تیک کنترل</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {printPickingChecklist.items.map((it, idx) => {
-                    const itemObj = items.find(i => i.id === it.itemId);
-                    return (
-                      <tr key={idx} className="h-10">
-                        <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
-                        <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code}</td>
-                        <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name}</td>
-                        <td className="p-2 border-l border-slate-300 text-center font-mono">{itemObj?.locationInRack || '-'}</td>
-                        <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit}</td>
-                        <td className="p-2 border-l border-slate-300 text-center font-bold font-mono text-sm">{it.quantity}</td>
-                        <td className="p-2 border-l border-slate-300 text-center border-dashed"></td>
-                        <td className="p-2 text-center">
-                          <div className="w-5 h-5 border-2 border-slate-400 rounded mx-auto"></div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Signatures */}
-            <div className="grid grid-cols-3 gap-4 pt-12 border-t border-slate-300 text-xs text-center">
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">ثبت‌کننده آنالیز پروژه</div>
-                <div className="text-slate-400">امضا و تاریخ</div>
-              </div>
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">انباردار انبار مرکزی (تحویل‌دهنده)</div>
-                <div className="text-slate-400">امضا و تاریخ</div>
-              </div>
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">راننده / مسئول حمل و لجستیک</div>
-                <div className="text-slate-400">امضا و تاریخ</div>
+              {/* Signatures */}
+              <div className="grid grid-cols-3 gap-4 pt-12 border-t border-slate-300 text-xs text-center">
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">ثبت‌کننده آنالیز پروژه</div>
+                  <div className="text-slate-400">امضا و تاریخ</div>
+                </div>
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">انباردار انبار مرکزی (تحویل‌دهنده)</div>
+                  <div className="text-slate-400">امضا و تاریخ</div>
+                </div>
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">راننده / مسئول حمل و لجستیک</div>
+                  <div className="text-slate-400">امضا و تاریخ</div>
+                </div>
               </div>
             </div>
 
@@ -1205,13 +1208,13 @@ export const TransfersView: React.FC = () => {
             <div className="flex justify-between items-center pt-4 border-t border-slate-200 print:hidden">
               <button
                 onClick={() => setPrintPickingChecklist(null)}
-                className="px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold"
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
               >
                 بستن
               </button>
               <button
-                onClick={() => window.print()}
-                className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md"
+                onClick={() => printElement('printable-transfer-picking-list', { title: `چک_لیست_جمع_آوری_${printPickingChecklist.docNumber}`, orientation: 'portrait' })}
+                className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 پرینت چک‌لیست جمع‌آوری
@@ -1226,75 +1229,77 @@ export const TransfersView: React.FC = () => {
       {/* ========================================================================= */}
       {printReceivingChecklist && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl p-8 space-y-6 max-h-[95vh] overflow-y-auto print:p-0 print:shadow-none">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl p-8 space-y-6 max-h-[95vh] overflow-y-auto">
+            <div id="printable-transfer-receiving-list" className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">{companyName || 'شرکت تولیدی و صنعتی'}</h2>
+                  <h1 className="text-xl font-black text-indigo-800 mt-1">چک‌لیست تحویل‌گیری و کنترل سلامت در انبار مقصد (Receiving List)</h1>
+                  <p className="text-xs text-slate-500 mt-1">بررسی تطابق اقلام ارسالی انبار مرکزی و ثبت نهایی در موجودی کارگاه</p>
+                </div>
+                <div className="text-left font-mono text-xs space-y-1">
+                  <div>شماره حواله: <strong className="text-sm text-slate-900">{printReceivingChecklist.docNumber}</strong></div>
+                  <div>تاریخ ارسال: {printReceivingChecklist.dispatchDate || printReceivingChecklist.date}</div>
+                  <div>پروژه: {printReceivingChecklist.projectName || 'عمومی'}</div>
+                </div>
+              </div>
+
+              {/* Warehouse & Transport Info */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+                <div><span className="text-slate-500 block">انبار مبدا:</span><strong>{warehouses.find(w => w.id === printReceivingChecklist.sourceWarehouseId)?.name}</strong></div>
+                <div><span className="text-slate-500 block">انبار تحویل‌گیرنده:</span><strong>{warehouses.find(w => w.id === printReceivingChecklist.targetWarehouseId)?.name}</strong></div>
+                <div><span className="text-slate-500 block">تایید انبار مرکزی:</span><strong>{printReceivingChecklist.dispatchedBy || '-'}</strong></div>
+                <div><span className="text-slate-500 block">مسئول حمل و خودرو:</span><strong>{printReceivingChecklist.handlerName} ({printReceivingChecklist.vehicleNumber || '-'})</strong></div>
+              </div>
+
+              {/* Receiving Table */}
               <div>
-                <h2 className="text-base font-black text-slate-900">{companyName || 'شرکت تولیدی و صنعتی'}</h2>
-                <h1 className="text-xl font-black text-indigo-800 mt-1">چک‌لیست تحویل‌گیری و کنترل سلامت در انبار مقصد (Receiving List)</h1>
-                <p className="text-xs text-slate-500 mt-1">بررسی تطابق اقلام ارسالی انبار مرکزی و ثبت نهایی در موجودی کارگاه</p>
+                <table className="w-full text-right text-xs border border-slate-300">
+                  <thead className="bg-slate-100 border-b border-slate-300 font-bold">
+                    <tr>
+                      <th className="p-2 border-l border-slate-300 text-center w-10">ردیف</th>
+                      <th className="p-2 border-l border-slate-300">کد کالا</th>
+                      <th className="p-2 border-l border-slate-300">شرح قطعه و ملزومات</th>
+                      <th className="p-2 border-l border-slate-300 text-center">واحد</th>
+                      <th className="p-2 border-l border-slate-300 text-center">تعداد ارسالی</th>
+                      <th className="p-2 border-l border-slate-300 text-center w-24">تعداد سالم تحویلی</th>
+                      <th className="p-2 text-center w-24">تطابق و تایید</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {printReceivingChecklist.items.map((it, idx) => {
+                      const itemObj = items.find(i => i.id === it.itemId);
+                      return (
+                        <tr key={idx} className="h-10">
+                          <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
+                          <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code}</td>
+                          <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name}</td>
+                          <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit}</td>
+                          <td className="p-2 border-l border-slate-300 text-center font-bold font-mono text-sm">{it.quantity}</td>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                          <td className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <span className="text-[10px] font-bold text-emerald-700">تایید سلامت</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="text-left font-mono text-xs space-y-1">
-                <div>شماره حواله: <strong className="text-sm text-slate-900">{printReceivingChecklist.docNumber}</strong></div>
-                <div>تاریخ ارسال: {printReceivingChecklist.dispatchDate || printReceivingChecklist.date}</div>
-                <div>پروژه: {printReceivingChecklist.projectName || 'عمومی'}</div>
-              </div>
-            </div>
 
-            {/* Warehouse & Transport Info */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
-              <div><span className="text-slate-500 block">انبار مبدا:</span><strong>{warehouses.find(w => w.id === printReceivingChecklist.sourceWarehouseId)?.name}</strong></div>
-              <div><span className="text-slate-500 block">انبار تحویل‌گیرنده:</span><strong>{warehouses.find(w => w.id === printReceivingChecklist.targetWarehouseId)?.name}</strong></div>
-              <div><span className="text-slate-500 block">تایید انبار مرکزی:</span><strong>{printReceivingChecklist.dispatchedBy || '-'}</strong></div>
-              <div><span className="text-slate-500 block">مسئول حمل و خودرو:</span><strong>{printReceivingChecklist.handlerName} ({printReceivingChecklist.vehicleNumber || '-'})</strong></div>
-            </div>
-
-            {/* Receiving Table */}
-            <div>
-              <table className="w-full text-right text-xs border border-slate-300">
-                <thead className="bg-slate-100 border-b border-slate-300 font-bold">
-                  <tr>
-                    <th className="p-2 border-l border-slate-300 text-center w-10">ردیف</th>
-                    <th className="p-2 border-l border-slate-300">کد کالا</th>
-                    <th className="p-2 border-l border-slate-300">شرح قطعه و ملزومات</th>
-                    <th className="p-2 border-l border-slate-300 text-center">واحد</th>
-                    <th className="p-2 border-l border-slate-300 text-center">تعداد ارسالی</th>
-                    <th className="p-2 border-l border-slate-300 text-center w-24">تعداد سالم تحویلی</th>
-                    <th className="p-2 text-center w-24">تطابق و تایید</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {printReceivingChecklist.items.map((it, idx) => {
-                    const itemObj = items.find(i => i.id === it.itemId);
-                    return (
-                      <tr key={idx} className="h-10">
-                        <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
-                        <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code}</td>
-                        <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name}</td>
-                        <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit}</td>
-                        <td className="p-2 border-l border-slate-300 text-center font-bold font-mono text-sm">{it.quantity}</td>
-                        <td className="p-2 border-l border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
-                        <td className="p-2 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <span className="text-[10px] font-bold text-emerald-700">تایید سلامت</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Signatures */}
-            <div className="grid grid-cols-2 gap-8 pt-12 border-t border-slate-300 text-xs text-center">
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">راننده تحویل‌دهنده محموله</div>
-                <div className="text-slate-400">{printReceivingChecklist.handlerName} - امضا و تاریخ</div>
-              </div>
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">انباردار انبار مقصد / سرپرست کارگاه (تحویل‌گیرنده)</div>
-                <div className="text-slate-400">نام، امضا و مهر انبار</div>
+              {/* Signatures */}
+              <div className="grid grid-cols-2 gap-8 pt-12 border-t border-slate-300 text-xs text-center">
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">راننده تحویل‌دهنده محموله</div>
+                  <div className="text-slate-400">{printReceivingChecklist.handlerName} - امضا و تاریخ</div>
+                </div>
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">انباردار انبار مقصد / سرپرست کارگاه (تحویل‌گیرنده)</div>
+                  <div className="text-slate-400">نام، امضا و مهر انبار</div>
+                </div>
               </div>
             </div>
 
@@ -1302,13 +1307,13 @@ export const TransfersView: React.FC = () => {
             <div className="flex justify-between items-center pt-4 border-t border-slate-200 print:hidden">
               <button
                 onClick={() => setPrintReceivingChecklist(null)}
-                className="px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold"
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
               >
                 بستن
               </button>
               <button
-                onClick={() => window.print()}
-                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md"
+                onClick={() => printElement('printable-transfer-receiving-list', { title: `چک_لیست_دریافت_${printReceivingChecklist.docNumber}`, orientation: 'portrait' })}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 پرینت چک‌لیست دریافت کالا
@@ -1323,82 +1328,84 @@ export const TransfersView: React.FC = () => {
       {/* ========================================================================= */}
       {printOfficialVoucher && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl p-8 space-y-6 max-h-[95vh] overflow-y-auto print:p-0 print:shadow-none">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl p-8 space-y-6 max-h-[95vh] overflow-y-auto">
+            <div id="printable-transfer-official-voucher" className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">{companyName || 'شرکت تولیدی و صنعتی'}</h2>
+                  <h1 className="text-xl font-black text-emerald-800 mt-1">حواله رسمی انتقال بین انبارها (Inter-Warehouse Voucher)</h1>
+                  <p className="text-xs text-slate-500 mt-1">سند قطعی جابجایی موجودی و گردش حسابداری انبار</p>
+                </div>
+                <div className="text-left font-mono text-xs space-y-1">
+                  <div>شماره حواله: <strong className="text-sm text-slate-900">{printOfficialVoucher.docNumber}</strong></div>
+                  <div>تاریخ درخواست: {printOfficialVoucher.date}</div>
+                  <div>تاریخ تحویل قطعی: {printOfficialVoucher.receiveDate || printOfficialVoucher.date}</div>
+                </div>
+              </div>
+
+              {/* Voucher Details */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+                <div><span className="text-slate-500 block">انبار مبدا (بستانکار):</span><strong>{warehouses.find(w => w.id === printOfficialVoucher.sourceWarehouseId)?.name}</strong></div>
+                <div><span className="text-slate-500 block">انبار مقصد (بدهکار):</span><strong>{warehouses.find(w => w.id === printOfficialVoucher.targetWarehouseId)?.name}</strong></div>
+                <div><span className="text-slate-500 block">پروژه منتسب:</span><strong>{printOfficialVoucher.projectName || 'عمومی'}</strong></div>
+                <div><span className="text-slate-500 block">وضعیت سند:</span><strong className="text-emerald-700">تکمیل و نهایی‌شده</strong></div>
+              </div>
+
+              {/* Items Table */}
               <div>
-                <h2 className="text-base font-black text-slate-900">{companyName || 'شرکت تولیدی و صنعتی'}</h2>
-                <h1 className="text-xl font-black text-emerald-800 mt-1">حواله رسمی انتقال بین انبارها (Inter-Warehouse Voucher)</h1>
-                <p className="text-xs text-slate-500 mt-1">سند قطعی جابجایی موجودی و گردش حسابداری انبار</p>
+                <table className="w-full text-right text-xs border border-slate-300">
+                  <thead className="bg-slate-100 border-b border-slate-300 font-bold">
+                    <tr>
+                      <th className="p-2.5 border-l border-slate-300 text-center w-12">ردیف</th>
+                      <th className="p-2.5 border-l border-slate-300">کد کالا</th>
+                      <th className="p-2.5 border-l border-slate-300">نام و شرح قلم کالا</th>
+                      <th className="p-2.5 border-l border-slate-300 text-center">واحد</th>
+                      <th className="p-2.5 border-l border-slate-300 text-center">مقدار انتقال</th>
+                      <th className="p-2.5 border-l border-slate-300 text-center">نرخ واحد (تومان)</th>
+                      <th className="p-2.5 text-center">مبلغ کل (تومان)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {printOfficialVoucher.items.map((it, idx) => {
+                      const itemObj = items.find(i => i.id === it.itemId);
+                      const qty = Number(it.quantity) || 0;
+                      const price = Number(it.unitPrice) || Number(itemObj?.unitPrice) || 0;
+                      const totalPrice = price * qty;
+                      return (
+                        <tr key={idx} className="h-9">
+                          <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
+                          <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code || it.itemId}</td>
+                          <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name || 'کالای نامشخص'}</td>
+                          <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit || 'عدد'}</td>
+                          <td className="p-2 border-l border-slate-300 text-center font-bold font-mono">{qty.toLocaleString('fa-IR')}</td>
+                          <td className="p-2 border-l border-slate-300 text-center font-mono">{price > 0 ? price.toLocaleString('fa-IR') : '-'}</td>
+                          <td className="p-2 text-center font-mono font-bold">{totalPrice > 0 ? totalPrice.toLocaleString('fa-IR') : '-'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="text-left font-mono text-xs space-y-1">
-                <div>شماره حواله: <strong className="text-sm text-slate-900">{printOfficialVoucher.docNumber}</strong></div>
-                <div>تاریخ درخواست: {printOfficialVoucher.date}</div>
-                <div>تاریخ تحویل قطعی: {printOfficialVoucher.receiveDate || printOfficialVoucher.date}</div>
-              </div>
-            </div>
 
-            {/* Voucher Details */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
-              <div><span className="text-slate-500 block">انبار مبدا (بستانکار):</span><strong>{warehouses.find(w => w.id === printOfficialVoucher.sourceWarehouseId)?.name}</strong></div>
-              <div><span className="text-slate-500 block">انبار مقصد (بدهکار):</span><strong>{warehouses.find(w => w.id === printOfficialVoucher.targetWarehouseId)?.name}</strong></div>
-              <div><span className="text-slate-500 block">پروژه منتسب:</span><strong>{printOfficialVoucher.projectName || 'عمومی'}</strong></div>
-              <div><span className="text-slate-500 block">وضعیت سند:</span><strong className="text-emerald-700">تکمیل و نهایی‌شده</strong></div>
-            </div>
-
-            {/* Items Table */}
-            <div>
-              <table className="w-full text-right text-xs border border-slate-300">
-                <thead className="bg-slate-100 border-b border-slate-300 font-bold">
-                  <tr>
-                    <th className="p-2.5 border-l border-slate-300 text-center w-12">ردیف</th>
-                    <th className="p-2.5 border-l border-slate-300">کد کالا</th>
-                    <th className="p-2.5 border-l border-slate-300">نام و شرح قلم کالا</th>
-                    <th className="p-2.5 border-l border-slate-300 text-center">واحد</th>
-                    <th className="p-2.5 border-l border-slate-300 text-center">مقدار انتقال</th>
-                    <th className="p-2.5 border-l border-slate-300 text-center">نرخ واحد (تومان)</th>
-                    <th className="p-2.5 text-center">مبلغ کل (تومان)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {printOfficialVoucher.items.map((it, idx) => {
-                    const itemObj = items.find(i => i.id === it.itemId);
-                    const qty = Number(it.quantity) || 0;
-                    const price = Number(it.unitPrice) || Number(itemObj?.unitPrice) || 0;
-                    const totalPrice = price * qty;
-                    return (
-                      <tr key={idx} className="h-9">
-                        <td className="p-2 border-l border-slate-300 text-center font-mono">{idx + 1}</td>
-                        <td className="p-2 border-l border-slate-300 font-mono font-bold">{itemObj?.code || it.itemId}</td>
-                        <td className="p-2 border-l border-slate-300 font-medium">{itemObj?.name || 'کالای نامشخص'}</td>
-                        <td className="p-2 border-l border-slate-300 text-center">{itemObj?.unit || 'عدد'}</td>
-                        <td className="p-2 border-l border-slate-300 text-center font-bold font-mono">{qty.toLocaleString('fa-IR')}</td>
-                        <td className="p-2 border-l border-slate-300 text-center font-mono">{price > 0 ? price.toLocaleString('fa-IR') : '-'}</td>
-                        <td className="p-2 text-center font-mono font-bold">{totalPrice > 0 ? totalPrice.toLocaleString('fa-IR') : '-'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* 4 Signatures */}
-            <div className="grid grid-cols-4 gap-4 pt-12 border-t border-slate-300 text-xs text-center">
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">آنالیزور / درخواست‌کننده</div>
-                <div className="text-slate-400">{printOfficialVoucher.requestedBy}</div>
-              </div>
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">انباردار مبدا (مرکزی)</div>
-                <div className="text-slate-400">{printOfficialVoucher.dispatchedBy || '-'}</div>
-              </div>
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">راننده و متصدی حمل</div>
-                <div className="text-slate-400">{printOfficialVoucher.handlerName}</div>
-              </div>
-              <div className="space-y-8">
-                <div className="font-bold text-slate-700">انباردار تحویل‌گیرنده مقصد</div>
-                <div className="text-slate-400">{printOfficialVoucher.receivedBy || '-'}</div>
+              {/* 4 Signatures */}
+              <div className="grid grid-cols-4 gap-4 pt-12 border-t border-slate-300 text-xs text-center">
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">آنالیزور / درخواست‌کننده</div>
+                  <div className="text-slate-400">{printOfficialVoucher.requestedBy}</div>
+                </div>
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">انباردار مبدا (مرکزی)</div>
+                  <div className="text-slate-400">{printOfficialVoucher.dispatchedBy || '-'}</div>
+                </div>
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">راننده و متصدی حمل</div>
+                  <div className="text-slate-400">{printOfficialVoucher.handlerName}</div>
+                </div>
+                <div className="space-y-8">
+                  <div className="font-bold text-slate-700">انباردار تحویل‌گیرنده مقصد</div>
+                  <div className="text-slate-400">{printOfficialVoucher.receivedBy || '-'}</div>
+                </div>
               </div>
             </div>
 
@@ -1406,13 +1413,13 @@ export const TransfersView: React.FC = () => {
             <div className="flex justify-between items-center pt-4 border-t border-slate-200 print:hidden">
               <button
                 onClick={() => setPrintOfficialVoucher(null)}
-                className="px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold"
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
               >
                 بستن
               </button>
               <button
-                onClick={() => window.print()}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md"
+                onClick={() => printElement('printable-transfer-official-voucher', { title: `حواله_انتقال_${printOfficialVoucher.docNumber}`, orientation: 'portrait' })}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 پرینت حواله رسمی انتقال

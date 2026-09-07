@@ -9,6 +9,7 @@ import {
   TrendingDown, TrendingUp, Percent, ShieldCheck, ChevronDown, CheckSquare, Sparkles
 } from 'lucide-react';
 import { formatCurrency } from '../utils/security';
+import { printElement } from '../utils/printEngine';
 
 export const StockCountingView: React.FC = () => {
   const { 
@@ -1457,7 +1458,7 @@ export const StockCountingView: React.FC = () => {
               </h3>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => printElement('printable-stock-counting-tags', { title: `تگ_انبارگردانی_${selectedSession.sessionNumber}`, orientation: 'portrait' })}
                   className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -1472,7 +1473,7 @@ export const StockCountingView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar p-2">
+            <div id="printable-stock-counting-tags" className="flex-1 overflow-y-auto space-y-4 custom-scrollbar p-2">
               <p className="text-xs text-slate-500 leading-relaxed font-medium">
                 تگ‌های ۳ تکه‌ای استاندارد را پرینت کرده و روی پالت‌ها یا قفسه‌های انبار بچسبانید. شمارشگر اول تکه اول را جدا کرده، شمارشگر دوم تکه دوم را جدا می‌کند و تگ اصلی روی کالا باقی می‌ماند.
               </p>
@@ -1536,7 +1537,7 @@ export const StockCountingView: React.FC = () => {
               </h3>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => printElement('printable-stock-counting-minutes', { title: `صورتجلسه_انبارگردانی_${selectedSession.sessionNumber}`, orientation: 'portrait' })}
                   className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -1551,7 +1552,7 @@ export const StockCountingView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-4 text-xs text-slate-800 leading-relaxed custom-scrollbar p-2">
+            <div id="printable-stock-counting-minutes" className="flex-1 overflow-y-auto space-y-4 text-xs text-slate-800 leading-relaxed custom-scrollbar p-2">
               <div className="text-center border-b border-slate-200 pb-3">
                 <h2 className="font-black text-base text-slate-900">{companyName || 'مجموعه تولیدی و صنعتی'}</h2>
                 <h4 className="font-bold text-slate-600 text-xs mt-0.5">صورت‌جلسه نهایی شمارش فیزیکی و ممیزی موجودی انبارها</h4>
