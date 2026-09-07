@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
 import { BottomNavigation } from './components/BottomNavigation';
 import { BarcodeModal } from './components/BarcodeModal';
+import { GlobalBarcodeScanner } from './components/GlobalBarcodeScanner';
 import { LoginView } from './components/LoginView';
 import { SetupView } from './components/SetupView';
 import { DashboardView } from './components/DashboardView';
@@ -156,6 +157,9 @@ const MainContent: React.FC = () => {
 
       {/* Mobile Bottom Navigation Bar */}
       <BottomNavigation />
+
+      {/* Global Hardware Barcode Scanner Listener & Real-time Action Banner */}
+      <GlobalBarcodeScanner />
 
       {/* Barcode Scanner Modal */}
       {isScannerOpen && (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Bell, ChevronDown, LogOut, QrCode, AlertTriangle, Clock, CheckCircle, 
@@ -33,6 +33,46 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
   const [showServerModal, setShowServerModal] = useState(false);
   const [isSyncingManually, setIsSyncingManually] = useState(false);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
+
+  // Dropdown click-outside refs
+  const notifsRef = useRef<HTMLDivElement>(null);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Automatically close any open dropdown whenever activeTab changes
+  useEffect(() => {
+    setShowNotifs(false);
+    setShowUserDropdown(false);
+  }, [activeTab]);
+
+  // Click outside to close and Escape key handlers
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (showNotifs && notifsRef.current && !notifsRef.current.contains(target)) {
+        setShowNotifs(false);
+      }
+      if (showUserDropdown && userDropdownRef.current && !userDropdownRef.current.contains(target)) {
+        setShowUserDropdown(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowNotifs(false);
+        setShowUserDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showNotifs, showUserDropdown]);
 
   // Change Password State
   const [showChangePassModal, setShowChangePassModal] = useState(false);
@@ -182,13 +222,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           </button>
 
           {/* Notifications Dropdown */}
-          <div className="relative">
+          <div ref={notifsRef} className="relative">
             <button
               onClick={() => {
                 const next = !showNotifs;
                 setShowNotifs(next);
-                if (next && unreadCount > 0) {
-                  markAllNotificationsAsRead();
+                if (next) {
+                  setShowUserDropdown(false);
+                  if (unreadCount > 0) {
+                    markAllNotificationsAsRead();
+                  }
                 }
               }}
               className="p-1.5 sm:p-2 bg-white/80 hover:bg-white text-slate-600 border border-slate-200/70 rounded-xl relative transition-all cursor-pointer shadow-2xs active:scale-95"
@@ -304,9 +347,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           </div>
 
           {/* User Profile dropdown */}
-          <div className="relative">
+          <div ref={userDropdownRef} className="relative">
             <button
-              onClick={() => setShowUserDropdown(!showUserDropdown)}
+              onClick={() => {
+                const next = !showUserDropdown;
+                setShowUserDropdown(next);
+                if (next) {
+                  setShowNotifs(false);
+                }
+              }}
               className="flex items-center gap-2.5 p-1.5 pl-3 bg-white/70 hover:bg-white border border-slate-200/60 rounded-xl transition-all cursor-pointer shadow-xs"
             >
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-black shadow-xs">

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   LayoutGrid, Boxes, ClipboardList, Warehouse, ArrowDownUp,
@@ -53,6 +53,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Auto-close user menu on activeTab change
+  useEffect(() => {
+    setShowUserMenu(false);
+  }, [activeTab]);
+
+  // Click outside to close and Escape key
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (showUserMenu && userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowUserMenu(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showUserMenu]);
 
   // Calculate live badges
   const lowStockCount = useMemo(() => {
@@ -309,7 +337,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* User Card & Switcher (Bottom) */}
         <div className="p-3 border-t border-slate-200/50 bg-white/40 backdrop-blur-md relative">
-          <div className="relative">
+          <div ref={userMenuRef} className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
               className={`w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/80 border border-transparent hover:border-slate-200/60 transition-all cursor-pointer ${isCollapsed ? 'justify-center p-1.5' : ''}`}
