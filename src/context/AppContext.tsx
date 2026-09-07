@@ -624,46 +624,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     document.documentElement.lang = language;
   }, [language]);
 
-  // Sync Admin credentials from installation environment variables (/api/config)
+  // Sync system config from server (/api/config)
   useEffect(() => {
     fetch(getApiUrl('/api/config'))
       .then(res => res.json())
       .then(data => {
-        if (data?.adminUser && data?.adminPass) {
-          setUsers(prevUsers => {
-            const adminExists = prevUsers.some(u => u.id === 'usr-1');
-            if (adminExists) {
-              return prevUsers.map(u => 
-                u.id === 'usr-1' 
-                  ? { ...u, username: data.adminUser, password: data.adminPass }
-                  : u
-              );
-            } else {
-              const newAdmin: User = {
-                id: 'usr-1',
-                username: data.adminUser,
-                password: data.adminPass,
-                fullName: 'مدیر سیستم',
-                role: 'SystemAdmin',
-                department: 'مدیریت',
-                email: 'admin@local.host',
-                allowedTabs: ['*'],
-                isActive: true
-              };
-              return [newAdmin, ...prevUsers];
-            }
-          });
-
-          setCurrentUser(prevUser => {
-            if (prevUser && (prevUser.id === 'usr-1' || prevUser.role === 'SystemAdmin')) {
-              return { ...prevUser, username: data.adminUser, password: data.adminPass };
-            }
-            return prevUser;
-          });
+        if (data?.companyName && !companyName) {
+          setCompanyName(data.companyName);
         }
       })
       .catch(() => {
-        // Dev environment fallback
+        // Fallback to local config silently
       });
   }, []);
 

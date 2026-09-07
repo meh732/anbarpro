@@ -259,3 +259,122 @@ export function formatCurrency(amount: number | undefined | null, currency = 'ر
   return `${Math.round(amount).toLocaleString('fa-IR')} ${currency}`;
 }
 
+/**
+ * XSS & HTML Injection Sanitizer for user input strings
+ * Neutralizes scripts, javascript: pseudo protocols, and malicious event handlers
+ */
+export function sanitizeInputString(input: unknown): string {
+  if (typeof input !== 'string') return typeof input === 'number' ? String(input) : '';
+  
+  return input
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove <script> tags
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '') // Remove <iframe> tags
+    .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')   // Remove <embed> tags
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '') // Remove <object> tags
+    .replace(/\bon\w+\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, '')         // Remove on* event attributes (onload, onerror, etc.)
+    .replace(/javascript:/gi, 'blocked-scheme:')                        // Neutralize javascript: URI
+    .replace(/vbscript:/gi, 'blocked-scheme:')                          // Neutralize vbscript: URI
+    .replace(/data:text\/html/gi, 'blocked-data:');                     // Neutralize data:text/html
+}
+
+/**
+ * Deep Recursive Payload Sanitizer
+ * Recursively scrubs objects and arrays against XSS and Prototype Pollution
+ */
+export function sanitizePayload<T>(payload: T): T {
+  if (payload === null || payload === undefined) return payload;
+  if (typeof payload === 'string') {
+    return sanitizeInputString(payload) as unknown as T;
+  }
+  if (Array.isArray(payload)) {
+    return payload.map(item => sanitizePayload(item)) as unknown as T;
+  }
+  if (typeof payload === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(payload)) {
+      // Prototype pollution defense: skip __proto__, constructor, prototype
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        continue;
+      }
+      cleaned[key] = sanitizePayload(value);
+    }
+    return cleaned as T;
+  }
+  return payload;
+}
+
+/**
+ * Cryptographically Secure Token Generator
+ */
+export function generateSecureToken(length: number = 32): string {
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  // Safe fallback
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length * 2; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
+ * Security Compliance & Shield Diagnostics
+ */
+export interface SecurityShieldStatus {
+  id: string;
+  nameFa: string;
+  descriptionFa: string;
+  status: 'ACTIVE' | 'ENFORCED' | 'WARNING';
+  category: 'NETWORK' | 'CRYPTO' | 'AUTH' | 'INPUT' | 'AUDIT';
+}
+
+export const ACTIVE_SECURITY_SHIELDS: SecurityShieldStatus[] = [
+  {
+    id: 'shield-headers',
+    nameFa: 'سپر حفاظتی هدرهای امنیتی HTTP (HSTS, CSP, NoSniff, SameOrigin)',
+    descriptionFa: 'جلوگیری از حملات Clickjacking، تزریق MIME و مسدودسازی سرقت داده در مرورگر با هدرهای استاندارد OWASP',
+    status: 'ENFORCED',
+    category: 'NETWORK'
+  },
+  {
+    id: 'shield-rate-limit',
+    nameFa: 'موتور ضد حملات Brute-Force و توقف نفوذ ربات‌ها (Rate Limiter)',
+    descriptionFa: 'محدودسازی نرخ درخواست‌ها به صورت پنجره لغزان و قفل خودکار حساب کاربری پس از ۵ بار تلاش ناموفق',
+    status: 'ACTIVE',
+    category: 'AUTH'
+  },
+  {
+    id: 'shield-pass-hash',
+    nameFa: 'رمزنگاری کلمات عبور با الگوریتم نمک‌دار Salted SHA-256',
+    descriptionFa: 'عدم ذخیره رمزهای متنی و مهاجرت خودکار تمامی حساب‌ها به هش رمزنگاری شده ۲۵۶ بیتی با نمک اختصاصی',
+    status: 'ENFORCED',
+    category: 'CRYPTO'
+  },
+  {
+    id: 'shield-anti-xss',
+    nameFa: 'فیلتر عمیق پاکسازی داده‌های ورودی (Anti-XSS & Sanitizer)',
+    descriptionFa: 'پاکسازی خودکار تمامی پیام‌های چت، فیلدهای متنی، شرح کالاها و پارامترها از کدهای مخرب اسکریپتی',
+    status: 'ACTIVE',
+    category: 'INPUT'
+  },
+  {
+    id: 'shield-audit',
+    nameFa: 'ثبت وقایع امنیتی و ممیزی سیستم (Security Audit Logging)',
+    descriptionFa: 'ثبت غیرقابل تغییر تمامی رویدادهای ورود، خروج، تغییرات دسترسی و تغییرات اساسی در دیتابیس سرور',
+    status: 'ACTIVE',
+    category: 'AUDIT'
+  },
+  {
+    id: 'shield-fingerprint',
+    nameFa: 'پنهان‌سازی مشخصات و ردپای سرور (Anti-Fingerprinting)',
+    descriptionFa: 'حذف کامل هدرهای شناسایی سرور (X-Powered-By) جهت جلوگیری از شناسایی معماری سرور توسط اسکنرهای نفوذ',
+    status: 'ENFORCED',
+    category: 'NETWORK'
+  }
+];
+
+

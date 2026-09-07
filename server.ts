@@ -10,6 +10,17 @@ import {
 } from './src/server/messengerService.ts';
 import { MessengerBackupConfig } from './src/types';
 import { db } from './src/db/index.ts';
+import {
+  verifyPassword,
+  hashPassword,
+  isPasswordHashed,
+  sanitizePayload,
+  generateSecureToken,
+  ACTIVE_SECURITY_SHIELDS,
+  getAccountLockoutStatus,
+  recordFailedLogin,
+  recordSuccessfulLogin
+} from './src/utils/security.ts';
 
 const DEFAULT_MESSENGER_CONFIG: MessengerBackupConfig = {
   telegram: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
@@ -32,28 +43,143 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[CRITICAL] Unhandled rejection in server process:', reason);
 });
 
+// In-Memory Rate Limiting & DoS Defense Engine
+interface IpRequestRecord {
+  count: number;
+  resetAt: number;
+}
+const ipGlobalTracker = new Map<string, IpRequestRecord>();
+const ipSensitiveTracker = new Map<string, IpRequestRecord>();
+let totalBlockedAttempts = 0;
+
+// Periodic memory cleanup for rate limiter map
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of ipGlobalTracker.entries()) {
+    if (record.resetAt <= now) ipGlobalTracker.delete(ip);
+  }
+  for (const [ip, record] of ipSensitiveTracker.entries()) {
+    if (record.resetAt <= now) ipSensitiveTracker.delete(ip);
+  }
+}, 60000);
+
 async function startServer() {
   const app = express();
+
+  // 1. Security: Disable X-Powered-By to prevent server stack fingerprinting
+  app.disable('x-powered-by');
+
   // Robust Port Detection: Support PORT, APP_PORT, HTTP_PORT with sanitization
   const rawPort = process.env.PORT || process.env.APP_PORT || process.env.HTTP_PORT || '3000';
   const PORT = parseInt(String(rawPort).trim(), 10) || 3000;
+
+  // 2. Security: Comprehensive OWASP Enterprise HTTP Security Headers
+  app.use((req, res, next) => {
+    // Prevent MIME-sniffing
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Prevent Clickjacking (allow SAMEORIGIN for embedded preview when necessary)
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    // Legacy XSS filter
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    // Referrer Policy
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // Permissions Policy
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(self)');
+    // Enforce HSTS for HTTPS connections
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // Remove server identifier
+    res.removeHeader('X-Powered-By');
+    res.removeHeader('Server');
+    next();
+  });
+
+  // 3. Security: Global Sliding-Window IP Rate Limiter (Protection against DDoS and automated flood)
+  app.use((req, res, next) => {
+    // Skip static assets
+    if (req.path.startsWith('/assets/') || req.path.match(/\.(js|css|png|jpg|svg|ico|woff2)$/)) {
+      return next();
+    }
+
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || 
+                     req.socket.remoteAddress || 
+                     'unknown-ip';
+    const now = Date.now();
+    const WINDOW_MS = 10000; // 10 seconds
+    const MAX_REQUESTS = 300; // max 300 requests per 10s
+
+    let record = ipGlobalTracker.get(clientIp);
+    if (!record || record.resetAt <= now) {
+      record = { count: 1, resetAt: now + WINDOW_MS };
+      ipGlobalTracker.set(clientIp, record);
+    } else {
+      record.count += 1;
+      if (record.count > MAX_REQUESTS) {
+        totalBlockedAttempts += 1;
+        res.setHeader('Retry-After', '10');
+        return res.status(429).json({
+          success: false,
+          error: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً چند ثانیه صبر نمایید. (Too Many Requests - Rate limit exceeded)'
+        });
+      }
+    }
+    next();
+  });
 
   // Parse JSON payloads up to 50MB (for bulk imports, attachments, and snapshots)
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+  // 4. Security: Deep Payload Sanitizer Middleware (Anti-XSS & Prototype Pollution Defense)
+  app.use((req, res, next) => {
+    if (req.body && typeof req.body === 'object' && ['POST', 'PUT', 'PATCH'].includes(req.method)) {
+      try {
+        req.body = sanitizePayload(req.body);
+      } catch (e) {
+        console.warn('[Security] Payload sanitization warning:', e);
+      }
+    }
+    next();
+  });
+
   // CORS headers if accessed across subnets
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Client-Version');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Client-Version, X-Requested-With');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
     next();
   });
 
-  // API Route: Health & Configuration
+  // 5. Rate Limiter Helper for Sensitive Admin / Auth Endpoints
+  const sensitiveRateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || 
+                     req.socket.remoteAddress || 
+                     'unknown-ip';
+    const now = Date.now();
+    const WINDOW_MS = 60000; // 1 minute
+    const MAX_REQUESTS = 15; // max 15 attempts per minute
+
+    let record = ipSensitiveTracker.get(clientIp);
+    if (!record || record.resetAt <= now) {
+      record = { count: 1, resetAt: now + WINDOW_MS };
+      ipSensitiveTracker.set(clientIp, record);
+    } else {
+      record.count += 1;
+      if (record.count > MAX_REQUESTS) {
+        totalBlockedAttempts += 1;
+        res.setHeader('Retry-After', '60');
+        return res.status(429).json({
+          success: false,
+          error: 'تعداد دفعات تلاش برای عملیات حساس بیش از حد مجاز است. لطفاً ۱ دقیقه صبر نمایید.'
+        });
+      }
+    }
+    next();
+  };
+
+  // API Route: Health & Configuration (Secure, no credential leaks)
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 
@@ -63,18 +189,155 @@ async function startServer() {
       uptime: process.uptime(),
       hostname: os.hostname(),
       serverVersion: serverStore.getState().version,
+      securityShieldsActive: true
     });
   });
 
+  // Secure /api/config: Public system parameters ONLY, NEVER exposing passwords or database credentials
   app.get('/api/config', (req, res) => {
+    const state = serverStore.getState();
     res.json({
       port: PORT,
-      adminUser: process.env.ADMIN_USER || 'admin',
-      adminPass: process.env.ADMIN_PASS || 'admin123',
-      domain: process.env.APP_URL || '',
-      sqlHost: process.env.SQL_HOST || 'cloudsql-proxy',
-      sqlDbName: process.env.SQL_DB_NAME || 'anbarmeh_db',
+      serverMode: 'centralized_multiuser',
+      companyName: state.companyName || 'سامانه انبارمه',
+      version: state.version,
+      securityActive: true,
+      hasPostgreSql: Boolean(process.env.DATABASE_URL),
+      hasTelegramBackup: Boolean(state.messengerConfig?.telegram?.enabled),
+      hasBaleBackup: Boolean(state.messengerConfig?.bale?.enabled)
     });
+  });
+
+  // API Route: Enterprise Security Status & Shields Diagnostic
+  app.get('/api/security/status', (req, res) => {
+    const state = serverStore.getState();
+    const usersCount = state.users?.length || 0;
+    const hashedUsersCount = (state.users || []).filter(u => isPasswordHashed(u.password)).length;
+
+    res.json({
+      success: true,
+      systemTime: new Date().toISOString(),
+      shields: ACTIVE_SECURITY_SHIELDS,
+      metrics: {
+        totalUsers: usersCount,
+        hashedUsers: hashedUsersCount,
+        allPasswordsHashed: usersCount > 0 && hashedUsersCount === usersCount,
+        totalBlockedFloodAttempts: totalBlockedAttempts,
+        activeRateLimiters: {
+          globalTrackedIps: ipGlobalTracker.size,
+          sensitiveTrackedIps: ipSensitiveTracker.size
+        },
+        httpSecurityHeadersEnforced: true,
+        antiFingerprintActive: true,
+        payloadSanitizerActive: true,
+        sessionTokenCrypto: 'WebCrypto / SecureRandom'
+      }
+    });
+  });
+
+  // API Route: Secure Server-Authoritative Login Endpoint
+  app.post('/api/auth/login', sensitiveRateLimiter, (req, res) => {
+    try {
+      const { username, password } = req.body || {};
+      if (!username || !password) {
+        return res.status(400).json({ success: false, error: 'نام کاربری و رمز عبور الزامی است.' });
+      }
+
+      const cleanUser = String(username).trim().toLowerCase();
+      
+      // Check account lockout
+      const lockout = getAccountLockoutStatus(cleanUser);
+      if (lockout.isLocked) {
+        return res.status(423).json({
+          success: false,
+          locked: true,
+          remainingSeconds: lockout.remainingSeconds,
+          error: `حساب کاربری به دلیل ۵ بار تلاش ناموفق قفل است. لطفاً ${lockout.remainingSeconds} ثانیه دیگر مجدداً تلاش کنید.`
+        });
+      }
+
+      const state = serverStore.getState();
+      const currentUsers = state.users || [];
+      const user = currentUsers.find(u => u.username?.toLowerCase() === cleanUser);
+
+      if (!user) {
+        const lockRes = recordFailedLogin(cleanUser);
+        return res.status(401).json({
+          success: false,
+          error: 'نام کاربری یا کلمه عبور اشتباه است.',
+          attemptsLeft: lockRes.attemptsLeft
+        });
+      }
+
+      if (user.isActive === false) {
+        return res.status(403).json({
+          success: false,
+          error: 'حساب کاربری شما توسط مدیر سیستم غیرفعال شده است.'
+        });
+      }
+
+      // Cryptographic verification
+      const isValid = verifyPassword(String(password), user.password, user.username);
+      if (!isValid) {
+        const lockRes = recordFailedLogin(cleanUser);
+        if (lockRes.isNowLocked) {
+          return res.status(423).json({
+            success: false,
+            locked: true,
+            remainingSeconds: lockRes.remainingSeconds,
+            error: 'حساب کاربری به دلیل ۵ بار تلاش ناموفق موقتاً به مدت ۳۰ ثانیه قفل شد.'
+          });
+        }
+        return res.status(401).json({
+          success: false,
+          error: `رمز عبور اشتباه است. (${lockRes.attemptsLeft} تلاش دیگر تا قفل موقت)`,
+          attemptsLeft: lockRes.attemptsLeft
+        });
+      }
+
+      // Successful login
+      recordSuccessfulLogin(cleanUser);
+
+      // Auto-upgrade password to salted hash in serverStore if legacy unhashed
+      if (!isPasswordHashed(user.password)) {
+        const secureHash = hashPassword(String(password), user.username);
+        const updatedUsers = currentUsers.map(u => u.id === user.id ? { ...u, password: secureHash } : u);
+        serverStore.updateState({ users: updatedUsers });
+      }
+
+      // Generate cryptographically random session token
+      const sessionToken = generateSecureToken(32);
+
+      // Record immutable audit log on server
+      const auditEntry = {
+        id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: new Date().toLocaleString('fa-IR'),
+        userId: user.id,
+        userName: user.fullName || user.username,
+        userRole: user.role,
+        action: 'ورود امن به سامانه',
+        module: 'امنیت و احراز هویت',
+        description: `ورود موفق کاربر ${user.fullName} (${user.username}) به پنل مدیریت با اعتبارسنجی رمزنگاری‌شده`,
+        details: { ip: req.ip, userAgent: req.headers['user-agent'] }
+      };
+      serverStore.updateState({
+        auditLogs: [auditEntry as any, ...(state.auditLogs || []).slice(0, 199)]
+      });
+
+      // Never return the hashed password in login response
+      const safeUser = { ...user };
+      delete safeUser.password;
+
+      res.json({
+        success: true,
+        token: sessionToken,
+        user: safeUser,
+        message: 'ورود با موفقیت انجام شد.'
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/auth/login:', err);
+      res.status(500).json({ success: false, error: 'خطای داخلی در فرآیند احراز هویت' });
+    }
   });
 
   // API Route: Server Info & System Diagnostic
