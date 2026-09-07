@@ -11,36 +11,15 @@ import {
 import { ItemsExcelImportModal } from './ItemsExcelImportModal';
 import { InitialStockExcelImportModal } from './InitialStockExcelImportModal';
 import { exportItemsToExcel } from '../utils/excelUtils';
+import { BatchBarcodePrintModal } from './BatchBarcodePrintModal';
+import { SvgBarcode } from './SvgBarcode';
 
 const BarcodeVisual: React.FC<{ code: string; name?: string; location?: string }> = ({ code, name, location }) => {
-  const bars = useMemo(() => {
-    let pattern = [];
-    const hashStr = code || '123456789';
-    for (let i = 0; i < hashStr.length; i++) {
-      const charCode = hashStr.charCodeAt(i);
-      pattern.push((charCode % 3) + 1);
-      pattern.push(((charCode * 2) % 2) + 1);
-      pattern.push(((charCode * 5) % 3) + 1);
-    }
-    return pattern;
-  }, [code]);
-
   return (
     <div className="flex flex-col items-center justify-center bg-white p-3.5 rounded-xl border border-slate-300 shadow-2xs text-center select-none">
-      <div className="text-[10px] font-bold text-slate-500 mb-1">کد ردیابی و لیبل بارکد کالا</div>
-      <div className="flex items-end justify-center h-14 space-x-0.5 space-x-reverse px-3 py-1.5 bg-white border border-slate-200 rounded">
-        <div className="w-1 h-full bg-black"></div>
-        <div className="w-0.5 h-full bg-white"></div>
-        <div className="w-1 h-full bg-black"></div>
-        {bars.map((w, idx) => (
-          <React.Fragment key={idx}>
-            <div className={`h-full bg-black`} style={{ width: `${w * 1.5}px` }}></div>
-            <div className={`h-full bg-white`} style={{ width: `${((idx % 2) + 1) * 1.2}px` }}></div>
-          </React.Fragment>
-        ))}
-        <div className="w-1 h-full bg-black"></div>
-        <div className="w-0.5 h-full bg-white"></div>
-        <div className="w-1 h-full bg-black"></div>
+      <div className="text-[10px] font-bold text-slate-500 mb-1">کد ردیابی و لیبل بارکد استاندارد کالا</div>
+      <div className="w-full max-w-[220px] px-2 py-1.5 bg-white border border-slate-200 rounded flex justify-center">
+        <SvgBarcode code={code || '123456789'} height={44} showText={false} maxSvgWidth={200} />
       </div>
       <div className="font-mono text-xs font-extrabold tracking-widest text-slate-900 mt-1">
         *{code}*
@@ -75,6 +54,11 @@ export const ItemsView: React.FC = () => {
   const [printableCatalogItem, setPrintableCatalogItem] = useState<Item | null>(null);
   const [isExcelImportModalOpen, setIsExcelImportModalOpen] = useState(false);
   const [isInitialStockModalOpen, setIsInitialStockModalOpen] = useState(false);
+
+  // Batch Barcode Print Modal states
+  const [isBatchBarcodeModalOpen, setIsBatchBarcodeModalOpen] = useState(false);
+  const [batchBarcodeInitialGroup, setBatchBarcodeInitialGroup] = useState<string | undefined>(undefined);
+  const [batchBarcodeInitialItems, setBatchBarcodeInitialItems] = useState<Item[] | undefined>(undefined);
 
   // Multi-selection for bulk actions
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
@@ -649,6 +633,19 @@ export const ItemsView: React.FC = () => {
           </button>
 
           <button
+            onClick={() => {
+              setBatchBarcodeInitialGroup(selectedGroup !== 'ALL' ? selectedGroup : undefined);
+              setBatchBarcodeInitialItems(undefined);
+              setIsBatchBarcodeModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="چاپ همزمان بارکد کالاها برای یک یا چند گروه کالایی"
+          >
+            <Barcode className="w-4 h-4 text-indigo-600" />
+            <span>چاپ گروهی بارکدها</span>
+          </button>
+
+          <button
             onClick={handleOpenGroupModal}
             className="glass-btn-secondary !rounded-xl py-2 px-3.5"
           >
@@ -699,7 +696,7 @@ export const ItemsView: React.FC = () => {
         </div>
 
         {/* Hierarchical Group Filter */}
-        <div>
+        <div className="flex items-center gap-1.5">
           <select
             value={selectedGroup}
             onChange={(e) => setSelectedGroup(e.target.value)}
@@ -712,6 +709,19 @@ export const ItemsView: React.FC = () => {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => {
+              setBatchBarcodeInitialGroup(selectedGroup !== 'ALL' ? selectedGroup : undefined);
+              setBatchBarcodeInitialItems(undefined);
+              setIsBatchBarcodeModalOpen(true);
+            }}
+            title={isFa ? 'چاپ بارکد اقلام این گروه یا گروه‌های دیگر' : 'Print barcodes for this group'}
+            className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+          >
+            <Barcode className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="hidden sm:inline">چاپ بارکد</span>
+          </button>
         </div>
       </div>
 
@@ -871,6 +881,20 @@ export const ItemsView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const selectedItems = items.filter(i => selectedItemIds.includes(i.id));
+                setBatchBarcodeInitialItems(selectedItems);
+                setBatchBarcodeInitialGroup(undefined);
+                setIsBatchBarcodeModalOpen(true);
+              }}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              title="چاپ همزمان بارکد اقلام انتخاب شده"
+            >
+              <Barcode className="w-3.5 h-3.5" />
+              <span>{isFa ? `چاپ بارکد انتخابی (${selectedItemIds.length})` : `Print Barcodes (${selectedItemIds.length})`}</span>
+            </button>
+
             <button
               onClick={() => {
                 const selectedItems = items.filter(i => selectedItemIds.includes(i.id));
@@ -1830,6 +1854,18 @@ export const ItemsView: React.FC = () => {
       <InitialStockExcelImportModal
         isOpen={isInitialStockModalOpen}
         onClose={() => setIsInitialStockModalOpen(false)}
+      />
+
+      {/* Batch Barcode Print Modal */}
+      <BatchBarcodePrintModal
+        isOpen={isBatchBarcodeModalOpen}
+        onClose={() => {
+          setIsBatchBarcodeModalOpen(false);
+          setBatchBarcodeInitialGroup(undefined);
+          setBatchBarcodeInitialItems(undefined);
+        }}
+        initialSelectedGroup={batchBarcodeInitialGroup}
+        initialSelectedItems={batchBarcodeInitialItems}
       />
     </div>
   );

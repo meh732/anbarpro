@@ -147,6 +147,8 @@ export function generateBackupSummary(state: any, customTitle?: string): string 
   const transfersCount = (state.transfers || []).length;
   const usersCount = (state.users || []).length;
   const contractorsCount = (state.contractors || []).length;
+  const messagesCount = (state.messages || []).length;
+  const channelsCount = (state.channels || []).length;
 
   const totalRawJson = JSON.stringify(state);
   const sizeKb = Math.round(totalRawJson.length / 1024);
@@ -161,6 +163,8 @@ export function generateBackupSummary(state: any, customTitle?: string): string 
 💾 <b>حجم فایل پشتیبان:</b> ${sizeKb} کیلوبایت
 
 📊 <b>خلاصه آماری اطلاعات سیستم:</b>
+  • 👥 <b>کاربران و پرسنل:</b> ${usersCount.toLocaleString('fa-IR')} حساب کاربری فعال
+  • 💬 <b>پیام‌ها و چت‌های سازمانی:</b> ${messagesCount.toLocaleString('fa-IR')} پیام در ${channelsCount.toLocaleString('fa-IR')} کانال
   • 🏷️ <b>اقلام و کالاها:</b> ${itemsCount.toLocaleString('fa-IR')} قلم
   • 🏭 <b>انبارها:</b> ${warehousesCount.toLocaleString('fa-IR')} انبار
   • 📐 <b>فرمول‌های ساخت (BOM):</b> ${bomsCount.toLocaleString('fa-IR')} فرمول
@@ -169,9 +173,8 @@ export function generateBackupSummary(state: any, customTitle?: string): string 
   • 📤 <b>اسناد خروج از انبار:</b> ${outDocsCount.toLocaleString('fa-IR')} سند
   • 🔄 <b>حواله‌های انتقال:</b> ${transfersCount.toLocaleString('fa-IR')} حواله
   • 🤝 <b>پیمانکاران و کارگاه‌ها:</b> ${contractorsCount.toLocaleString('fa-IR')} مورد
-  • 👥 <b>کاربران مجاز:</b> ${usersCount.toLocaleString('fa-IR')} کاربر
 
-✅ فایل پایگاه داده با پسوند JSON پیوست این پیام ارسال گردید.`;
+✅ فایل پایگاه داده شامل اطلاعات ۱۰۰٪ کامل کاربران، چت‌ها، اسناد و انبارها پیوست گردید.`;
 }
 
 /**

@@ -154,6 +154,9 @@ async function main() {
   const itemsCount = (dbData.items && dbData.items.length) || 0;
   const whCount = (dbData.warehouses && dbData.warehouses.length) || 0;
   const prjCount = (dbData.projects && dbData.projects.length) || 0;
+  const usersCount = (dbData.users && dbData.users.length) || 0;
+  const messagesCount = (dbData.messages && dbData.messages.length) || 0;
+  const channelsCount = (dbData.channels && dbData.channels.length) || 0;
   const companyName = dbData.companyName || 'مدیریت انبار و تولید انبارمه';
 
   const persianDate = now.toLocaleDateString('fa-IR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -163,10 +166,10 @@ async function main() {
     `🚨 <b>پشتیبان خودکار پیش از آپدیت سامانه (Pre-Update Backup)</b>`,
     `🏢 سامانه: <b>${companyName}</b>`,
     `📅 تاریخ: ${persianDate} - ساعت: ${persianTime}`,
-    `📦 تعداد اقلام کالا: <b>${itemsCount}</b> قلم`,
-    `🏬 تعداد انبارها: <b>${whCount}</b> انبار`,
-    `🏗️ پروژه‌ها: <b>${prjCount}</b> پروژه`,
-    `🛡️ <i>این فایل پشتیبان به صورت خودکار پیش از اجرای دستور آپدیت گیت‌هاب ایجاد و به ربات ارسال گردید تا از امنیت ۱۰۰٪ دیتابیس اطمینان حاصل شود.</i>`
+    `👥 کاربران و پرسنل: <b>${usersCount}</b> کاربر فعال`,
+    `💬 پیام‌ها و کانال‌های گفتگو: <b>${messagesCount}</b> پیام در <b>${channelsCount}</b> کانال`,
+    `📦 اقلام کالا: <b>${itemsCount}</b> قلم | 🏬 انبارها: <b>${whCount}</b> انبار | 🏗️ پروژه‌ها: <b>${prjCount}</b>`,
+    `🛡️ <i>این فایل شامل نسخه ۱۰۰٪ کامل از تمام کاربران، گفتگوها، اسناد و انبارها بوده و به صورت خودکار پیش از بروزرسانی ارسال شد.</i>`
   ].join('\n');
 
   const fileBuffer = Buffer.from(JSON.stringify({

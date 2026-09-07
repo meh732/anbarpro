@@ -418,6 +418,42 @@ body.lite-mode-active .backdrop-blur-xl {
     page-break-inside: avoid;
   }
 
+  /* ======================================================== */
+  /* Batch Barcode & Label Print Rules                        */
+  /* ======================================================== */
+  #printable-batch-barcodes {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+  }
+
+  /* Thermal roll format continuous page breaks */
+  .barcode-roll-label {
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin: 0 0 4mm 0 !important;
+  }
+
+  /* Sheet grid labels avoid splitting across page breaks */
+  .barcode-grid-label {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Ensure background app elements are completely hidden during batch barcode printing */
+  body.printing-batch-barcodes aside,
+  body.printing-batch-barcodes nav,
+  body.printing-batch-barcodes header,
+  body.printing-batch-barcodes main > div > *:not(.batch-barcode-modal-wrapper) {
+    display: none !important;
+  }
+
   /* Preserve sharp borders and readable dark colors for laser printers */
   table, tr, td, th {
     page-break-inside: avoid !important;

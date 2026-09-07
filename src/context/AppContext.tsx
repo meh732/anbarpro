@@ -3769,22 +3769,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const parsed = JSON.parse(jsonStr);
       const data = parsed.data || parsed;
-      if (data && data.items && data.warehouses && data.inventory) {
-        setItems(data.items);
-        setWarehouses(data.warehouses);
-        setInventory(data.inventory);
+      if (data && (data.items || data.warehouses || data.inventory || data.users)) {
+        if (data.items) setItems(data.items);
+        if (data.itemGroups) setItemGroups(data.itemGroups);
+        if (data.warehouses) setWarehouses(data.warehouses);
+        if (data.inventory) setInventory(data.inventory);
         if (data.boms) setBoms(data.boms);
         if (data.projects) setProjects(data.projects);
         if (data.operators) setOperators(data.operators);
+        if (data.contractors) setContractors(data.contractors);
+        if (data.contractorContracts) setContractorContracts(data.contractorContracts);
+        if (data.contractorTransactions) setContractorTransactions(data.contractorTransactions);
+        if (data.stockCountings) setStockCountings(data.stockCountings);
         if (data.stockInDocs) setStockInDocs(data.stockInDocs);
         if (data.stockOutDocs) setStockOutDocs(data.stockOutDocs);
         if (data.transfers) setTransfers(data.transfers);
         if (data.purchaseRequests) setPurchaseRequests(data.purchaseRequests);
         if (data.productionLogs) setProductionLogs(data.productionLogs);
+        if (data.materialHandovers) setMaterialHandovers(data.materialHandovers);
         if (data.notifications) setNotifications(data.notifications);
+        if (data.messages) setMessages(data.messages);
+        if (data.channels) setChannels(data.channels);
+        if (data.users && Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
+        if (data.companyName) setCompanyName(data.companyName);
+        if (data.messengerConfig) setMessengerConfigState(data.messengerConfig);
         if (data.traceabilityEvents) setTraceabilityEvents(data.traceabilityEvents);
         if (data.auditLogs) setAuditLogs(data.auditLogs);
-        addAudit('بازیابی داده‌ها از فایل پشتیبان', 'System', 'JSON', 'بارگذاری کامل داده‌ها از فایل پشتیبان');
+        addAudit('بازیابی داده‌ها از فایل پشتیبان', 'System', 'JSON', 'بارگذاری کامل داده‌ها، کاربران، گفتگوها و ساختار انبار از فایل پشتیبان');
 
         // Also push imported backup to Linux server
         fetch(getApiUrl('/api/import-data'), {

@@ -48,8 +48,8 @@ export const BackupView: React.FC = () => {
     message: ''
   });
 
-  const [includeChats, setIncludeChats] = useState(false);
-  const [includeAttachments, setIncludeAttachments] = useState(false);
+  const [includeChats, setIncludeChats] = useState(true);
+  const [includeAttachments, setIncludeAttachments] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 

@@ -382,9 +382,33 @@ class ServerStoreManager {
 
   public replaceState(newState: Partial<ServerDatabaseState>): ServerDatabaseState {
     const newVersion = Date.now();
+    const defaultState = getDefaultServerState();
     this.state = {
-      ...getDefaultServerState(),
+      ...defaultState,
       ...newState,
+      companyName: newState.companyName || this.state.companyName || defaultState.companyName,
+      messengerConfig: newState.messengerConfig !== undefined ? newState.messengerConfig : (this.state.messengerConfig || defaultState.messengerConfig),
+      users: (newState.users !== undefined && Array.isArray(newState.users) && newState.users.length > 0) ? newState.users : (this.state.users?.length ? this.state.users : defaultState.users),
+      items: newState.items !== undefined ? newState.items : defaultState.items,
+      itemGroups: newState.itemGroups !== undefined ? newState.itemGroups : defaultState.itemGroups,
+      warehouses: newState.warehouses !== undefined ? newState.warehouses : defaultState.warehouses,
+      contractors: newState.contractors !== undefined ? newState.contractors : defaultState.contractors,
+      inventory: newState.inventory !== undefined ? newState.inventory : defaultState.inventory,
+      boms: newState.boms !== undefined ? newState.boms : defaultState.boms,
+      projects: newState.projects !== undefined ? newState.projects : defaultState.projects,
+      operators: newState.operators !== undefined ? newState.operators : defaultState.operators,
+      stockCountings: newState.stockCountings !== undefined ? newState.stockCountings : defaultState.stockCountings,
+      stockInDocs: newState.stockInDocs !== undefined ? newState.stockInDocs : defaultState.stockInDocs,
+      stockOutDocs: newState.stockOutDocs !== undefined ? newState.stockOutDocs : defaultState.stockOutDocs,
+      transfers: newState.transfers !== undefined ? newState.transfers : defaultState.transfers,
+      purchaseRequests: newState.purchaseRequests !== undefined ? newState.purchaseRequests : defaultState.purchaseRequests,
+      productionLogs: newState.productionLogs !== undefined ? newState.productionLogs : defaultState.productionLogs,
+      materialHandovers: newState.materialHandovers !== undefined ? newState.materialHandovers : defaultState.materialHandovers,
+      notifications: newState.notifications !== undefined ? newState.notifications : defaultState.notifications,
+      messages: newState.messages !== undefined ? newState.messages : defaultState.messages,
+      channels: newState.channels !== undefined ? newState.channels : defaultState.channels,
+      traceabilityEvents: newState.traceabilityEvents !== undefined ? newState.traceabilityEvents : defaultState.traceabilityEvents,
+      auditLogs: newState.auditLogs !== undefined ? newState.auditLogs : defaultState.auditLogs,
       version: newVersion,
       lastUpdated: new Date().toISOString(),
     };
