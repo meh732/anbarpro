@@ -22,6 +22,7 @@ export const ChatView: React.FC = () => {
     sendChatMessage,
     deleteChatMessage,
     toggleMessageReaction,
+    markChatAsRead,
     items,
     transfers,
     purchaseRequests,
@@ -133,7 +134,7 @@ export const ChatView: React.FC = () => {
   const [selectedPersonnelCode, setSelectedPersonnelCode] = useState('');
   const [barcodeActionType, setBarcodeActionType] = useState<'in' | 'out'>('in');
 
-  // Present staff list
+  // Present staff list - 100% user-managed with local persistence, zero fake/dummy entries
   const [presentStaffList, setPresentStaffList] = useState<Array<{
     id: string;
     name: string;
@@ -146,12 +147,86 @@ export const ChatView: React.FC = () => {
       const saved = localStorage.getItem('present_staff_shift_list');
       if (saved) return JSON.parse(saved);
     } catch {}
-    return [
-      { id: currentUser.id, name: currentUser.fullName, role: currentUser.role, shift: 'صبح (۰۷:۰۰ الی ۱۵:۰۰)', station: currentUser.department || 'انبار و لجستیک', entryTime: '۰۷:۵۵' },
-      { id: 'op-1', name: 'علی محمدی', role: 'اپراتور ارشد خط مونتاژ', shift: 'صبح (۰۷:۰۰ الی ۱۵:۰۰)', station: 'خط مونتاژ ۱', entryTime: '۰۷:۴۵' },
-      { id: 'op-2', name: 'رضا قاسمی', role: 'تکنیسین تست و کالیبراسیون', shift: 'عصر (۱۵:۰۰ الی ۲۳:۰۰)', station: 'ایستگاه تست', entryTime: '۱۴:۵۰' }
-    ];
+    return [];
   });
+
+  // Manual Add Staff to Shift state
+  const [showAddStaffForm, setShowAddStaffForm] = useState(false);
+  const [newStaffUserId, setNewStaffUserId] = useState('');
+  const [newStaffCustomName, setNewStaffCustomName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState('');
+  const [newStaffShift, setNewStaffShift] = useState('صبح (۰۷:۰۰ الی ۱۵:۰۰)');
+  const [newStaffStation, setNewStaffStation] = useState('انبار و لجستیک');
+
+  // Remove individual staff from shift list
+  const handleRemoveStaffFromShift = (staffId: string, staffName: string) => {
+    if (confirm(`آیا از حذف «${staffName}» از لیست پرسنل حاضر در شیفت اطمینان دارید؟`)) {
+      setPresentStaffList(prev => {
+        const updated = prev.filter(p => p.id !== staffId);
+        try {
+          localStorage.setItem('present_staff_shift_list', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+    }
+  };
+
+  // Clear all staff from shift list
+  const handleClearAllShiftStaff = () => {
+    if (confirm('آیا از پاکسازی کامل و حذف تمامی افراد از لیست همکاران حاضر در شیفت اطمینان دارید؟')) {
+      setPresentStaffList([]);
+      try {
+        localStorage.removeItem('present_staff_shift_list');
+      } catch {}
+    }
+  };
+
+  // Add staff to shift manually
+  const handleAddStaffManually = () => {
+    let name = newStaffCustomName.trim();
+    let role = newStaffRole.trim() || 'پرسنل';
+    let id = `staff-${Date.now()}`;
+
+    if (newStaffUserId) {
+      const u = users.find(usr => usr.id === newStaffUserId);
+      const op = operators.find(o => o.id === newStaffUserId);
+      if (u) {
+        name = u.fullName;
+        role = u.role;
+        id = u.id;
+      } else if (op) {
+        name = op.name;
+        role = op.role;
+        id = op.id;
+      }
+    }
+
+    if (!name) return;
+
+    const timeStr = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const newEntry = {
+      id,
+      name,
+      role,
+      shift: newStaffShift,
+      station: newStaffStation,
+      entryTime: timeStr,
+    };
+
+    setPresentStaffList(prev => {
+      const filtered = prev.filter(p => p.id !== id);
+      const updated = [...filtered, newEntry];
+      try {
+        localStorage.setItem('present_staff_shift_list', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    setShowAddStaffForm(false);
+    setNewStaffUserId('');
+    setNewStaffCustomName('');
+    setNewStaffRole('');
+  };
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -187,6 +262,28 @@ export const ChatView: React.FC = () => {
 
     return list;
   }, [messages, activeChannelId, activeDirectUserId, currentUser.id, isPersonnelChannel, attendanceFilter]);
+
+  // Automatically mark active conversation as seen/read on mobile and desktop
+  useEffect(() => {
+    if (activeDirectUserId) {
+      markChatAsRead({ senderId: activeDirectUserId });
+    } else if (activeChannelId) {
+      markChatAsRead({ channelId: activeChannelId });
+    }
+  }, [activeChannelId, activeDirectUserId, messages.length, markChatAsRead]);
+
+  // Re-check on window focus (e.g. user switches tabs or returns to browser)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (activeDirectUserId) {
+        markChatAsRead({ senderId: activeDirectUserId });
+      } else if (activeChannelId) {
+        markChatAsRead({ channelId: activeChannelId });
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [activeChannelId, activeDirectUserId, markChatAsRead]);
 
   // Attendance Actions Handlers
   const handleConfirmClockIn = async () => {
@@ -552,6 +649,11 @@ export const ChatView: React.FC = () => {
                   const channelMessages = messages.filter(m => m.channelId === channel.id);
                   const lastMsg = channelMessages[channelMessages.length - 1];
                   const isCoordination = channel.id === 'staff-coordination';
+                  const channelUnreadCount = messages.filter(m => 
+                    m.channelId === channel.id && 
+                    m.senderId !== currentUser.id && 
+                    (!m.readBy || !m.readBy.includes(currentUser.id))
+                  ).length;
 
                   return (
                     <button
@@ -560,6 +662,7 @@ export const ChatView: React.FC = () => {
                         setActiveChannelId(channel.id);
                         setActiveDirectUserId(null);
                         setMobileView('chat');
+                        markChatAsRead({ channelId: channel.id });
                       }}
                       className={`w-full text-right p-2.5 rounded-xl transition-all flex items-center justify-between cursor-pointer active:scale-98 ${
                         isActive 
@@ -603,11 +706,18 @@ export const ChatView: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      {lastMsg && (
-                        <span className={`text-[10px] shrink-0 mr-1 ${isActive ? 'text-emerald-200' : 'text-slate-400'}`}>
-                          {lastMsg.timestamp}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0 mr-1">
+                        {!isActive && channelUnreadCount > 0 && (
+                          <span className="bg-emerald-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold shadow-xs animate-pulse">
+                            {channelUnreadCount}
+                          </span>
+                        )}
+                        {lastMsg && (
+                          <span className={`text-[10px] ${isActive ? 'text-emerald-200' : 'text-slate-400'}`}>
+                            {lastMsg.timestamp}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -637,6 +747,12 @@ export const ChatView: React.FC = () => {
                     (m.senderId === user.id && m.recipientId === currentUser.id)
                   );
                   const lastMsg = directMsgs[directMsgs.length - 1];
+                  const userUnreadCount = messages.filter(m => 
+                    m.senderId === user.id && 
+                    m.recipientId === currentUser.id && 
+                    !m.isRead && 
+                    (!m.readBy || !m.readBy.includes(currentUser.id))
+                  ).length;
 
                   return (
                     <button
@@ -644,6 +760,7 @@ export const ChatView: React.FC = () => {
                       onClick={() => {
                         setActiveDirectUserId(user.id);
                         setMobileView('chat');
+                        markChatAsRead({ senderId: user.id });
                       }}
                       className={`w-full text-right p-2.5 rounded-xl transition-all flex items-center justify-between cursor-pointer active:scale-98 ${
                         isActive 
@@ -676,11 +793,18 @@ export const ChatView: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      {lastMsg && (
-                        <span className={`text-[10px] shrink-0 mr-1 ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>
-                          {lastMsg.timestamp}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0 mr-1">
+                        {!isActive && userUnreadCount > 0 && (
+                          <span className="bg-emerald-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold shadow-xs animate-pulse">
+                            {userUnreadCount}
+                          </span>
+                        )}
+                        {lastMsg && (
+                          <span className={`text-[10px] ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>
+                            {lastMsg.timestamp}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -915,11 +1039,45 @@ export const ChatView: React.FC = () => {
                     
                     {/* Header: Sender Name, Role & Time */}
                     <div className={`flex items-center gap-1.5 text-[10px] sm:text-[11px] ${isMine ? 'justify-end' : 'justify-start'}`}>
-                      <span className="font-bold text-slate-700">{msg.senderName}</span>
-                      <span className={`text-[8px] sm:text-[9px] px-1 py-0.2 rounded border font-medium ${roleBadge.color}`}>
-                        {roleBadge.label}
-                      </span>
-                      <span className="text-slate-400 font-mono">{msg.timestamp}</span>
+                      {!isMine ? (
+                        <>
+                          <span className="font-bold text-slate-700">{msg.senderName}</span>
+                          <span className={`text-[8px] sm:text-[9px] px-1 py-0.2 rounded border font-medium ${roleBadge.color}`}>
+                            {roleBadge.label}
+                          </span>
+                          <span className="text-slate-400 font-mono">{msg.timestamp}</span>
+                        </>
+                      ) : (
+                        <>
+                          {msg.recipientId ? (
+                            (msg.isRead || (msg.readBy && msg.readBy.includes(msg.recipientId))) ? (
+                              <span className="flex items-center text-cyan-600 font-bold" title="دیده شد (Seen)">
+                                <CheckCheck className="w-3.5 h-3.5 text-cyan-600" />
+                              </span>
+                            ) : (
+                              <span className="flex items-center text-slate-400" title="ارسال شد (Sent)">
+                                <Check className="w-3.5 h-3.5" />
+                              </span>
+                            )
+                          ) : (
+                            ((msg.readBy && msg.readBy.filter(uId => uId !== currentUser.id).length > 0)) ? (
+                              <span className="flex items-center gap-0.5 text-[9px] text-cyan-600 font-mono font-bold" title={`سین شده توسط ${msg.readBy.filter(uId => uId !== currentUser.id).length} نفر`}>
+                                <CheckCheck className="w-3.5 h-3.5 text-cyan-600" />
+                                <span>{msg.readBy.filter(uId => uId !== currentUser.id).length}</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center text-slate-400" title="ارسال به کانال">
+                                <Check className="w-3.5 h-3.5" />
+                              </span>
+                            )
+                          )}
+                          <span className="text-slate-400 font-mono">{msg.timestamp}</span>
+                          <span className={`text-[8px] sm:text-[9px] px-1 py-0.2 rounded border font-medium ${roleBadge.color}`}>
+                            {roleBadge.label}
+                          </span>
+                          <span className="font-bold text-slate-700">{msg.senderName}</span>
+                        </>
+                      )}
                     </div>
 
                     {/* Replied Context */}
@@ -1736,7 +1894,7 @@ export const ChatView: React.FC = () => {
       {/* ========================================================================= */}
       {showStaffListModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-scaleUp">
+          <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-scaleUp">
             
             {/* Modal Header */}
             <div className="px-5 py-4 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between">
@@ -1760,51 +1918,205 @@ export const ChatView: React.FC = () => {
             {/* Modal Body */}
             <div className="p-5 space-y-3.5 text-xs">
               
-              <div className="flex items-center justify-between bg-emerald-50 text-emerald-900 p-3 rounded-xl border border-emerald-200">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="font-bold">تعداد پرسنل فعال در شیفت: {presentStaffList.length} نفر</span>
+                  <span className={`w-2.5 h-2.5 rounded-full ${presentStaffList.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                  <span className="font-bold text-slate-800">تعداد پرسنل فعال در شیفت: {presentStaffList.length} نفر</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>چاپ لیست</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddStaffForm(!showAddStaffForm)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>افزودن به شیفت</span>
+                  </button>
+                  {presentStaffList.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllShiftStaff}
+                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="پاکسازی و حذف کل لیست"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>پاکسازی کل</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    disabled={presentStaffList.length === 0}
+                    className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>چاپ لیست</span>
+                  </button>
+                </div>
               </div>
 
+              {/* Add Staff Inline Form */}
+              {showAddStaffForm && (
+                <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
+                      <UserPlus className="w-4 h-4 text-indigo-600" />
+                      افزودن دستی پرسنل به شیفت کاری
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddStaffForm(false)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">انتخاب از کاربران / اپراتورها</label>
+                      <select
+                        value={newStaffUserId}
+                        onChange={(e) => {
+                          setNewStaffUserId(e.target.value);
+                          if (e.target.value) {
+                            const u = users.find(usr => usr.id === e.target.value);
+                            const op = operators.find(o => o.id === e.target.value);
+                            if (u) {
+                              setNewStaffCustomName(u.fullName);
+                              setNewStaffRole(u.role);
+                              if (u.department) setNewStaffStation(u.department);
+                            } else if (op) {
+                              setNewStaffCustomName(op.name);
+                              setNewStaffRole(op.role);
+                            }
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                      >
+                        <option value="">-- انتخاب پرسنل سامانه یا نام دلخواه --</option>
+                        <optgroup label="کاربران سامانه">
+                          {users.map(u => (
+                            <option key={u.id} value={u.id}>{u.fullName} ({u.role})</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="اپراتورهای فنی و تولید">
+                          {operators.map(op => (
+                            <option key={op.id} value={op.id}>{op.name} - {op.code} ({op.role})</option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">نام و نام خانوادگی (یا دستی)</label>
+                      <input
+                        type="text"
+                        value={newStaffCustomName}
+                        onChange={(e) => setNewStaffCustomName(e.target.value)}
+                        placeholder="نام پرسنل..."
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">شیفت کاری</label>
+                      <select
+                        value={newStaffShift}
+                        onChange={(e) => setNewStaffShift(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                      >
+                        <option value="صبح (۰۷:۰۰ الی ۱۵:۰۰)">صبح (۰۷:۰۰ الی ۱۵:۰۰)</option>
+                        <option value="عصر (۱۵:۰۰ الی ۲۳:۰۰)">عصر (۱۵:۰۰ الی ۲۳:۰۰)</option>
+                        <option value="شب (۲۳:۰۰ الی ۰۷:۰۰)">شب (۲۳:۰۰ الی ۰۷:۰۰)</option>
+                        <option value="شیفت عادی اداری (۰۸:۰۰ الی ۱۶:۳۰)">شیفت عادی اداری (۰۸:۰۰ الی ۱۶:۳۰)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">ایستگاه استقرار / بخش</label>
+                      <input
+                        type="text"
+                        value={newStaffStation}
+                        onChange={(e) => setNewStaffStation(e.target.value)}
+                        placeholder="مثال: انبار مرکزی، خط تولید ۱..."
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddStaffForm(false)}
+                      className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs cursor-pointer font-medium"
+                    >
+                      انصراف
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddStaffManually}
+                      disabled={!newStaffCustomName.trim()}
+                      className="px-4 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>ثبت در شیفت</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Table / Empty State */}
               <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto custom-scrollbar">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                    <tr>
-                      <th className="p-2.5">نام همکار</th>
-                      <th className="p-2.5">سمت / نقش</th>
-                      <th className="p-2.5">شیفت کاری</th>
-                      <th className="p-2.5">ایستگاه استقرار</th>
-                      <th className="p-2.5 text-center">زمان ورود</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {presentStaffList.map(staff => (
-                      <tr key={staff.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-2.5 font-bold text-slate-900 flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 font-black text-xs flex items-center justify-center">
-                            {staff.name.charAt(0)}
-                          </div>
-                          <span>{staff.name}</span>
-                        </td>
-                        <td className="p-2.5 text-slate-600">{staff.role}</td>
-                        <td className="p-2.5 text-slate-600">{staff.shift}</td>
-                        <td className="p-2.5 text-slate-600">{staff.station}</td>
-                        <td className="p-2.5 text-center font-mono text-emerald-700 font-bold bg-emerald-50/50">
-                          {staff.entryTime}
-                        </td>
+                {presentStaffList.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 space-y-2">
+                    <Users className="w-10 h-10 mx-auto text-slate-300" />
+                    <p className="font-bold text-slate-600 text-xs">در حال حاضر هیچ فردی در لیست شیفت ثبت نشده است</p>
+                    <p className="text-[11px] text-slate-400">
+                      پرسنل می‌توانند با ثبت ورود خود در چت یا اسکن بارکد در شیفت حاضر شوند، یا از دکمه «افزودن به شیفت» بالا استفاده کنید.
+                    </p>
+                  </div>
+                ) : (
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">نام همکار</th>
+                        <th className="p-2.5">سمت / نقش</th>
+                        <th className="p-2.5">شیفت کاری</th>
+                        <th className="p-2.5">ایستگاه استقرار</th>
+                        <th className="p-2.5 text-center">زمان ورود</th>
+                        <th className="p-2.5 text-center">حذف</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {presentStaffList.map(staff => (
+                        <tr key={staff.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-2.5 font-bold text-slate-900 flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 font-black text-xs flex items-center justify-center">
+                              {staff.name.charAt(0)}
+                            </div>
+                            <span>{staff.name}</span>
+                          </td>
+                          <td className="p-2.5 text-slate-600">{staff.role}</td>
+                          <td className="p-2.5 text-slate-600">{staff.shift}</td>
+                          <td className="p-2.5 text-slate-600">{staff.station}</td>
+                          <td className="p-2.5 text-center font-mono text-emerald-700 font-bold bg-emerald-50/50">
+                            {staff.entryTime}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStaffFromShift(staff.id, staff.name)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title={`حذف ${staff.name} از شیفت`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
             </div>
@@ -1812,12 +2124,12 @@ export const ChatView: React.FC = () => {
             {/* Modal Footer */}
             <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between">
               <span className="text-[11px] text-slate-500 font-medium">
-                به‌روزرسانی خودکار با هر پیام ورود و خروج در کانال هماهنگی
+                به‌روزرسانی خودکار با هر پیام ورود و خروج یا بارکد در سامانه
               </span>
               <button
                 type="button"
                 onClick={() => setShowStaffListModal(false)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold cursor-pointer transition-colors text-xs"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold cursor-pointer transition-colors text-xs"
               >
                 بستن پنجره
               </button>

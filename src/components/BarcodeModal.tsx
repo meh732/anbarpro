@@ -34,6 +34,7 @@ export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) =>
   } | null>(null);
 
   const [selectedItemForPrint, setSelectedItemForPrint] = useState<string | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [brandFilter, setBrandFilter] = useState<string>('all');
   const [scannerSearchQuery, setScannerSearchQuery] = useState<string>('');
 

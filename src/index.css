@@ -373,7 +373,7 @@ body.lite-mode-active .backdrop-blur-xl {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm 10mm 8mm 10mm;
+    margin: 6mm 8mm 6mm 8mm;
   }
 
   html,
@@ -381,7 +381,7 @@ body.lite-mode-active .backdrop-blur-xl {
     background: #ffffff !important;
     background-image: none !important;
     color: #000000 !important;
-    font-size: 11pt !important;
+    font-size: 10.5pt !important;
     margin: 0 !important;
     padding: 0 !important;
     height: auto !important;
@@ -392,16 +392,33 @@ body.lite-mode-active .backdrop-blur-xl {
     width: 100% !important;
   }
 
-  /* Reset all flex/screen layout ancestors so browser print engine never clips content */
-  #root,
-  #root > div,
-  main,
-  main > div,
-  div[class*="h-screen"],
-  div[class*="min-w-0"],
-  [class*="overflow-y-auto"],
-  [class*="overflow-hidden"],
-  [class*="custom-scrollbar"] {
+  /* 1. CRITICAL: When printing from a modal or official doc, hide #root completely */
+  body.printing-modal #root,
+  body.printing-batch-barcodes #root,
+  body:has(.print-portal-modal) #root,
+  body:has(#printable-official-doc) #root,
+  body:has(#printable-contractor-statement) #root,
+  body:has(#printable-batch-barcodes) #root {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    top: -99999px !important;
+  }
+
+  /* 2. When printing standard full pages (outside modals), reset ancestor clipping */
+  body:not(.printing-modal):not(.printing-batch-barcodes) #root,
+  body:not(.printing-modal):not(.printing-batch-barcodes) #root > div,
+  body:not(.printing-modal):not(.printing-batch-barcodes) main,
+  body:not(.printing-modal):not(.printing-batch-barcodes) main > div,
+  body:not(.printing-modal):not(.printing-batch-barcodes) div[class*="h-screen"],
+  body:not(.printing-modal):not(.printing-batch-barcodes) div[class*="min-w-0"],
+  body:not(.printing-modal):not(.printing-batch-barcodes) [class*="overflow-y-auto"],
+  body:not(.printing-modal):not(.printing-batch-barcodes) [class*="overflow-hidden"],
+  body:not(.printing-modal):not(.printing-batch-barcodes) [class*="custom-scrollbar"] {
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
@@ -415,7 +432,7 @@ body.lite-mode-active .backdrop-blur-xl {
     display: block !important;
   }
 
-  /* Hide background liquid blobs, floating droplets, web navigation, sidebars and headers */
+  /* 3. Hide web navigation, dark overlays, sidebars, buttons, and animations */
   .liquid-blob-1,
   .liquid-blob-2,
   .liquid-blob-3,
@@ -423,34 +440,39 @@ body.lite-mode-active .backdrop-blur-xl {
   aside,
   nav,
   header,
+  button,
+  input[type="button"],
   .print\:hidden,
+  .no-print,
   .incoming-message-banner,
   .global-barcode-scanner {
     display: none !important;
+    visibility: hidden !important;
   }
 
-  /* When printing from a portal modal, hide #root completely so only the modal prints */
-  body.printing-modal #root,
-  body.printing-batch-barcodes #root {
-    display: none !important;
-  }
-
-  /* Portalled modal print container */
+  /* 4. Portalled modal print container - strip all modal frames & backdrop */
   .print-portal-modal,
-  .batch-barcode-modal-wrapper {
+  .batch-barcode-modal-wrapper,
+  .fixed.inset-0.print-portal-modal,
+  .fixed.inset-0.batch-barcode-modal-wrapper {
     position: static !important;
-    background: #ffffff !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     padding: 0 !important;
     margin: 0 !important;
     display: block !important;
     width: 100% !important;
     max-width: 100% !important;
     overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
   }
 
   .print-portal-modal > div,
   .batch-barcode-modal-wrapper > div {
     max-height: none !important;
+    height: auto !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
@@ -458,6 +480,9 @@ body.lite-mode-active .backdrop-blur-xl {
     max-width: 100% !important;
     overflow: visible !important;
     display: block !important;
+    background: transparent !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   /* Ensure modal is cleanly positioned on top of the page without fixed black overlays */
@@ -470,7 +495,14 @@ body.lite-mode-active .backdrop-blur-xl {
     overflow: visible !important;
   }
 
-  #printable-official-doc {
+  /* 5. Official Printable Documents */
+  #printable-official-doc,
+  #printable-contractor-statement,
+  #printable-batch-barcodes,
+  #single-thermal-barcode-label {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
     width: 100% !important;
     max-width: 100% !important;
     padding: 0 !important;
@@ -478,23 +510,20 @@ body.lite-mode-active .backdrop-blur-xl {
     box-shadow: none !important;
     border: none !important;
     background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
     page-break-inside: avoid;
+    break-inside: avoid;
   }
 
-  /* ======================================================== */
-  /* Batch Barcode & Label Print Rules                        */
-  /* ======================================================== */
-  #printable-batch-barcodes {
-    width: 100% !important;
-    max-width: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: #ffffff !important;
+  /* Ensure official document borders and stamps are rich and sharp */
+  #printable-official-doc div,
+  #printable-official-doc table,
+  #printable-contractor-statement table {
+    color: #000000 !important;
   }
 
-  /* Thermal roll format continuous page breaks */
+  /* 6. Batch Barcode & Thermal Roll Rules */
   .barcode-roll-label {
     page-break-after: always !important;
     break-after: page !important;
@@ -503,7 +532,6 @@ body.lite-mode-active .backdrop-blur-xl {
     margin: 0 0 4mm 0 !important;
   }
 
-  /* Sheet grid labels avoid splitting across page breaks */
   .barcode-grid-label {
     page-break-inside: avoid !important;
     break-inside: avoid !important;

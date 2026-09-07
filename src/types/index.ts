@@ -545,6 +545,7 @@ export interface ChatMessage {
   timestamp: string;
   createdAt: string;
   isRead?: boolean;
+  readBy?: string[];        // Array of user IDs who have seen/read this message
   replyToId?: string;
   attachments?: ChatAttachment[];
   reactions?: Record<string, string[]>; // { '👍': ['usr-1'], '❤️': ['usr-2'] }

@@ -269,15 +269,20 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
     }
   };
 
+  // Automatically keep printing classes active on body while this modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('printing-batch-barcodes', 'printing-modal');
+      return () => {
+        document.body.classList.remove('printing-batch-barcodes', 'printing-modal');
+      };
+    }
+  }, [isOpen]);
+
   // Execute print cleanly
   const handleTriggerPrint = () => {
     document.body.classList.add('printing-batch-barcodes', 'printing-modal');
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.body.classList.remove('printing-batch-barcodes', 'printing-modal');
-      }, 1000);
-    }, 150);
+    window.print();
   };
 
   if (!isOpen) return null;

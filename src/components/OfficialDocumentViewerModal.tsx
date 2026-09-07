@@ -144,14 +144,17 @@ export const OfficialDocumentViewerModal: React.FC<Props> = ({
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
+  // Automatically keep printing-modal class active on body while this official document modal is open
+  React.useEffect(() => {
+    document.body.classList.add('printing-modal');
+    return () => {
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
+
   const handlePrint = () => {
     document.body.classList.add('printing-modal');
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.body.classList.remove('printing-modal');
-      }, 1000);
-    }, 150);
+    window.print();
   };
 
   const handleExportPdf = async () => {

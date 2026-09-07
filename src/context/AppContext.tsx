@@ -73,6 +73,7 @@ interface AppContextType {
   sendChatMessage: (data: { message: string; channelId?: string; recipientId?: string; attachments?: ChatAttachment[]; replyToId?: string }) => Promise<boolean>;
   deleteChatMessage: (id: string) => Promise<boolean>;
   toggleMessageReaction: (messageId: string, emoji: string) => Promise<boolean>;
+  markChatAsRead: (options?: { channelId?: string; senderId?: string; messageIds?: string[] }) => Promise<void>;
   unreadMessagesCount: number;
 
   // Browser & Sound Notifications & Strong Chat Alerts
@@ -1700,9 +1701,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const unreadMessagesCount = messages.filter(m => 
-    !m.isRead && m.senderId !== currentUser.id && (!m.recipientId || m.recipientId === currentUser.id)
-  ).length;
+  const markChatAsRead = async (options?: { channelId?: string; senderId?: string; messageIds?: string[] }) => {
+    if (!currentUser?.id) return;
+    const { channelId, senderId, messageIds } = options || {};
+
+    // 1. Optimistically update local messages in state
+    setMessages(prev => prev.map(msg => {
+      let shouldMark = false;
+      if (messageIds && Array.isArray(messageIds)) {
+        shouldMark = messageIds.includes(msg.id);
+      } else if (channelId) {
+        shouldMark = msg.channelId === channelId;
+      } else if (senderId) {
+        shouldMark = (msg.senderId === senderId && msg.recipientId === currentUser.id) ||
+                     (msg.senderId === currentUser.id && msg.recipientId === senderId);
+      } else {
+        shouldMark = msg.recipientId === currentUser.id || (!msg.recipientId && msg.senderId !== currentUser.id);
+      }
+
+      if (shouldMark) {
+        const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+        const isDirect = msg.recipientId === currentUser.id;
+        if (!readBy.includes(currentUser.id) || (isDirect && !msg.isRead)) {
+          return {
+            ...msg,
+            isRead: isDirect ? true : msg.isRead,
+            readBy: readBy.includes(currentUser.id) ? readBy : [...readBy, currentUser.id]
+          };
+        }
+      }
+      return msg;
+    }));
+
+    // 2. Optimistically mark chat notifications as read
+    setNotifications(prev => prev.map(n => {
+      if (n.type === 'ChatMessage' && !n.isRead) {
+        if (n.targetUserId === currentUser.id) return { ...n, isRead: true };
+        if (channelId && n.metadata?.channelId === channelId) return { ...n, isRead: true };
+        if (senderId && n.metadata?.senderId === senderId && n.targetUserId === currentUser.id) return { ...n, isRead: true };
+        if (!channelId && !senderId) return { ...n, isRead: true };
+      }
+      return n;
+    }));
+
+    // 3. Inform server to persist and sync across all tabs/devices
+    try {
+      await fetch(getApiUrl('/api/messages/mark-read'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          channelId,
+          senderId,
+          messageIds
+        }),
+      });
+    } catch (e) {
+      console.error('Failed to sync mark-read to server:', e);
+    }
+  };
+
+  const unreadMessagesCount = useMemo(() => {
+    if (!currentUser?.id) return 0;
+    return messages.filter(m => {
+      // Never count own sent messages
+      if (m.senderId === currentUser.id) return false;
+      // If user has read it in channel or direct
+      if (m.readBy && Array.isArray(m.readBy) && m.readBy.includes(currentUser.id)) return false;
+      // If direct message targeted to current user and marked isRead
+      if (m.recipientId === currentUser.id && m.isRead) return false;
+      // If direct message targeted to someone else
+      if (m.recipientId && m.recipientId !== currentUser.id) return false;
+      // Legacy fallback
+      if (!m.channelId && m.isRead) return false;
+      return true;
+    }).length;
+  }, [messages, currentUser?.id]);
 
   // Filtered notifications specifically intended for current user (guaranteed no self-sent notifications)
   const userNotifications = useMemo(() => {
@@ -4091,7 +4165,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       stockInDocs, stockOutDocs, transfers, purchaseRequests,
       productionLogs, materialHandovers, notifications: userNotifications, messages, channels,
       traceabilityEvents, auditLogs,
-      sendChatMessage, deleteChatMessage, toggleMessageReaction, unreadMessagesCount,
+      sendChatMessage, deleteChatMessage, toggleMessageReaction, markChatAsRead, unreadMessagesCount,
       sendSystemNotification, browserNotificationPermission, requestNotificationPermission,
       soundEnabled, setSoundEnabled, testBrowserNotification, testIncomingMessageAlert, unreadCount,
       incomingChatAlert, dismissIncomingChatAlert, openChatWithUser, activeChatRecipientId, setActiveChatRecipientId,

@@ -712,6 +712,92 @@ async function startServer() {
     }
   });
 
+  // POST /api/messages/mark-read - Mark chat messages as seen/read across devices
+  app.post('/api/messages/mark-read', (req, res) => {
+    try {
+      const { userId, channelId, senderId, messageIds } = req.body;
+      if (!userId) {
+        return res.status(400).json({ success: false, error: 'شناسه کاربر الزامی است.' });
+      }
+
+      const state = serverStore.getState();
+      const currentMsgs = state.messages || [];
+      const currentNotifs = state.notifications || [];
+      let hasChanges = false;
+
+      const updatedMsgs = currentMsgs.map(msg => {
+        let shouldMark = false;
+
+        if (messageIds && Array.isArray(messageIds)) {
+          shouldMark = messageIds.includes(msg.id);
+        } else if (channelId) {
+          shouldMark = msg.channelId === channelId;
+        } else if (senderId) {
+          shouldMark = (msg.senderId === senderId && msg.recipientId === userId) ||
+                       (msg.senderId === userId && msg.recipientId === senderId);
+        } else {
+          // Mark all messages targeted to or visible for this user
+          shouldMark = msg.recipientId === userId || (!msg.recipientId && msg.senderId !== userId);
+        }
+
+        if (shouldMark) {
+          const currentReadBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+          const isDirectToUser = msg.recipientId === userId;
+
+          if (!currentReadBy.includes(userId) || (isDirectToUser && !msg.isRead)) {
+            hasChanges = true;
+            return {
+              ...msg,
+              isRead: isDirectToUser ? true : msg.isRead,
+              readBy: currentReadBy.includes(userId) ? currentReadBy : [...currentReadBy, userId]
+            };
+          }
+        }
+        return msg;
+      });
+
+      // Also mark matching ChatMessage notifications as read for this user
+      const updatedNotifs = currentNotifs.map(notif => {
+        if (notif.type === 'ChatMessage' && !notif.isRead) {
+          if (notif.targetUserId === userId) {
+            hasChanges = true;
+            return { ...notif, isRead: true };
+          }
+          if (channelId && notif.metadata?.channelId === channelId) {
+            hasChanges = true;
+            return { ...notif, isRead: true };
+          }
+          if (senderId && notif.metadata?.senderId === senderId && notif.targetUserId === userId) {
+            hasChanges = true;
+            return { ...notif, isRead: true };
+          }
+          if (!channelId && !senderId && notif.type === 'ChatMessage') {
+            hasChanges = true;
+            return { ...notif, isRead: true };
+          }
+        }
+        return notif;
+      });
+
+      if (hasChanges) {
+        const updatedState = serverStore.updateState({
+          messages: updatedMsgs,
+          notifications: updatedNotifs
+        });
+        return res.json({
+          success: true,
+          version: updatedState.version,
+          messages: updatedMsgs
+        });
+      }
+
+      res.json({ success: true, version: state.version });
+    } catch (err: any) {
+      console.error('Error in POST /api/messages/mark-read:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
 
   // =========================================================================
   //  LEGACY SQL & BACKUP ROUTES (Optional / Progressive Enhancement)

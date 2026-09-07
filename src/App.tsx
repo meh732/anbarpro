@@ -47,6 +47,36 @@ const MainContent: React.FC = () => {
     }
   }, [liteMode]);
 
+  // Global print event listeners to ensure clean printouts when user presses Ctrl+P or browser Print
+  React.useEffect(() => {
+    const handleBeforePrint = () => {
+      const hasModal = document.querySelector(
+        '.print-portal-modal, #printable-official-doc, #printable-contractor-statement, #printable-batch-barcodes, .batch-barcode-modal-wrapper'
+      );
+      if (hasModal) {
+        document.body.classList.add('printing-modal');
+      }
+    };
+
+    const handleAfterPrint = () => {
+      // Don't remove if modal is still open, will be handled by modal cleanup
+      const hasModal = document.querySelector(
+        '.print-portal-modal, #printable-official-doc, #printable-contractor-statement, #printable-batch-barcodes, .batch-barcode-modal-wrapper'
+      );
+      if (!hasModal) {
+        document.body.classList.remove('printing-modal', 'printing-batch-barcodes');
+      }
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
+
   if (!isInstalled) {
     return <SetupView />;
   }
