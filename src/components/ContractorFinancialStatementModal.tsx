@@ -1,13 +1,16 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { Contractor, ContractorWageContract, ContractorFinancialTransaction } from '../types';
 import { 
   Building2, Receipt, ArrowDownRight, ArrowUpLeft, Calculator,
   Calendar, FileSpreadsheet, Printer, Plus, Trash2, Edit3, 
   CheckCircle2, AlertTriangle, Scale, Coins, Layers, Download,
-  Filter, FileText, ChevronRight, X, Search, CreditCard, PieChart
+  Filter, FileText, ChevronRight, X, Search, CreditCard, PieChart,
+  FileDown, Loader2
 } from 'lucide-react';
 import { formatCurrency } from '../utils/security';
+import { exportElementToPdf } from '../utils/pdfExport';
 
 interface ContractorFinancialStatementModalProps {
   contractor: Contractor;
@@ -261,9 +264,30 @@ export const ContractorFinancialStatementModal: React.FC<ContractorFinancialStat
     setActiveTab('contracts');
   };
 
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
   // Print function
   const handlePrint = () => {
-    window.print();
+    document.body.classList.add('printing-modal');
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.body.classList.remove('printing-modal');
+      }, 1000);
+    }, 150);
+  };
+
+  // Direct PDF Export
+  const handleExportPdf = async () => {
+    setIsExportingPdf(true);
+    try {
+      await exportElementToPdf('printable-contractor-statement', {
+        filename: `صورتحساب_پیمانکار_${contractor.code}_${new Date().toISOString().substring(0, 10)}.pdf`,
+        orientation: 'portrait',
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   // Export to CSV
@@ -301,8 +325,8 @@ export const ContractorFinancialStatementModal: React.FC<ContractorFinancialStat
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fadeIn">
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fadeIn print-portal-modal">
       <div className="bg-white rounded-2xl w-full max-w-6xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
         
         {/* Modal Top Header */}
@@ -329,6 +353,21 @@ export const ContractorFinancialStatementModal: React.FC<ContractorFinancialStat
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Direct PDF Export */}
+            <button
+              onClick={handleExportPdf}
+              disabled={isExportingPdf}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="خروجی مستقیم PDF"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileDown className="w-4 h-4" />
+              )}
+              <span>{isExportingPdf ? 'تولید PDF...' : 'خروجی PDF'}</span>
+            </button>
+
             <button
               onClick={handleExportCSV}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -556,7 +595,7 @@ export const ContractorFinancialStatementModal: React.FC<ContractorFinancialStat
               </div>
 
               {/* Ledger Table (Printing Target) */}
-              <div ref={printRef} className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden print:border-none print:shadow-none">
+              <div ref={printRef} id="printable-contractor-statement" className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden print:border-none print:shadow-none">
                 
                 {/* Printable Header (Visible only in print) */}
                 <div className="hidden print:block p-6 border-b border-slate-300 text-slate-900">
@@ -1310,6 +1349,7 @@ export const ContractorFinancialStatementModal: React.FC<ContractorFinancialStat
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

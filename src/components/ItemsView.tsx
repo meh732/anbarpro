@@ -533,6 +533,19 @@ export const ItemsView: React.FC = () => {
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                onClick={() => {
+                  setIsGroupModalOpen(false);
+                  setBatchBarcodeInitialGroup(grp.name);
+                  setBatchBarcodeInitialItems(undefined);
+                  setIsBatchBarcodeModalOpen(true);
+                }}
+                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                title={`چاپ پشت‌سرهم تمام بارکدهای گروه "${grp.name}"`}
+              >
+                <Barcode className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
                 onClick={() => handleStartEditGroup(grp)}
                 className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                 title="ویرایش گروه"
@@ -592,7 +605,7 @@ export const ItemsView: React.FC = () => {
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs print:hidden">
         <div>
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Boxes className="w-5 h-5 text-indigo-600" />
@@ -664,7 +677,7 @@ export const ItemsView: React.FC = () => {
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-wrap items-center gap-3 shadow-2xs">
+      <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-wrap items-center gap-3 shadow-2xs print:hidden">
         {/* Search Input */}
         <div className="flex-1 min-w-[200px] relative">
           <Search className={`w-4 h-4 absolute ${isFa ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 text-slate-400`} />
@@ -716,17 +729,19 @@ export const ItemsView: React.FC = () => {
               setBatchBarcodeInitialItems(undefined);
               setIsBatchBarcodeModalOpen(true);
             }}
-            title={isFa ? 'چاپ بارکد اقلام این گروه یا گروه‌های دیگر' : 'Print barcodes for this group'}
+            title={selectedGroup !== 'ALL' ? `چاپ بارکدهای گروه "${selectedGroup}" و سایر گروه‌ها` : 'چاپ بارکد یک یا چند گروه همزمان'}
             className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-bold"
           >
             <Barcode className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="hidden sm:inline">چاپ بارکد</span>
+            <span className="hidden sm:inline">
+              {selectedGroup !== 'ALL' ? `چاپ بارکد گروه` : `چاپ بارکد چند گروه`}
+            </span>
           </button>
         </div>
       </div>
 
       {/* Items Table */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden animate-fadeIn">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden animate-fadeIn print:hidden">
         <div className="overflow-x-auto">
           <table className={`w-full text-xs text-slate-700 ${isFa ? 'text-right' : 'text-left'}`}>
             <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
@@ -869,7 +884,7 @@ export const ItemsView: React.FC = () => {
 
       {/* Floating Bulk Action Bar */}
       {selectedItemIds.length > 0 && (
-        <div className="sticky bottom-4 z-40 bg-slate-900 text-white rounded-2xl shadow-2xl p-3 sm:px-5 flex flex-wrap items-center justify-between gap-3 border border-slate-700 animate-slideUp">
+        <div className="sticky bottom-4 z-40 bg-slate-900 text-white rounded-2xl shadow-2xl p-3 sm:px-5 flex flex-wrap items-center justify-between gap-3 border border-slate-700 animate-slideUp print:hidden">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
               <CheckCircle2 className="w-4 h-4" />
@@ -976,9 +991,25 @@ export const ItemsView: React.FC = () => {
                 <FolderTree className="w-5 h-5 text-indigo-600" />
                 <span>تعریف و مهندسی ساختار درختی گروه‌های کالا</span>
               </h3>
-              <button onClick={() => setIsGroupModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsGroupModalOpen(false);
+                    setBatchBarcodeInitialGroup(undefined);
+                    setBatchBarcodeInitialItems(undefined);
+                    setIsBatchBarcodeModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="چاپ همزمان بارکد کالاها برای یک یا چند گروه کالایی"
+                >
+                  <Barcode className="w-4 h-4 text-indigo-600" />
+                  <span>چاپ بارکد گروه‌ها</span>
+                </button>
+                <button onClick={() => setIsGroupModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}

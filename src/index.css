@@ -376,6 +376,7 @@ body.lite-mode-active .backdrop-blur-xl {
     margin: 8mm 10mm 8mm 10mm;
   }
 
+  html,
   body {
     background: #ffffff !important;
     background-image: none !important;
@@ -383,6 +384,35 @@ body.lite-mode-active .backdrop-blur-xl {
     font-size: 11pt !important;
     margin: 0 !important;
     padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    width: 100% !important;
+  }
+
+  /* Reset all flex/screen layout ancestors so browser print engine never clips content */
+  #root,
+  #root > div,
+  main,
+  main > div,
+  div[class*="h-screen"],
+  div[class*="min-w-0"],
+  [class*="overflow-y-auto"],
+  [class*="overflow-hidden"],
+  [class*="custom-scrollbar"] {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    transform: none !important;
+    display: block !important;
   }
 
   /* Hide background liquid blobs, floating droplets, web navigation, sidebars and headers */
@@ -393,8 +423,41 @@ body.lite-mode-active .backdrop-blur-xl {
   aside,
   nav,
   header,
-  .print\:hidden {
+  .print\:hidden,
+  .incoming-message-banner,
+  .global-barcode-scanner {
     display: none !important;
+  }
+
+  /* When printing from a portal modal, hide #root completely so only the modal prints */
+  body.printing-modal #root,
+  body.printing-batch-barcodes #root {
+    display: none !important;
+  }
+
+  /* Portalled modal print container */
+  .print-portal-modal,
+  .batch-barcode-modal-wrapper {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .print-portal-modal > div,
+  .batch-barcode-modal-wrapper > div {
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    display: block !important;
   }
 
   /* Ensure modal is cleanly positioned on top of the page without fixed black overlays */
@@ -444,14 +507,6 @@ body.lite-mode-active .backdrop-blur-xl {
   .barcode-grid-label {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-  }
-
-  /* Ensure background app elements are completely hidden during batch barcode printing */
-  body.printing-batch-barcodes aside,
-  body.printing-batch-barcodes nav,
-  body.printing-batch-barcodes header,
-  body.printing-batch-barcodes main > div > *:not(.batch-barcode-modal-wrapper) {
-    display: none !important;
   }
 
   /* Preserve sharp borders and readable dark colors for laser printers */

@@ -5,9 +5,10 @@ import {
   Layers, Factory, ArrowDownUp, Users, CheckCircle2,
   AlertTriangle, Filter, Search, Warehouse, Package, 
   TrendingDown, TrendingUp, DollarSign, Calendar, Clock,
-  FileText, ShieldCheck, CheckCircle
+  FileText, ShieldCheck, CheckCircle, FileDown, Loader2
 } from 'lucide-react';
 import { formatCurrency } from '../utils/security';
+import { exportElementToPdf } from '../utils/pdfExport';
 
 export const ReportsView: React.FC = () => {
   const { 
@@ -110,8 +111,22 @@ export const ReportsView: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleExportPdf = async () => {
+    setIsExportingPdf(true);
+    try {
+      await exportElementToPdf('printable-report-area', {
+        filename: `report-${activeReportTab}-${new Date().toISOString().substring(0, 10)}.pdf`,
+        orientation: 'portrait',
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   return (
@@ -136,6 +151,21 @@ export const ReportsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Direct PDF Export */}
+          <button
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
+            title="دانلود مستقیم خروجی PDF گزارش"
+          >
+            {isExportingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4" />
+            )}
+            <span>{isExportingPdf ? 'تولید PDF...' : 'خروجی مستقیم PDF'}</span>
+          </button>
+
           <button
             onClick={handlePrint}
             className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer active:scale-95"
@@ -283,7 +313,7 @@ export const ReportsView: React.FC = () => {
       {/* ========================================================================= */}
       {/* 4. MAIN REPORT CONTENT CONTAINER (PRINTABLE FORMAT) */}
       {/* ========================================================================= */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs print:border-none print:p-0 print:shadow-none space-y-6">
+      <div id="printable-report-area" className="bg-white border border-slate-200/80 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs print:border-none print:p-0 print:shadow-none space-y-6">
         
         {/* Printable Official Header */}
         <div className="hidden print:flex justify-between items-center border-b-2 border-slate-800 pb-4">

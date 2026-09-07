@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, Printer, FileText, CheckCircle2, ShieldCheck, Building2, 
   UserCheck, Hash, Calendar, QrCode, ArrowDownLeft, ArrowUpRight,
-  Boxes, Truck, ShoppingCart, Cpu, Check
+  Boxes, Truck, ShoppingCart, Cpu, Check, FileDown, Loader2
 } from 'lucide-react';
 import { Item, Warehouse } from '../types';
 import { formatPersianAmountWithWords } from '../utils/persianUtils';
+import { exportElementToPdf } from '../utils/pdfExport';
 
 export type OfficialDocType = 'STOCK_IN' | 'STOCK_OUT' | 'PURCHASE_REQUEST' | 'TRANSFER' | 'BOM';
 
@@ -140,8 +142,28 @@ export const OfficialDocumentViewerModal: React.FC<Props> = ({
     },
   }[doc.type];
 
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
   const handlePrint = () => {
-    window.print();
+    document.body.classList.add('printing-modal');
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.body.classList.remove('printing-modal');
+      }, 1000);
+    }, 150);
+  };
+
+  const handleExportPdf = async () => {
+    setIsExportingPdf(true);
+    try {
+      await exportElementToPdf('printable-official-doc', {
+        filename: `${doc.docNumber || 'official-doc'}-${doc.type}.pdf`,
+        orientation: 'portrait',
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const handleCopyDocNum = () => {
@@ -150,8 +172,8 @@ export const OfficialDocumentViewerModal: React.FC<Props> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static">
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static print-portal-modal">
       <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[96vh] print:max-h-none print:shadow-none print:rounded-none print:w-full">
         
         {/* Modal Web Controls (Hidden on Print) */}
@@ -176,6 +198,21 @@ export const OfficialDocumentViewerModal: React.FC<Props> = ({
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Hash className="w-3.5 h-3.5" />}
               <span>{copied ? 'کپی شد' : 'کپی شماره سند'}</span>
+            </button>
+
+            {/* Direct PDF Export */}
+            <button
+              onClick={handleExportPdf}
+              disabled={isExportingPdf}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/30 active:scale-95 transition-all cursor-pointer"
+              title="دانلود فایل PDF فرم"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileDown className="w-3.5 h-3.5" />
+              )}
+              <span>{isExportingPdf ? 'تولید PDF...' : 'خروجی مستقیم PDF'}</span>
             </button>
 
             <button
@@ -498,6 +535,7 @@ export const OfficialDocumentViewerModal: React.FC<Props> = ({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

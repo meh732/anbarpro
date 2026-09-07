@@ -610,6 +610,13 @@ async function startServer() {
           targetUserId: recipientId,
           priority: 'urgent',
           senderName,
+          metadata: {
+            senderId,
+            senderName,
+            recipientId,
+            channelId,
+            isChatMessage: true
+          }
         });
       } else if (channelId) {
         // Channel announcement
@@ -624,6 +631,12 @@ async function startServer() {
           targetRole: 'All',
           priority: 'normal',
           senderName,
+          metadata: {
+            senderId,
+            senderName,
+            channelId,
+            isChatMessage: true
+          }
         });
       }
 

@@ -842,6 +842,12 @@ export const INITIAL_CHANNELS: import('../types').ChatChannel[] = [
     icon: 'Megaphone'
   },
   {
+    id: 'staff-coordination',
+    name: 'هماهنگی پرسنل و تردد شیفت',
+    description: 'کانال اختصاصی ثبت ورود و خروج شیفت، اعلام حضور و هماهنگی تردد پرسنل کارخانه و انبار',
+    icon: 'Users'
+  },
+  {
     id: 'warehouse',
     name: 'انبارداری و لجستیک',
     description: 'هماهنگی ورودی/خروجی کالاها، حواله‌های انتقالی و انبارگردانی',

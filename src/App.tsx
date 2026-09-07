@@ -25,6 +25,7 @@ import { StockCountingView } from './components/StockCountingView';
 import { ContractorsView } from './components/ContractorsView';
 import { KardexView } from './components/KardexView';
 import { ChatView } from './components/ChatView';
+import { IncomingMessageBanner } from './components/IncomingMessageBanner';
 import { ShieldAlert } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -160,6 +161,9 @@ const MainContent: React.FC = () => {
 
       {/* Global Hardware Barcode Scanner Listener & Real-time Action Banner */}
       <GlobalBarcodeScanner />
+
+      {/* Prominent Real-time Incoming Message Alert Banner */}
+      <IncomingMessageBanner />
 
       {/* Barcode Scanner Modal */}
       {isScannerOpen && (

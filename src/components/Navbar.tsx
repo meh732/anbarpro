@@ -17,7 +17,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
   const {
     users, 
     activeTab, setActiveTab,
-    notifications, markNotificationAsRead, markAllNotificationsAsRead, unreadCount,
+    notifications, markNotificationAsRead, markAllNotificationsAsRead, clearNotification, clearAllUserNotifications, unreadCount,
     currentUser, setCurrentUser, logout, changePassword,
     setIsScannerOpen,
     companyName,
@@ -25,7 +25,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
     liteMode, setLiteMode,
     soundEnabled, setSoundEnabled,
     browserNotificationPermission, requestNotificationPermission, testBrowserNotification,
-    unreadMessagesCount
+    unreadMessagesCount,
+    setActiveChatRecipientId
   } = useApp();
 
   const [showNotifs, setShowNotifs] = useState(false);
@@ -270,6 +271,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                         علامت‌گذاری همه
                       </button>
                     )}
+                    {notifications.length > 0 && (
+                      <button 
+                        onClick={clearAllUserNotifications} 
+                        className="text-xs text-slate-400 hover:text-rose-600 font-bold cursor-pointer hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+                      >
+                        پاک کردن همه
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -288,29 +297,48 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
 
                 <div className="max-h-80 overflow-y-auto custom-scrollbar divide-y divide-slate-100/60">
                   {notifications.length === 0 ? (
-                    <div className="p-8 text-center text-sm text-slate-400 font-bold">هیچ اعلان جدیدی وجود ندارد</div>
+                    <div className="p-8 text-center text-sm text-slate-400 font-bold">هیچ اعلانی وجود ندارد</div>
                   ) : (
                     notifications.map(notif => (
                       <div 
                         key={notif.id}
                         onClick={() => {
                           markNotificationAsRead(notif.id);
-                          if (notif.linkTab) setActiveTab(notif.linkTab);
+                          if (notif.type === 'ChatMessage') {
+                            const targetId = notif.senderId || notif.metadata?.senderId;
+                            if (targetId) setActiveChatRecipientId(targetId);
+                            setActiveTab('chat');
+                          } else if (notif.linkTab) {
+                            setActiveTab(notif.linkTab);
+                          }
                           setShowNotifs(false);
                         }}
-                        className={`p-3.5 cursor-pointer hover:bg-white/60 transition-colors ${!notif.isRead ? 'bg-indigo-50/30' : ''}`}
+                        className={`p-3.5 cursor-pointer hover:bg-white/60 transition-colors group relative ${!notif.isRead ? 'bg-indigo-50/30' : ''}`}
                       >
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="font-black text-xs text-slate-800 flex items-center gap-1.5">
+                        <div className="flex justify-between items-start mb-1 gap-2">
+                          <span className="font-black text-xs text-slate-800 flex items-center gap-1.5 min-w-0 truncate">
                             {notif.type === 'LowStock' && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
                             {notif.type === 'RequestSubmitted' && <Clock className="w-4 h-4 text-indigo-500 shrink-0" />}
                             {notif.type === 'RequestApproved' && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
                             {notif.type === 'TransferAlert' && <RefreshCw className="w-4 h-4 text-purple-500 shrink-0" />}
                             {notif.type === 'ChatMessage' && <MessageSquare className="w-4 h-4 text-emerald-600 shrink-0" />}
                             {notif.type === 'ProjectFinished' && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />}
-                            {notif.title}
+                            <span className="truncate">{notif.title}</span>
                           </span>
-                          <span className="text-[10px] text-slate-400 font-medium shrink-0">{notif.date}</span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] text-slate-400 font-medium">{notif.date}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearNotification(notif.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 rounded transition-opacity"
+                              title="حذف این اعلان"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-xs text-slate-500 leading-relaxed pr-5">{notif.message}</p>
                       </div>

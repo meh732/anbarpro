@@ -4,11 +4,12 @@ import {
   QrCode, X, Camera, Search, Printer, CheckCircle2, Box, RefreshCw, 
   AlertCircle, Sparkles, Sliders, ArrowRight, Usb, Cpu, Zap, Wifi, 
   Volume2, VolumeX, ShieldCheck, Check, Settings, Laptop, Smartphone, 
-  HelpCircle, ArrowDownUp, ClipboardList, PlusCircle, Filter
+  HelpCircle, ArrowDownUp, ClipboardList, PlusCircle, Filter, FileDown, Loader2
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { DEFAULT_BARCODE_SCANNERS, BarcodeScannerProfile } from '../data/barcodeScannerProfiles';
 import { SvgBarcode } from './SvgBarcode';
+import { exportElementToPdf } from '../utils/pdfExport';
 
 export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
   const { 
@@ -845,13 +846,46 @@ export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) =>
                   <div>موقعیت قفسه: <span className="font-bold text-amber-700">{printItem.locationInRack || 'نامشخص'}</span></div>
                 </div>
 
-                <button
-                  onClick={() => window.print()}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer active:scale-95"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>پرینت مستقیم لیبل حرارتی</span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      setIsExportingPdf(true);
+                      try {
+                        await exportElementToPdf('single-thermal-barcode-label', {
+                          filename: `label-${printItem.code}-${new Date().toISOString().substring(0, 10)}.pdf`,
+                          orientation: 'portrait',
+                        });
+                      } finally {
+                        setIsExportingPdf(false);
+                      }
+                    }}
+                    disabled={isExportingPdf}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+                  >
+                    {isExportingPdf ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileDown className="w-4 h-4" />
+                    )}
+                    <span>{isExportingPdf ? 'تولید PDF...' : 'خروجی PDF'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      document.body.classList.add('printing-modal');
+                      setTimeout(() => {
+                        window.print();
+                        setTimeout(() => {
+                          document.body.classList.remove('printing-modal');
+                        }, 1000);
+                      }, 150);
+                    }}
+                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>پرینت لیبل</span>
+                  </button>
+                </div>
               </div>
 
               {/* Label Preview */}
@@ -860,7 +894,7 @@ export const BarcodeModal: React.FC<{ onClose?: () => void }> = ({ onClose }) =>
                   پیش‌نمایش چاپ برچسب استاندارد انبار (Thermal 50x30mm)
                 </span>
 
-                <div className="w-72 bg-white text-slate-900 p-4 rounded-xl border-2 border-slate-800 shadow-md space-y-2 text-center">
+                <div id="single-thermal-barcode-label" className="w-72 bg-white text-slate-900 p-4 rounded-xl border-2 border-slate-800 shadow-md space-y-2 text-center">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 text-right">
                     <div>
                       <div className="text-[10px] font-black font-mono text-slate-900">ElectroStock WMS</div>

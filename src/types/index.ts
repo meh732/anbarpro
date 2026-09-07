@@ -511,7 +511,19 @@ export interface SystemNotification {
   targetRole?: UserRole | 'All'; // If sent to a specific role
   priority?: 'normal' | 'urgent' | 'high';
   senderName?: string;
+  senderId?: string;
   metadata?: Record<string, any>;
+}
+
+export interface IncomingChatAlertData {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  message: string;
+  timestamp: string;
+  channelId?: string;
+  unreadCount?: number;
 }
 
 export interface ChatAttachment {

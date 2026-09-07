@@ -1,11 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { translations, Language } from '../utils/translations';
 import { 
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, ProjectStep, Operator, User, UserRole,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
   TraceabilityEvent, SystemNotification, NotificationType, AuditLog, Contractor, StockCountingSession, StockCountingItem,
   ChatMessage, ChatChannel, ChatAttachment, ContractorWageContract, ContractorFinancialTransaction,
-  MessengerBackupConfig
+  MessengerBackupConfig, IncomingChatAlertData
 } from '../types';
 import { InitialStockParsedRow } from '../utils/excelUtils';
 import { calculateAllProjectStageTargets, applySmartTargetsToProjectSteps } from '../utils/smartBOMCalculator';
@@ -15,7 +15,7 @@ import {
 } from '../utils/security';
 import { 
   soundEngine, requestBrowserNotificationPermission, sendNativeBrowserNotification, 
-  getBrowserNotificationPermission, registerNotificationNavigationHandler 
+  getBrowserNotificationPermission, registerNotificationNavigationHandler, flashDocumentTitle
 } from '../utils/browserNotifications';
 import { 
   INITIAL_ITEMS, INITIAL_ITEM_GROUPS, INITIAL_WAREHOUSES, INITIAL_CONTRACTORS, INITIAL_INVENTORY, INITIAL_BOMS, 
@@ -75,7 +75,7 @@ interface AppContextType {
   toggleMessageReaction: (messageId: string, emoji: string) => Promise<boolean>;
   unreadMessagesCount: number;
 
-  // Browser & Sound Notifications
+  // Browser & Sound Notifications & Strong Chat Alerts
   sendSystemNotification: (notif: { 
     type: NotificationType; 
     title: string; 
@@ -85,6 +85,7 @@ interface AppContextType {
     targetRole?: UserRole | 'All'; 
     priority?: 'normal' | 'urgent' | 'high'; 
     senderName?: string; 
+    senderId?: string;
     metadata?: Record<string, any>;
   }) => void;
   browserNotificationPermission: NotificationPermission | 'unsupported';
@@ -92,7 +93,13 @@ interface AppContextType {
   soundEnabled: boolean;
   setSoundEnabled: (enabled: boolean) => void;
   testBrowserNotification: () => void;
+  testIncomingMessageAlert: () => void;
   unreadCount: number;
+  incomingChatAlert: IncomingChatAlertData | null;
+  dismissIncomingChatAlert: () => void;
+  openChatWithUser: (userId: string) => void;
+  activeChatRecipientId: string | null;
+  setActiveChatRecipientId: (id: string | null) => void;
 
   
   // Actions
@@ -267,6 +274,8 @@ interface AppContextType {
   getTotalItemQuantity: (itemId: string) => number;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
+  clearNotification: (id: string) => void;
+  clearAllUserNotifications: () => void;
   resetToInitialData: () => void;
   exportDatabaseJSON: (type?: 'Manual' | 'Auto', options?: { includeChats?: boolean; includeAttachments?: boolean }) => void;
   importDatabaseJSON: (jsonStr: string) => boolean;
@@ -446,11 +455,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [materialHandovers, setMaterialHandovers] = useState<MaterialHandover[]>(() => loadStorage('materialHandovers', []));
   const [notifications, setNotifications] = useState<SystemNotification[]>(() => loadStorage('notifications', []));
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadStorage('messages', []));
-  const [channels, setChannels] = useState<ChatChannel[]>([]);
+  const [channels, setChannels] = useState<ChatChannel[]>(() => {
+    const loaded = loadStorage('channels', INITIAL_CHANNELS);
+    if (!loaded || loaded.length === 0) return INITIAL_CHANNELS;
+    if (!loaded.some((c: any) => c.id === 'staff-coordination')) {
+      const staffChannel = INITIAL_CHANNELS.find(c => c.id === 'staff-coordination') || {
+        id: 'staff-coordination',
+        name: 'هماهنگی پرسنل و تردد شیفت',
+        description: 'کانال اختصاصی ثبت ورود و خروج شیفت، اعلام حضور و هماهنگی تردد پرسنل کارخانه و انبار',
+        icon: 'Users'
+      };
+      return [loaded[0], staffChannel, ...loaded.slice(1)];
+    }
+    return loaded;
+  });
   const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission | 'unsupported'>(getBrowserNotificationPermission());
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(soundEngine.isSoundEnabled());
   const [traceabilityEvents, setTraceabilityEvents] = useState<TraceabilityEvent[]>(() => loadStorage('traceabilityEvents', []));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadStorage('auditLogs', []));
+  const [incomingChatAlert, setIncomingChatAlert] = useState<IncomingChatAlertData | null>(null);
+  const [activeChatRecipientId, setActiveChatRecipientId] = useState<string | null>(null);
+  const seenMessageIdsRef = useRef<Set<string>>(new Set());
+  const isMessageTrackingInitializedRef = useRef<boolean>(false);
+
+  const dismissIncomingChatAlert = useCallback(() => {
+    setIncomingChatAlert(null);
+  }, []);
+
+  const openChatWithUser = useCallback((userId: string) => {
+    setActiveChatRecipientId(userId);
+    setActiveTab('chat');
+  }, []);
+
+  const checkForNewIncomingMessages = useCallback((incomingMessages: ChatMessage[]) => {
+    if (!incomingMessages || !Array.isArray(incomingMessages)) return;
+
+    if (!isMessageTrackingInitializedRef.current) {
+      incomingMessages.forEach(m => seenMessageIdsRef.current.add(m.id));
+      isMessageTrackingInitializedRef.current = true;
+      return;
+    }
+
+    const newIncoming = incomingMessages.filter(m => 
+      !seenMessageIdsRef.current.has(m.id) &&
+      m.senderId !== currentUser.id &&
+      m.senderName !== currentUser.fullName &&
+      (m.recipientId === currentUser.id || (!m.recipientId && m.channelId))
+    );
+
+    incomingMessages.forEach(m => seenMessageIdsRef.current.add(m.id));
+
+    if (newIncoming.length > 0) {
+      const latestMsg = newIncoming[newIncoming.length - 1];
+
+      soundEngine.play('urgent_message');
+
+      setIncomingChatAlert({
+        id: latestMsg.id,
+        senderId: latestMsg.senderId,
+        senderName: latestMsg.senderName,
+        senderRole: latestMsg.senderRole,
+        message: latestMsg.message,
+        timestamp: latestMsg.timestamp,
+        channelId: latestMsg.channelId,
+        unreadCount: newIncoming.length
+      });
+
+      sendNativeBrowserNotification(`💬 پیام جدید از ${latestMsg.senderName}`, {
+        body: latestMsg.message.length > 80 ? `${latestMsg.message.substring(0, 80)}...` : latestMsg.message,
+        linkTab: 'chat',
+        soundType: 'urgent_message',
+        tag: `chat-sender-${latestMsg.senderId}`,
+        metadata: { senderId: latestMsg.senderId, channelId: latestMsg.channelId },
+        vibrate: [200, 100, 200, 100, 200],
+        requireInteraction: true
+      });
+
+      flashDocumentTitle(`پیام جدید از ${latestMsg.senderName}`);
+    }
+  }, [currentUser]);
 
   const setSoundEnabled = (enabled: boolean) => {
     soundEngine.setSoundEnabled(enabled);
@@ -783,7 +866,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.productionLogs) setProductionLogs(data.productionLogs);
     if (data.materialHandovers) setMaterialHandovers(data.materialHandovers);
     if (data.notifications) setNotifications(data.notifications);
-    if (data.messages) setMessages(data.messages);
+    if (data.messages) {
+      setMessages(data.messages);
+      checkForNewIncomingMessages(data.messages);
+    }
     if (data.channels) setChannels(data.channels);
     if (data.traceabilityEvents) setTraceabilityEvents(data.traceabilityEvents);
     if (data.auditLogs) setAuditLogs(data.auditLogs);
@@ -1383,8 +1469,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Register Notification Click Route Handler
   useEffect(() => {
-    registerNotificationNavigationHandler((tabId: string) => {
+    registerNotificationNavigationHandler((tabId: string, metadata?: any) => {
       setActiveTab(tabId);
+      if (tabId === 'chat' && metadata?.senderId) {
+        setActiveChatRecipientId(metadata.senderId);
+      }
     });
   }, []);
 
@@ -1398,8 +1487,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     targetRole?: UserRole | 'All';
     priority?: 'normal' | 'urgent' | 'high';
     senderName?: string;
+    senderId?: string;
     metadata?: Record<string, any>;
   }) => {
+    // CRITICAL: Under NO circumstances send or show a notification for messages the current user sent themselves!
+    const isSelfSender = 
+      (notifData.senderName && notifData.senderName === currentUser.fullName) ||
+      (notifData.senderId && notifData.senderId === currentUser.id) ||
+      (notifData.metadata?.senderId && notifData.metadata.senderId === currentUser.id);
+
+    if (isSelfSender) {
+      return;
+    }
+
     const newNotif: SystemNotification = {
       id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       type: notifData.type,
@@ -1412,24 +1512,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       targetRole: notifData.targetRole,
       priority: notifData.priority || 'normal',
       senderName: notifData.senderName,
+      senderId: notifData.senderId || notifData.metadata?.senderId,
       metadata: notifData.metadata,
     };
-
-    setNotifications(prev => [newNotif, ...prev.slice(0, 99)]);
 
     // Check if target matches current user (cartable routing)
     const isTargetForUser = 
       (!notifData.targetUserId || notifData.targetUserId === currentUser.id) &&
-      (!notifData.targetRole || notifData.targetRole === 'All' || notifData.targetRole === currentUser.role || currentUser.role === 'SystemAdmin');
+      (!notifData.targetRole || notifData.targetRole === 'All' || notifData.targetRole === currentUser.role || (currentUser.role === 'SystemAdmin' && notifData.type !== 'ChatMessage'));
 
     if (isTargetForUser) {
-      const sound = notifData.priority === 'urgent' ? 'alert' : notifData.type === 'ChatMessage' ? 'message' : 'notification';
+      setNotifications(prev => [newNotif, ...prev.slice(0, 99)]);
+      const sound = notifData.type === 'ChatMessage' ? 'urgent_message' : (notifData.priority === 'urgent' ? 'alert' : 'notification');
       soundEngine.play(sound as any);
       sendNativeBrowserNotification(notifData.title, {
         body: notifData.message,
         linkTab: notifData.linkTab || 'dashboard',
         soundType: sound as any,
+        metadata: notifData.metadata,
+        requireInteraction: notifData.priority === 'urgent' || notifData.type === 'ChatMessage',
       });
+      if (notifData.type === 'ChatMessage') {
+        flashDocumentTitle(notifData.title);
+      }
     }
   }, [currentUser]);
 
@@ -1448,17 +1553,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return status;
   };
 
-  // Test Notification Trigger
-  const testBrowserNotification = () => {
-    sendSystemNotification({
-      type: 'Info',
-      title: 'تست اعلان سیستم انبار و تولید',
-      message: `سلام ${currentUser.fullName}، سیستم اعلان فوری و صوتی با موفقیت فراخوانی شد.`,
-      linkTab: 'dashboard',
-      priority: 'normal',
-      senderName: 'سیستم هوشمند انبار'
+  // Test Strong Incoming Message Alert
+  const testIncomingMessageAlert = () => {
+    const otherUser = users.find(u => u.id !== currentUser.id) || {
+      id: 'usr-colleague-1',
+      fullName: 'مهندس رضایی (انباردار)',
+      role: 'Storekeeper' as UserRole
+    };
+
+    soundEngine.play('urgent_message');
+    setIncomingChatAlert({
+      id: `alert-test-${Date.now()}`,
+      senderId: otherUser.id,
+      senderName: otherUser.fullName,
+      senderRole: (otherUser.role as UserRole) || 'Storekeeper',
+      message: 'سلام جناب مهندس، تست اعلان صوتی و تصویری پرقدرت پیام با موفقیت ارسال شد.',
+      timestamp: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+      unreadCount: 1
     });
+
+    sendNativeBrowserNotification(`💬 پیام جدید از ${otherUser.fullName}`, {
+      body: 'سلام جناب مهندس، تست اعلان صوتی و تصویری پرقدرت پیام با موفقیت ارسال شد.',
+      linkTab: 'chat',
+      soundType: 'urgent_message',
+      tag: `test-chat-${Date.now()}`,
+      metadata: { senderId: otherUser.id },
+      vibrate: [200, 100, 200, 100, 200],
+      requireInteraction: true
+    });
+
+    flashDocumentTitle(`پیام جدید از ${otherUser.fullName}`);
   };
+
+  const testBrowserNotification = () => {
+    testIncomingMessageAlert();
+  };
+
+  // Auto-clean any residual self-notifications from storage on user change
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    setNotifications(prev => {
+      const filtered = prev.filter(n => {
+        if (n.senderName === currentUser.fullName) return false;
+        if (n.senderId === currentUser.id) return false;
+        if (n.metadata?.senderId === currentUser.id) return false;
+        if (n.type === 'ChatMessage' && n.targetUserId && n.targetUserId !== currentUser.id) return false;
+        return true;
+      });
+      return filtered.length !== prev.length ? filtered : prev;
+    });
+  }, [currentUser?.id, currentUser?.fullName]);
 
   // Chat message actions
   const sendChatMessage = async (data: {
@@ -1485,22 +1629,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isRead: false,
     };
 
-    // Optimistic local update & audio
-    setMessages(prev => [...prev, newMsg]);
-    soundEngine.play('message');
+    // Mark as seen immediately so our own sent message NEVER triggers incoming alerts for us
+    seenMessageIdsRef.current.add(tempId);
 
-    // Also dispatch notification if direct message
-    if (data.recipientId) {
-      sendSystemNotification({
-        type: 'ChatMessage',
-        title: `پیام جدید از ${currentUser.fullName}`,
-        message: data.message,
-        linkTab: 'chat',
-        targetUserId: data.recipientId,
-        priority: 'urgent',
-        senderName: currentUser.fullName
-      });
-    }
+    // Optimistic local update (DO NOT send a system notification to self!)
+    setMessages(prev => [...prev, newMsg]);
 
     try {
       const res = await fetch(getApiUrl('/api/messages'), {
@@ -1520,6 +1653,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.message) {
+          seenMessageIdsRef.current.add(json.message.id);
           setMessages(prev => prev.map(m => m.id === tempId ? json.message : m));
         }
       }
@@ -1570,7 +1704,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     !m.isRead && m.senderId !== currentUser.id && (!m.recipientId || m.recipientId === currentUser.id)
   ).length;
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  // Filtered notifications specifically intended for current user (guaranteed no self-sent notifications)
+  const userNotifications = useMemo(() => {
+    return notifications.filter(notif => {
+      // 1. NEVER show any notification where current user was the sender!
+      if (notif.senderName && notif.senderName === currentUser.fullName) return false;
+      if (notif.senderId && notif.senderId === currentUser.id) return false;
+      if (notif.metadata?.senderId && notif.metadata.senderId === currentUser.id) return false;
+
+      // 2. Chat messages: MUST be targeted to the current user (or general channel broadcast)
+      if (notif.type === 'ChatMessage') {
+        if (notif.targetUserId) {
+          return notif.targetUserId === currentUser.id;
+        }
+        // Channel announcement
+        return !notif.targetRole || notif.targetRole === 'All' || notif.targetRole === currentUser.role;
+      }
+
+      // 3. Other system notifications (LowStock, RequestSubmitted, etc.)
+      if (notif.targetUserId) {
+        return notif.targetUserId === currentUser.id;
+      }
+      if (notif.targetRole) {
+        return notif.targetRole === 'All' || notif.targetRole === currentUser.role || currentUser.role === 'SystemAdmin';
+      }
+      return true;
+    });
+  }, [notifications, currentUser]);
+
+  const unreadCount = useMemo(() => {
+    return userNotifications.filter(n => !n.isRead).length;
+  }, [userNotifications]);
 
   const getItemQuantityInWarehouse = (itemId: string, warehouseId: string): number => {
     const inv = inventory.find(i => i.itemId === itemId && i.warehouseId === warehouseId);
@@ -3537,7 +3701,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const markAllNotificationsAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    const userNotifIds = new Set(userNotifications.map(n => n.id));
+    setNotifications(prev => prev.map(n => userNotifIds.has(n.id) ? { ...n, isRead: true } : n));
+  };
+
+  const clearNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const clearAllUserNotifications = () => {
+    const userNotifIds = new Set(userNotifications.map(n => n.id));
+    setNotifications(prev => prev.filter(n => !userNotifIds.has(n.id)));
   };
 
   // Database Backup / Reset / Import
@@ -3915,11 +4089,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activeTab, setActiveTab,
       items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects, operators, stockCountings,
       stockInDocs, stockOutDocs, transfers, purchaseRequests,
-      productionLogs, materialHandovers, notifications, messages, channels,
+      productionLogs, materialHandovers, notifications: userNotifications, messages, channels,
       traceabilityEvents, auditLogs,
       sendChatMessage, deleteChatMessage, toggleMessageReaction, unreadMessagesCount,
       sendSystemNotification, browserNotificationPermission, requestNotificationPermission,
-      soundEnabled, setSoundEnabled, testBrowserNotification, unreadCount,
+      soundEnabled, setSoundEnabled, testBrowserNotification, testIncomingMessageAlert, unreadCount,
+      incomingChatAlert, dismissIncomingChatAlert, openChatWithUser, activeChatRecipientId, setActiveChatRecipientId,
       addMaterialHandover, deleteMaterialHandover, handoverStepMaterials, recordStepOutputReceipt, calculateProjectProgressSummary,
       addItem, updateItem, deleteItem, deleteItemsBatch,
       addItemGroup, updateItemGroup, deleteItemGroup,
@@ -3940,7 +4115,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addOperator, updateOperator, deleteOperator,
       registerProduction,
       getItemQuantityInWarehouse, getTotalItemQuantity,
-      markNotificationAsRead, markAllNotificationsAsRead,
+      markNotificationAsRead, markAllNotificationsAsRead, clearNotification, clearAllUserNotifications,
       resetToInitialData, exportDatabaseJSON, importDatabaseJSON,
       language, setLanguage, t,
       autoBackupIntervalHours, setAutoBackupIntervalHours,

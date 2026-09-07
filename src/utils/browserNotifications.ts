@@ -1,6 +1,6 @@
 // Web Notification & Audio Alert Engine for Desktop Browsers & Mobile Devices (PWA)
 
-export type SoundType = 'notification' | 'message' | 'cartable' | 'alert' | 'success';
+export type SoundType = 'notification' | 'message' | 'urgent_message' | 'cartable' | 'alert' | 'success';
 
 class NotificationSoundEngine {
   private audioCtx: AudioContext | null = null;
@@ -51,31 +51,42 @@ class NotificationSoundEngine {
 
       const now = ctx.currentTime;
 
-      if (type === 'message') {
-        // Soft double chirp for incoming chat message (D6 -> F#6)
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
+      if (type === 'message' || type === 'urgent_message') {
+        // Crisp, high-attention two-tone harmonic bell chime for incoming messages (Slack/iOS style)
+        // Note 1: E5 (659.25 Hz) with harmonic overtone
+        // Note 2: B5 (987.77 Hz) -> E6 (1318.51 Hz)
+        const notes = [
+          { freq: 659.25, time: now, duration: 0.28, gain: 0.32 },
+          { freq: 987.77, time: now + 0.12, duration: 0.35, gain: 0.35 },
+          { freq: 1318.51, time: now + 0.22, duration: 0.45, gain: 0.38 }
+        ];
 
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(1174.66, now); // D6
-        osc1.frequency.exponentialRampToValueAtTime(1479.98, now + 0.08); // F#6
+        notes.forEach(({ freq, time, duration, gain: peakGain }) => {
+          // Fundamental sine wave
+          const osc = ctx.createOscillator();
+          const oscHarmonic = ctx.createOscillator();
+          const gain = ctx.createGain();
 
-        osc2.type = 'triangle';
-        osc2.frequency.setValueAtTime(587.33, now);
-        osc2.frequency.exponentialRampToValueAtTime(739.99, now + 0.08);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, time);
 
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+          // Rich subtle chime harmonic (triangle octave up)
+          oscHarmonic.type = 'triangle';
+          oscHarmonic.frequency.setValueAtTime(freq * 2, time);
 
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(0.001, time);
+          gain.gain.exponentialRampToValueAtTime(peakGain, time + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
 
-        osc1.start(now);
-        osc2.start(now);
-        osc1.stop(now + 0.3);
-        osc2.stop(now + 0.3);
+          osc.connect(gain);
+          oscHarmonic.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(time);
+          oscHarmonic.start(time);
+          osc.stop(time + duration + 0.05);
+          oscHarmonic.stop(time + duration + 0.05);
+        });
       } else if (type === 'cartable' || type === 'notification') {
         // Pleasant triple chime for cartable & system events (C6 -> E6 -> G6)
         const frequencies = [1046.50, 1318.51, 1567.98];
@@ -150,6 +161,8 @@ export interface BrowserNotificationOptions {
   soundType?: SoundType;
   vibrate?: number[];
   silent?: boolean;
+  metadata?: Record<string, any>;
+  requireInteraction?: boolean;
 }
 
 /**
@@ -195,10 +208,54 @@ export async function requestBrowserNotificationPermission(): Promise<Notificati
 }
 
 // Global listener for tab navigation on notification click
-let onNotificationClickCallback: ((tabId: string) => void) | null = null;
+let onNotificationClickCallback: ((tabId: string, metadata?: any) => void) | null = null;
 
-export function registerNotificationNavigationHandler(callback: (tabId: string) => void) {
+export function registerNotificationNavigationHandler(callback: (tabId: string, metadata?: any) => void) {
   onNotificationClickCallback = callback;
+}
+
+/**
+ * Flash browser document title to attract immediate attention if user is in another tab
+ */
+let titleFlashTimer: any = null;
+let originalDocTitle = '';
+
+export function flashDocumentTitle(alertText: string, durationSeconds: number = 8) {
+  if (typeof document === 'undefined') return;
+  
+  if (!originalDocTitle) {
+    originalDocTitle = document.title || 'رویال صنعت سامانه';
+  }
+  
+  if (titleFlashTimer) {
+    clearInterval(titleFlashTimer);
+    titleFlashTimer = null;
+  }
+
+  let isAlert = true;
+  let remainingSteps = durationSeconds * 2; // flash every 500ms
+
+  titleFlashTimer = setInterval(() => {
+    if (document.hasFocus() || remainingSteps <= 0) {
+      clearInterval(titleFlashTimer);
+      titleFlashTimer = null;
+      document.title = originalDocTitle;
+      return;
+    }
+    document.title = isAlert ? `🔔 ${alertText}` : originalDocTitle;
+    isAlert = !isAlert;
+    remainingSteps--;
+  }, 700);
+
+  const resetOnFocus = () => {
+    if (titleFlashTimer) {
+      clearInterval(titleFlashTimer);
+      titleFlashTimer = null;
+    }
+    document.title = originalDocTitle;
+    window.removeEventListener('focus', resetOnFocus);
+  };
+  window.addEventListener('focus', resetOnFocus);
 }
 
 /**
@@ -231,17 +288,19 @@ export function sendNativeBrowserNotification(
       badge: options.badge || '/favicon.ico',
       tag: options.tag || `anbarmeh-${Date.now()}`,
       silent: true, // we handle our own Web Audio chime
+      requireInteraction: options.requireInteraction ?? false,
       data: {
         linkTab: options.linkTab,
+        metadata: options.metadata,
         timestamp: Date.now()
       }
     };
 
-    // Mobile vibration pattern if supported
+    // Mobile vibration pattern if supported (distinctive strong buzz for messages)
     if (options.vibrate && 'vibrate' in navigator) {
       navigator.vibrate(options.vibrate);
     } else if ('vibrate' in navigator) {
-      navigator.vibrate([150, 80, 150]);
+      navigator.vibrate([200, 100, 200, 100, 200]);
     }
 
     const notification = new Notification(title, notifOptions);
@@ -253,7 +312,7 @@ export function sendNativeBrowserNotification(
       } catch {}
 
       if (options.linkTab && onNotificationClickCallback) {
-        onNotificationClickCallback(options.linkTab);
+        onNotificationClickCallback(options.linkTab, options.metadata);
       }
       notification.close();
     };

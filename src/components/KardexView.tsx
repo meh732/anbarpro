@@ -6,9 +6,10 @@ import {
   ArrowUpRight, ArrowDownLeft, AlertTriangle, CheckCircle2, TrendingUp, 
   Clock, Package, ChevronDown, RefreshCw, Layers, FileSpreadsheet, Eye, 
   HelpCircle, User, Info, DollarSign, ArrowLeftRight, CheckSquare,
-  ShieldCheck, ArrowRight, Tag, Hash, FileText, ChevronRight
+  ShieldCheck, ArrowRight, Tag, Hash, FileText, ChevronRight, FileDown, Loader2
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
+import { exportElementToPdf } from '../utils/pdfExport';
 
 export const KardexView: React.FC = () => {
   const { 
@@ -339,6 +340,20 @@ export const KardexView: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const handleExportPdf = async () => {
+    setIsExportingPdf(true);
+    try {
+      await exportElementToPdf('printable-kardex-sheet', {
+        filename: `Kardex_${selectedItem?.code || 'report'}_${new Date().toISOString().substring(0, 10)}.pdf`,
+        orientation: 'portrait',
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
       {/* Top Banner */}
@@ -361,6 +376,21 @@ export const KardexView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Direct PDF Export */}
+          <button
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-2xl text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+            title="دانلود مستقیم سند کاردکس در قالب PDF"
+          >
+            {isExportingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4" />
+            )}
+            <span>{isExportingPdf ? 'در حال تولید...' : 'خروجی مستقیم PDF'}</span>
+          </button>
+
           <button
             onClick={handleExportAccountingCSV}
             className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold rounded-2xl text-xs flex items-center gap-2 transition-all shadow-xs"
@@ -583,7 +613,7 @@ export const KardexView: React.FC = () => {
           </div>
 
           {/* Standard Accounting Document Sheet */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-6 print:border-none print:shadow-none print:p-0">
+          <div id="printable-kardex-sheet" className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-6 print:border-none print:shadow-none print:p-0">
             
             {/* Standard Official Header */}
             <div className="border-b-2 border-slate-900 pb-5">
