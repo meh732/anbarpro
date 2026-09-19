@@ -14,6 +14,7 @@ import { exportItemsToExcel } from '../utils/excelUtils';
 import { BatchBarcodePrintModal } from './BatchBarcodePrintModal';
 import { SvgBarcode } from './SvgBarcode';
 import { printElement } from '../utils/printEngine';
+import { matchesItem } from '../utils/searchEngine';
 
 const BarcodeVisual: React.FC<{ code: string; name?: string; location?: string }> = ({ code, name, location }) => {
   return (
@@ -288,16 +289,27 @@ export const ItemsView: React.FC = () => {
     return false;
   };
 
+  // Build a lookup of warehouse names for each item for cross-entity search
+  const itemWarehouseNamesMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    inventory.forEach(inv => {
+      if (inv.quantity > 0) {
+        const wh = warehouses.find(w => w.id === inv.warehouseId);
+        if (wh) {
+          const list = map.get(inv.itemId) || [];
+          list.push(wh.name);
+          map.set(inv.itemId, list);
+        }
+      }
+    });
+    return map;
+  }, [inventory, warehouses]);
+
   // Filter items matching search and selected category
   const filteredItems = useMemo(() => {
     return items.filter(it => {
-      const query = (searchQuery || '').toLowerCase();
-      const matchesSearch = 
-        (it.name || '').toLowerCase().includes(query) ||
-        (it.code || '').toLowerCase().includes(query) ||
-        (it.barcode || '').includes(searchQuery || '') ||
-        (it.group || '').toLowerCase().includes(query) ||
-        (it.subGroup || '').toLowerCase().includes(query);
+      const whNames = itemWarehouseNamesMap.get(it.id);
+      const matchesSearch = matchesItem(it, searchQuery, { warehouseNames: whNames });
       
       const matchesType = selectedType === 'ALL' || it.itemType === selectedType;
       
@@ -309,7 +321,7 @@ export const ItemsView: React.FC = () => {
 
       return matchesSearch && matchesType && matchesGroup;
     });
-  }, [items, searchQuery, selectedType, selectedGroup]);
+  }, [items, searchQuery, selectedType, selectedGroup, itemWarehouseNamesMap]);
 
   // Selection Handlers
   const isAllFilteredSelected = filteredItems.length > 0 && filteredItems.every(it => selectedItemIds.includes(it.id));
@@ -680,16 +692,33 @@ export const ItemsView: React.FC = () => {
       {/* Filter Toolbar */}
       <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-wrap items-center gap-3 shadow-2xs print:hidden">
         {/* Search Input */}
-        <div className="flex-1 min-w-[200px] relative">
+        <div className="flex-1 min-w-[260px] relative">
           <Search className={`w-4 h-4 absolute ${isFa ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 text-slate-400`} />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={isFa ? 'جستجو در کد، نام، بارکد، گروه یا زیرگروه...' : 'Search code, name, barcode, group...'}
-            className={`w-full ${isFa ? 'pr-9 pl-3' : 'pl-9 pr-3'} py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-2xs`}
+            placeholder={isFa ? 'جستجوی پیشرفته بر اساس هر پارامتر (نام، کد، بارکد، گروه، مشخصات فنی، قفسه، انبار استقرار)...' : 'Advanced multi-parameter search (name, code, barcode, specs, rack, group, warehouse)...'}
+            className={`w-full ${isFa ? 'pr-9 pl-9' : 'pl-9 pr-9'} py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-2xs`}
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className={`absolute ${isFa ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full`}
+              title={isFa ? 'پاک کردن جستجو' : 'Clear search'}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
+
+        {searchQuery.trim() && (
+          <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+            <span>{isFa ? 'یافت‌شده:' : 'Found:'}</span>
+            <span className="font-bold text-indigo-600 font-mono">{filteredItems.length}</span>
+            <span>{isFa ? 'کالا' : 'items'}</span>
+          </div>
+        )}
 
         {/* Filter by Type */}
         <div className="flex items-center gap-1.5">

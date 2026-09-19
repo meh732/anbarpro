@@ -5,11 +5,12 @@ import {
   Layers, Factory, ArrowDownUp, Users, CheckCircle2,
   AlertTriangle, Filter, Search, Warehouse, Package, 
   TrendingDown, TrendingUp, DollarSign, Calendar, Clock,
-  FileText, ShieldCheck, CheckCircle, FileDown, Loader2
+  FileText, ShieldCheck, CheckCircle, FileDown, Loader2, X
 } from 'lucide-react';
 import { formatCurrency } from '../utils/security';
 import { exportElementToPdf } from '../utils/pdfExport';
 import { printElement } from '../utils/printEngine';
+import { matchesItem } from '../utils/searchEngine';
 
 export const ReportsView: React.FC = () => {
   const { 
@@ -54,11 +55,11 @@ export const ReportsView: React.FC = () => {
       if (stockStatusFilter === 'normal' && (inv.quantity <= minThreshold)) return false;
 
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchName = item.name.toLowerCase().includes(q);
-        const matchCode = item.code.toLowerCase().includes(q);
-        const matchWh = wh.name.toLowerCase().includes(q);
-        if (!matchName && !matchCode && !matchWh) return false;
+        const isMatched = matchesItem(item, searchQuery, {
+          warehouseNames: [wh.name],
+          warehouseCodes: [wh.code]
+        });
+        if (!isMatched) return false;
       }
 
       return true;
@@ -263,9 +264,18 @@ export const ReportsView: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جستجوی کد، نام کالا یا انبار..."
-                className="w-full text-xs font-bold pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
+                placeholder="جستجوی پیشرفته در تمام پارامترها (کد، نام، بارکد، مشخصات، انبار)..."
+                className="w-full text-xs font-bold pr-9 pl-8 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+                  title="پاک کردن جستجو"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Warehouse Select */}

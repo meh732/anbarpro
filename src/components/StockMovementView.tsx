@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { StockInType, StockOutType, StockInDoc, StockOutDoc } from '../types';
 import { 
@@ -9,6 +9,7 @@ import {
 import { OfficialDocumentViewerModal, OfficialDocData } from './OfficialDocumentViewerModal';
 import { StockMovementExcelImportModal } from './StockMovementExcelImportModal';
 import { generateStockMovementItemsTemplate } from '../utils/excelUtils';
+import { matchesStockDocument } from '../utils/searchEngine';
 
 export const StockMovementView: React.FC = () => {
   const { 
@@ -40,9 +41,9 @@ export const StockMovementView: React.FC = () => {
   const [movementType, setMovementType] = useState<string>('Purchase');
   const [docNotes, setDocNotes] = useState('');
 
-  // Document Item lines
+  // Document Item lines - default quantity is strictly 1 (NOT 100)
   const [docItems, setDocItems] = useState<{ itemId: string; quantity: number; unitPrice: number; notes: string }[]>([
-    { itemId: items[0]?.id || 'item-pcb-101', quantity: 100, unitPrice: items[0]?.unitPrice || 50000, notes: '' }
+    { itemId: items[0]?.id || 'item-pcb-101', quantity: 1, unitPrice: items[0]?.unitPrice || 0, notes: '' }
   ]);
 
   // Selected item row indices for batch deletion inside document modal
@@ -63,6 +64,20 @@ export const StockMovementView: React.FC = () => {
     Scrap: 'ضایعات و سوخته',
     StockAdjustment: 'اصلاح موجودی (کاهشی)',
   };
+
+  // Fast item & warehouse maps for multi-field search
+  const itemsMap = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const warehousesMap = useMemo(() => new Map(warehouses.map(w => [w.id, w])), [warehouses]);
+
+  const filteredStockInDocs = useMemo(() => {
+    if (!searchFilter.trim()) return stockInDocs;
+    return stockInDocs.filter(doc => matchesStockDocument(doc, searchFilter, itemsMap, warehousesMap));
+  }, [stockInDocs, searchFilter, itemsMap, warehousesMap]);
+
+  const filteredStockOutDocs = useMemo(() => {
+    if (!searchFilter.trim()) return stockOutDocs;
+    return stockOutDocs.filter(doc => matchesStockDocument(doc, searchFilter, itemsMap, warehousesMap));
+  }, [stockOutDocs, searchFilter, itemsMap, warehousesMap]);
 
   // Open Official Document Viewer for Stock In
   const handleViewOfficialInDoc = (doc: StockInDoc) => {
@@ -132,7 +147,7 @@ export const StockMovementView: React.FC = () => {
     setMovementType(type === 'IN' ? 'Purchase' : 'ProjectConsumption');
     setSelectedWarehouseId(warehouses[0]?.id || 'wh-raw');
     setDocNotes('');
-    setDocItems([{ itemId: items[0]?.id || '', quantity: 100, unitPrice: items[0]?.unitPrice || 10000, notes: '' }]);
+    setDocItems([{ itemId: items[0]?.id || '', quantity: 1, unitPrice: items[0]?.unitPrice || 0, notes: '' }]);
     setSelectedDocItemIndices([]);
     setIsDocModalOpen(true);
   };
@@ -192,7 +207,7 @@ export const StockMovementView: React.FC = () => {
   const handleAddItemLine = () => {
     setDocItems(prev => [
       ...prev, 
-      { itemId: items[0]?.id || '', quantity: 50, unitPrice: items[0]?.unitPrice || 10000, notes: '' }
+      { itemId: items[0]?.id || '', quantity: 1, unitPrice: items[0]?.unitPrice || 0, notes: '' }
     ]);
   };
 
@@ -239,13 +254,14 @@ export const StockMovementView: React.FC = () => {
   const handleApplyExcelItemsToForm = (importedLines: { itemId: string; quantity: number; unitPrice: number; notes: string }[]) => {
     if (importedLines.length === 0) return;
     setDocItems(prev => {
-      // If previous has just 1 default line, replace it
-      if (prev.length === 1 && prev[0].quantity === 100 && (!prev[0].notes || prev[0].notes === '')) {
+      // If previous has just 1 default untouched line, replace it with the imported items
+      const isSingleDefaultRow = prev.length === 1 && (!prev[0].notes || prev[0].notes === '');
+      if (isSingleDefaultRow) {
         return importedLines;
       }
       return [...prev, ...importedLines];
     });
-    alert(`${importedLines.length} قلم کالا با موفقیت از فایل اکسل به لیست اقلام سند جاری اضافه شد.`);
+    alert(`${importedLines.length} قلم کالا با مقادیر دقیق استخراج شده از اکسل با موفقیت به سند اضافه شد.`);
   };
 
   const handleSubmitDoc = (e: React.FormEvent) => {
@@ -394,6 +410,45 @@ export const StockMovementView: React.FC = () => {
         </button>
       </div>
 
+      {/* Advanced Full-Parameter Search Bar */}
+      <div className="bg-white border border-slate-200 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+        <div className="flex-1 min-w-[280px] relative">
+          <Search className="w-4 h-4 absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="جستجوی پیشرفته بر اساس هر پارامتر (شماره سند، نام یا کد کالا، بارکد، طرف حساب، انبار، ثبت‌کننده، توضیحات)..."
+            className="w-full pr-10 pl-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-2xs"
+          />
+          {searchFilter && (
+            <button
+              onClick={() => setSearchFilter('')}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+              title="پاک کردن جستجو"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {searchFilter.trim() && (
+          <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+            <span>نتیجه جستجو:</span>
+            <span className="font-bold text-indigo-600 font-mono">
+              {activeSubTab === 'IN' ? filteredStockInDocs.length : filteredStockOutDocs.length}
+            </span>
+            <span>مورد یافت شد</span>
+            <button
+              onClick={() => setSearchFilter('')}
+              className="mr-1 text-xs text-rose-600 hover:underline font-bold"
+            >
+              نمایش همه
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Documents Table */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -414,14 +469,16 @@ export const StockMovementView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {stockInDocs.length === 0 ? (
+                {filteredStockInDocs.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="p-8 text-center text-slate-400">
-                      هیچ سند ورودی ثبت نشده است.
+                      {searchFilter.trim()
+                        ? `هیچ سند ورودی مطابق با عبارت «${searchFilter}» یافت نشد.`
+                        : 'هیچ سند ورودی ثبت نشده است.'}
                     </td>
                   </tr>
                 ) : (
-                  stockInDocs.map(doc => {
+                  filteredStockInDocs.map(doc => {
                     const wh = warehouses.find(w => w.id === doc.warehouseId);
                     return (
                       <tr 
@@ -502,14 +559,16 @@ export const StockMovementView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {stockOutDocs.length === 0 ? (
+                {filteredStockOutDocs.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="p-8 text-center text-slate-400">
-                      هیچ سند خروجی ثبت نشده است.
+                      {searchFilter.trim()
+                        ? `هیچ سند خروجی مطابق با عبارت «${searchFilter}» یافت نشد.`
+                        : 'هیچ سند خروجی ثبت نشده است.'}
                     </td>
                   </tr>
                 ) : (
-                  stockOutDocs.map(doc => {
+                  filteredStockOutDocs.map(doc => {
                     const wh = warehouses.find(w => w.id === doc.warehouseId);
                     return (
                       <tr 
@@ -780,7 +839,7 @@ export const StockMovementView: React.FC = () => {
                             >
                               {items.map(i => (
                                 <option key={i.id} value={i.id}>
-                                  {i.name} ({i.code})
+                                  {i.name} — کد: {i.code} {i.barcode ? `| بارکد: ${i.barcode}` : ''} {i.group ? `(${i.group})` : ''}
                                 </option>
                               ))}
                             </select>

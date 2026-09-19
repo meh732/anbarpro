@@ -24,13 +24,31 @@ export function parseSafeNumber(val: any, defaultValue = 0): number {
   if (typeof val === 'number') {
     return isNaN(val) || !isFinite(val) ? defaultValue : val;
   }
-  const cleanStr = normalizeDigits(val)
+  const str = String(val);
+  const norm = normalizeDigits(str).trim();
+
+  // 1. Try direct clean parse
+  const cleanStr = norm
     .replace(/[,،٬\s_]/g, '')
     .replace(/[ریال|تومان|تومن|ت|ر|USD|\$|IRR|TOMAN]/gi, '')
     .trim();
 
-  const num = parseFloat(cleanStr);
-  return isNaN(num) || !isFinite(num) ? defaultValue : num;
+  const directNum = parseFloat(cleanStr);
+  if (!isNaN(directNum) && isFinite(directNum)) {
+    return directNum;
+  }
+
+  // 2. Fallback regex extraction: extracts the first floating/integer number
+  // Handles values like "تعداد: 250 عدد", "12.5 کیلوگرم", "1,500 pcs", "100 pcs"
+  const regexMatch = norm.replace(/[,،٬]/g, '').match(/[-+]?\d+(?:\.\d+)?/);
+  if (regexMatch) {
+    const extracted = parseFloat(regexMatch[0]);
+    if (!isNaN(extracted) && isFinite(extracted)) {
+      return extracted;
+    }
+  }
+
+  return defaultValue;
 }
 
 /**
@@ -1252,7 +1270,8 @@ export function generateStockMovementItemsTemplate(
  */
 export async function parseStockMovementItemsFromExcel(
   file: File | ArrayBuffer,
-  items: Item[]
+  items: Item[],
+  docType: 'IN' | 'OUT' = 'IN'
 ): Promise<{
   success: boolean;
   parsedItems: StockMovementParsedItem[];
@@ -1291,6 +1310,9 @@ export async function parseStockMovementItemsFromExcel(
     let totalQuantity = 0;
     let totalCalculatedValue = 0;
 
+    // Helper normalizer for keys
+    const normKey = (s: string) => cleanHeaderKey(normalizeDigits(s));
+
     // Build lookup maps for rapid matching
     const itemByCode = new Map<string, Item>();
     const itemByName = new Map<string, Item>();
@@ -1298,43 +1320,110 @@ export async function parseStockMovementItemsFromExcel(
     const itemById = new Map<string, Item>();
 
     items.forEach(it => {
-      if (it.code) itemByCode.set(cleanHeaderKey(it.code), it);
-      if (it.name) itemByName.set(cleanHeaderKey(it.name), it);
-      if (it.barcode) itemByBarcode.set(cleanHeaderKey(it.barcode), it);
+      if (it.code) {
+        itemByCode.set(cleanHeaderKey(it.code), it);
+        itemByCode.set(normKey(it.code), it);
+        itemByCode.set(cleanHeaderKey(it.code).replace(/[-_]/g, ''), it);
+      }
+      if (it.name) {
+        itemByName.set(cleanHeaderKey(it.name), it);
+        itemByName.set(normKey(it.name), it);
+      }
+      if (it.barcode) {
+        itemByBarcode.set(cleanHeaderKey(it.barcode), it);
+        itemByBarcode.set(normKey(it.barcode), it);
+      }
       if (it.id) itemById.set(it.id, it);
     });
+
+    // Specific quantity candidates prioritized by document type
+    const inQtyCandidates = [
+      'تعداد ورود', 'مقدار ورود', 'تعداد وارده', 'مقدار وارده', 'وارده', 'ورود',
+      'تعداد رسید', 'مقدار رسید', 'رسید', 'تعداد / مقدار', 'تعداد/مقدار', 'تعداد', 'مقدار',
+      'تعداد اقلام', 'مقدار اقلام', 'تیراژ', 'میزان', 'حجم', 'وزن', 'متراژ', 'عدد',
+      'qty_in', 'quantity_in', 'in_qty', 'incoming', 'received', 'in', 'quantity', 'qty', 'count', 'amount'
+    ];
+    const outQtyCandidates = [
+      'تعداد خروج', 'مقدار خروج', 'تعداد صادره', 'مقدار صادره', 'صادره', 'خروج',
+      'تعداد حواله', 'مقدار حواله', 'حواله', 'مصرف', 'تعداد / مقدار', 'تعداد/مقدار', 'تعداد', 'مقدار',
+      'تعداد اقلام', 'مقدار اقلام', 'تیراژ', 'میزان', 'حجم', 'وزن', 'متراژ', 'عدد',
+      'qty_out', 'quantity_out', 'out_qty', 'outgoing', 'issued', 'out', 'quantity', 'qty', 'count', 'amount'
+    ];
+    const preferredQtyCandidates = docType === 'OUT' ? outQtyCandidates : inQtyCandidates;
 
     rawRows.forEach((row, idx) => {
       const rowNum = idx + 2;
 
       // 1. Find Item
-      const rawCode = getRowField(row, ['کد کالا', 'کد قطعه', 'کد', 'itemCode', 'code', 'partNumber', 'شناسه کالا', 'کدکالا']);
-      const rawName = getRowField(row, ['نام کالا', 'نام قطعه', 'عنوان کالا', 'شرح کالا', 'itemName', 'name', 'title', 'نام']);
+      const rawCode = getRowField(row, ['کد کالا', 'کد قطعه', 'کد', 'itemCode', 'code', 'partNumber', 'شناسه کالا', 'کدکالا', 'part_number']);
+      const rawName = getRowField(row, ['نام کالا', 'نام قطعه', 'عنوان کالا', 'شرح کالا', 'itemName', 'name', 'title', 'نام', 'شرح']);
       const rawBarcode = getRowField(row, ['بارکد', 'barcode', 'کد میله‌ای']);
+
+      // Skip completely blank rows
+      if (!rawCode && !rawName && !rawBarcode) {
+        return;
+      }
 
       let matchedItem: Item | undefined = undefined;
 
       if (rawCode) {
-        matchedItem = itemByCode.get(cleanHeaderKey(rawCode)) || itemById.get(String(rawCode).trim());
+        const cCode = cleanHeaderKey(rawCode);
+        const nCode = normKey(rawCode);
+        const sCode = cCode.replace(/[-_]/g, '');
+        matchedItem = itemByCode.get(cCode) || itemByCode.get(nCode) || itemByCode.get(sCode) || itemById.get(String(rawCode).trim());
       }
       if (!matchedItem && rawBarcode) {
-        matchedItem = itemByBarcode.get(cleanHeaderKey(rawBarcode));
+        const cBar = cleanHeaderKey(rawBarcode);
+        const nBar = normKey(rawBarcode);
+        matchedItem = itemByBarcode.get(cBar) || itemByBarcode.get(nBar);
       }
       if (!matchedItem && rawName) {
-        matchedItem = itemByName.get(cleanHeaderKey(rawName));
+        const cName = cleanHeaderKey(rawName);
+        const nName = normKey(rawName);
+        matchedItem = itemByName.get(cName) || itemByName.get(nName);
+      }
+
+      // Fuzzy / Substring fallback on name
+      if (!matchedItem && rawName) {
+        const cName = cleanHeaderKey(rawName);
+        if (cName.length >= 3) {
+          matchedItem = items.find(i => {
+            const itCName = cleanHeaderKey(i.name);
+            return itCName.includes(cName) || cName.includes(itCName);
+          });
+        }
       }
 
       if (!matchedItem) {
-        errors.push(`ردیف ${rowNum}: کالایی با کد "${rawCode || rawName || 'نامشخص'}" در سامانه یافت نشد.`);
+        errors.push(`ردیف ${rowNum}: کالایی با شناسه/کد "${rawCode || rawName || 'نامشخص'}" در سامانه یافت نشد.`);
         return;
       }
 
-      // 2. Quantity
-      const rawQty = getRowField(row, ['تعداد / مقدار', 'تعداد', 'مقدار', 'تعداد اقلام', 'quantity', 'qty', 'count', 'amount']);
+      // 2. Extract Quantity from Excel
+      let rawQty = getRowField(row, preferredQtyCandidates);
+
+      // Fallback: Scan columns for any header mentioning quantity terms
+      if (rawQty === undefined || rawQty === null || String(rawQty).trim() === '') {
+        for (const [colKey, colVal] of Object.entries(row)) {
+          if (colVal === undefined || colVal === null || String(colVal).trim() === '') continue;
+          const kClean = cleanHeaderKey(colKey);
+          if (
+            kClean.includes('تعداد') || kClean.includes('مقدار') || 
+            kClean.includes('وارده') || kClean.includes('صادره') || 
+            kClean.includes('ورود') || kClean.includes('خروج') || 
+            kClean.includes('رسید') || kClean.includes('حواله') || 
+            kClean.includes('qty') || kClean.includes('quantity') || kClean.includes('count')
+          ) {
+            rawQty = colVal;
+            break;
+          }
+        }
+      }
+
       const qty = parseSafeNumber(rawQty, 0);
 
       if (qty <= 0) {
-        errors.push(`ردیف ${rowNum}: تعداد برای کالای "${matchedItem.name}" باید بزرگتر از صفر باشد (مقدار دریافتی: ${rawQty}).`);
+        errors.push(`ردیف ${rowNum}: مقدار وارد شده برای کالای "${matchedItem.name}" نامعتبر است (مقدار دریافتی از اکسل: ${rawQty ?? 'خالی'}). لطفا عددی بزرگتر از صفر در ستون تعداد وارد کنید.`);
         return;
       }
 

@@ -78,7 +78,7 @@ export const StockMovementExcelImportModal: React.FC<Props> = ({
     setIsParsing(true);
 
     try {
-      const res = await parseStockMovementItemsFromExcel(file, items);
+      const res = await parseStockMovementItemsFromExcel(file, items, effectiveDocType);
       setParsedResult(res);
     } catch (err: any) {
       setParsedResult({

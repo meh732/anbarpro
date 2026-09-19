@@ -9,6 +9,7 @@ import {
   Layers, Package, Check, Eye
 } from 'lucide-react';
 import { printElement } from '../utils/printEngine';
+import { matchesTransfer } from '../utils/searchEngine';
 
 export const TransfersView: React.FC = () => {
   const { 
@@ -80,6 +81,9 @@ export const TransfersView: React.FC = () => {
     return transfers.filter(t => t.status === 'InTransit').length;
   }, [transfers]);
 
+  const itemsMap = useMemo(() => new Map(items.map(it => [it.id, it])), [items]);
+  const warehousesMap = useMemo(() => new Map(warehouses.map(w => [w.id, w])), [warehouses]);
+
   // Filtered transfers
   const filteredTransfers = useMemo(() => {
     return transfers.filter(trf => {
@@ -95,23 +99,16 @@ export const TransfersView: React.FC = () => {
         }
       }
 
-      // Search query
+      // Enterprise Multi-Parameter Search
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const docMatch = trf.docNumber.toLowerCase().includes(q);
-        const projMatch = trf.projectName?.toLowerCase().includes(q) || false;
-        const reqMatch = trf.requestedBy?.toLowerCase().includes(q) || false;
-        const handlerMatch = trf.handlerName?.toLowerCase().includes(q) || false;
-        const itemMatch = trf.items.some(it => {
-          const itemObj = items.find(i => i.id === it.itemId);
-          return itemObj?.name.toLowerCase().includes(q) || itemObj?.code.toLowerCase().includes(q);
-        });
-        if (!docMatch && !projMatch && !reqMatch && !handlerMatch && !itemMatch) return false;
+        if (!matchesTransfer(trf, searchQuery, itemsMap, warehousesMap)) {
+          return false;
+        }
       }
 
       return true;
     });
-  }, [transfers, activeTab, filterWarehouse, searchQuery, items]);
+  }, [transfers, activeTab, filterWarehouse, searchQuery, itemsMap, warehousesMap]);
 
   const handleOpenNew = () => {
     setEditingTransfer(null);
@@ -405,16 +402,25 @@ export const TransfersView: React.FC = () => {
         </div>
 
         {/* Filter & Search */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
             <input
               type="text"
-              placeholder="جستجو در حواله‌ها، پروژه‌ها، قطعات..."
+              placeholder="جستجوی پیشرفته (سند، پروژه، کالا، کد، انبار، راننده، خودرو)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-3 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:bg-white focus:border-indigo-500"
+              className="w-full pl-8 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-2xs"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+                title="پاک کردن جستجو"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
 
           <select
@@ -427,6 +433,12 @@ export const TransfersView: React.FC = () => {
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
           </select>
+
+          {searchQuery.trim() && (
+            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg">
+              {filteredTransfers.length} نتیجه
+            </span>
+          )}
         </div>
       </div>
 

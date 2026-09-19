@@ -4,8 +4,9 @@ import { Warehouse } from '../types';
 import { 
   Warehouse as WarehouseIcon, Plus, Building2, Layers, AlertCircle, 
   ShieldAlert, CheckCircle2, X, Pencil, Trash2, FolderTree, Tag,
-  ChevronRight, ChevronDown, Network, HelpCircle
+  ChevronRight, ChevronDown, Network, HelpCircle, Search
 } from 'lucide-react';
+import { matchesWarehouse, matchesItem } from '../utils/searchEngine';
 
 export const WarehousesView: React.FC = () => {
   const { warehouses, items, inventory, addWarehouse, updateWarehouse, deleteWarehouse, language, t, hasActionPermission } = useApp();
@@ -15,6 +16,8 @@ export const WarehousesView: React.FC = () => {
   const canDelete = hasActionPermission('delete');
   
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('ALL');
+  const [warehouseSearchQuery, setWarehouseSearchQuery] = useState<string>('');
+  const [inventorySearchQuery, setInventorySearchQuery] = useState<string>('');
   const [isAddWhModalOpen, setIsAddWhModalOpen] = useState(false);
   const [editingWh, setEditingWh] = useState<Warehouse | null>(null);
   const [viewMode, setViewMode] = useState<'tree' | 'grid'>('tree');
@@ -210,6 +213,66 @@ export const WarehousesView: React.FC = () => {
     return Object.values(map);
   }, [filteredInventory, warehouses]);
 
+  // Items Map for fast cross-referencing
+  const itemsMap = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+
+  // Contained items map for each warehouse to enable cross-entity search
+  const warehouseContainedItemsMap = useMemo(() => {
+    const map = new Map<string, typeof items>();
+    inventory.forEach(inv => {
+      if (inv.quantity > 0) {
+        const itm = itemsMap.get(inv.itemId);
+        if (itm) {
+          const list = map.get(inv.warehouseId) || [];
+          list.push(itm);
+          map.set(inv.warehouseId, list);
+        }
+      }
+    });
+    return map;
+  }, [inventory, itemsMap]);
+
+  // Matching warehouse IDs based on multi-parameter search (name, code, manager, location, description, or items inside)
+  const matchingWarehouseIds = useMemo(() => {
+    if (!warehouseSearchQuery.trim()) return null;
+    const ids = new Set<string>();
+    warehouses.forEach(wh => {
+      const descendantIds = getDescendantWarehouseIds(wh.id, warehouses);
+      const allItemsInWh: typeof items = [];
+      descendantIds.forEach(dId => {
+        const itemsInSub = warehouseContainedItemsMap.get(dId);
+        if (itemsInSub) allItemsInWh.push(...itemsInSub);
+      });
+      if (matchesWarehouse(wh, warehouseSearchQuery, { itemsInWarehouse: allItemsInWh })) {
+        ids.add(wh.id);
+      }
+    });
+    return ids;
+  }, [warehouses, warehouseSearchQuery, warehouseContainedItemsMap]);
+
+  const filteredWarehouseStats = useMemo(() => {
+    if (!matchingWarehouseIds) return warehouseStats;
+    return warehouseStats.filter(wh => matchingWarehouseIds.has(wh.id));
+  }, [warehouseStats, matchingWarehouseIds]);
+
+  // Inventory items filtered by user query
+  const displayedInventory = useMemo(() => {
+    if (!inventorySearchQuery.trim()) return aggregatedInventory;
+    return aggregatedInventory.filter(inv => {
+      const item = itemsMap.get(inv.itemId);
+      if (!item) return false;
+      return matchesItem(item, inventorySearchQuery, { warehouseNames: inv.warehousesNames });
+    });
+  }, [aggregatedInventory, inventorySearchQuery, itemsMap]);
+
+  // Check if a warehouse node or any of its descendants matches the search
+  const isNodeOrDescendantMatched = (whId: string): boolean => {
+    if (!matchingWarehouseIds) return true;
+    if (matchingWarehouseIds.has(whId)) return true;
+    const children = warehouses.filter(w => w.parentId === whId);
+    return children.some(c => isNodeOrDescendantMatched(c.id));
+  };
+
   // Separate warehouses to root (no parent) and children
   const rootWarehouses = useMemo(() => warehouses.filter(w => !w.parentId), [warehouses]);
 
@@ -223,10 +286,13 @@ export const WarehousesView: React.FC = () => {
 
   // Render a single warehouse tree node recursively
   const renderWarehouseTreeNode = (wh: Warehouse, level: number = 0) => {
+    if (matchingWarehouseIds && !isNodeOrDescendantMatched(wh.id)) {
+      return null;
+    }
     const stats = warehouseStats.find(s => s.id === wh.id);
     const children = warehouses.filter(w => w.parentId === wh.id);
     const hasChildren = children.length > 0;
-    const isCollapsed = collapsedNodes[wh.id] || false;
+    const isCollapsed = warehouseSearchQuery.trim() ? false : (collapsedNodes[wh.id] || false);
     const isSelected = selectedWarehouseId === wh.id;
 
     return (
@@ -377,6 +443,45 @@ export const WarehousesView: React.FC = () => {
         </div>
       </div>
 
+      {/* Advanced Full-Parameter Warehouse Search Bar */}
+      <div className="bg-white border border-slate-200 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+        <div className="flex-1 min-w-[280px] relative">
+          <Search className={`w-4 h-4 absolute ${isFa ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-slate-400`} />
+          <input
+            type="text"
+            value={warehouseSearchQuery}
+            onChange={(e) => setWarehouseSearchQuery(e.target.value)}
+            placeholder={isFa ? 'جستجوی پیشرفته انبارها بر اساس هر پارامتر (نام، کد، مسئول، موقعیت، توضیحات، یا کالای مستقر در آن)...' : 'Advanced multi-parameter search (name, code, manager, location, description, or items contained)...'}
+            className={`w-full ${isFa ? 'pr-10 pl-9' : 'pl-10 pr-9'} py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-2xs`}
+          />
+          {warehouseSearchQuery && (
+            <button
+              onClick={() => setWarehouseSearchQuery('')}
+              className={`absolute ${isFa ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full`}
+              title={isFa ? 'پاک کردن جستجو' : 'Clear search'}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {warehouseSearchQuery.trim() && (
+          <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+            <span>{isFa ? 'نتیجه جستجو:' : 'Matched:'}</span>
+            <span className="font-bold text-indigo-600 font-mono">
+              {filteredWarehouseStats.length}
+            </span>
+            <span>{isFa ? 'انبار / سلول' : 'warehouses'}</span>
+            <button
+              onClick={() => setWarehouseSearchQuery('')}
+              className="mr-1 text-xs text-rose-600 hover:underline font-bold"
+            >
+              {isFa ? 'نمایش همه' : 'Show All'}
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Main Layout depending on View Mode */}
       {viewMode === 'tree' ? (
         <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-4 shadow-3xs">
@@ -403,7 +508,14 @@ export const WarehousesView: React.FC = () => {
       ) : (
         /* Original Warehouse Cards Grid */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {warehouseStats.map(wh => (
+          {filteredWarehouseStats.length === 0 ? (
+            <div className="col-span-full p-8 text-center bg-white border border-dashed border-slate-300 rounded-2xl text-slate-400 text-xs">
+              {warehouseSearchQuery.trim()
+                ? (isFa ? `هیچ انباری مطابق با «${warehouseSearchQuery}» یافت نشد.` : 'No warehouses matched your search.')
+                : (isFa ? 'هیچ انباری تعریف نشده است.' : 'No warehouses defined yet.')}
+            </div>
+          ) : (
+            filteredWarehouseStats.map(wh => (
             <div
               key={wh.id}
               onClick={() => setSelectedWarehouseId(wh.id === selectedWarehouseId ? 'ALL' : wh.id)}
@@ -499,9 +611,10 @@ export const WarehousesView: React.FC = () => {
                 <span>{wh.location}</span>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
+    )}
 
       {/* Inventory Table Filtered by Warehouse */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4 animate-fadeIn">
@@ -519,25 +632,48 @@ export const WarehousesView: React.FC = () => {
             </p>
           </div>
 
-          {selectedWarehouseId !== 'ALL' && (
-            <div className="flex flex-wrap items-center gap-4 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
-              <label className="flex items-center gap-1.5 font-bold text-slate-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeChildrenInInventory}
-                  onChange={(e) => setIncludeChildrenInInventory(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 w-3.5 h-3.5"
-                />
-                <span>{isFa ? 'شامل موجودی زیرانبارها و قفسه‌ها' : 'Include sub-warehouses stock'}</span>
-              </label>
-              <button
-                onClick={() => setSelectedWarehouseId('ALL')}
-                className="text-indigo-600 hover:underline font-extrabold"
-              >
-                {isFa ? 'پاک کردن فیلتر' : 'Clear Filter'}
-              </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Inventory Item Search Bar */}
+            <div className="relative min-w-[220px]">
+              <Search className={`w-3.5 h-3.5 absolute ${isFa ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 text-slate-400`} />
+              <input
+                type="text"
+                value={inventorySearchQuery}
+                onChange={(e) => setInventorySearchQuery(e.target.value)}
+                placeholder={isFa ? 'جستجو در کالاهای موجود (کد، نام، بارکد، گروه، انبار)...' : 'Search inventory (code, name, barcode, group)...'}
+                className={`w-full ${isFa ? 'pr-8 pl-8' : 'pl-8 pr-8'} py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 transition-all shadow-2xs`}
+              />
+              {inventorySearchQuery && (
+                <button
+                  onClick={() => setInventorySearchQuery('')}
+                  className={`absolute ${isFa ? 'left-2.5' : 'right-2.5'} top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full`}
+                  title={isFa ? 'پاک کردن جستجو' : 'Clear search'}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
-          )}
+
+            {selectedWarehouseId !== 'ALL' && (
+              <div className="flex flex-wrap items-center gap-4 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
+                <label className="flex items-center gap-1.5 font-bold text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={includeChildrenInInventory}
+                    onChange={(e) => setIncludeChildrenInInventory(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 w-3.5 h-3.5"
+                  />
+                  <span>{isFa ? 'شامل موجودی زیرانبارها و قفسه‌ها' : 'Include sub-warehouses stock'}</span>
+                </label>
+                <button
+                  onClick={() => setSelectedWarehouseId('ALL')}
+                  className="text-indigo-600 hover:underline font-extrabold"
+                >
+                  {isFa ? 'پاک کردن فیلتر' : 'Clear Filter'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -556,14 +692,16 @@ export const WarehousesView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {aggregatedInventory.length === 0 ? (
+              {displayedInventory.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="p-8 text-center text-slate-400">
-                    {isFa ? 'هیچ کالایی در انبار انتخاب شده یافت نشد.' : 'No stock found in selected warehouse.'}
+                    {inventorySearchQuery.trim()
+                      ? (isFa ? `هیچ کالایی مطابق با عبارت «${inventorySearchQuery}» در انبار یافت نشد.` : 'No items matched your search.')
+                      : (isFa ? 'هیچ کالایی در انبار انتخاب شده یافت نشد.' : 'No stock found in selected warehouse.')}
                   </td>
                 </tr>
               ) : (
-                aggregatedInventory.map((inv, idx) => {
+                displayedInventory.map((inv, idx) => {
                   const item = items.find(i => i.id === inv.itemId);
                   if (!item) return null;
 
