@@ -5,7 +5,7 @@ import {
   ShieldCheck, AlertCircle, Globe, CheckCircle2, Shield,
   Smartphone, Database, LockKeyhole
 } from 'lucide-react';
-import { getAccountLockoutStatus } from '../utils/security';
+import { getAccountLockoutStatus, normalizeUsername } from '../utils/security';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
 
 export const LoginView: React.FC = () => {
@@ -25,7 +25,7 @@ export const LoginView: React.FC = () => {
       setLockoutTimer(0);
       return;
     }
-    const status = getAccountLockoutStatus(username);
+    const status = getAccountLockoutStatus(normalizeUsername(username));
     if (status.isLocked) {
       setLockoutTimer(status.remainingSeconds);
     } else {
@@ -76,7 +76,7 @@ export const LoginView: React.FC = () => {
       setLoading(false);
       if (!res.success) {
         setErrorMessage(res.message);
-        const status = getAccountLockoutStatus(username);
+        const status = getAccountLockoutStatus(normalizeUsername(username));
         if (status.isLocked) {
           setLockoutTimer(status.remainingSeconds);
         }

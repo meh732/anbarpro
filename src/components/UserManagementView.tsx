@@ -200,13 +200,17 @@ export const UserManagementView: React.FC = () => {
       ? ['*'] 
       : selectedTabs;
 
+    const cleanUsername = username.trim();
+    const cleanFullName = fullName.trim();
+    const cleanPass = password.trim();
+
     if (editingUserId) {
       const updatePayload: Partial<User> = {
-        fullName,
-        username,
+        fullName: cleanFullName,
+        username: cleanUsername,
         role,
-        department,
-        email,
+        department: department.trim(),
+        email: email.trim(),
         isActive,
         allowedTabs: allowed,
         canAdd: userCanAdd,
@@ -215,18 +219,18 @@ export const UserManagementView: React.FC = () => {
         canExport: userCanExport,
         canViewPrices: userCanViewPrices
       };
-      if (password.trim().length > 0) {
-        updatePayload.password = password.trim();
+      if (cleanPass.length > 0) {
+        updatePayload.password = cleanPass;
       }
       updateUser(editingUserId, updatePayload);
     } else {
       addUser({
-        fullName,
-        username,
-        password: password.trim() || '123456',
+        fullName: cleanFullName,
+        username: cleanUsername,
+        password: cleanPass || '123456',
         role,
-        department,
-        email,
+        department: department.trim(),
+        email: email.trim(),
         isActive,
         allowedTabs: allowed,
         canAdd: userCanAdd,

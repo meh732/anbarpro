@@ -19,7 +19,8 @@ import {
   ACTIVE_SECURITY_SHIELDS,
   getAccountLockoutStatus,
   recordFailedLogin,
-  recordSuccessfulLogin
+  recordSuccessfulLogin,
+  normalizeUsername
 } from './src/utils/security.ts';
 
 const DEFAULT_MESSENGER_CONFIG: MessengerBackupConfig = {
@@ -243,7 +244,7 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'نام کاربری و رمز عبور الزامی است.' });
       }
 
-      const cleanUser = String(username).trim().toLowerCase();
+      const cleanUser = normalizeUsername(username);
       
       // Check account lockout
       const lockout = getAccountLockoutStatus(cleanUser);
@@ -258,7 +259,7 @@ async function startServer() {
 
       const state = serverStore.getState();
       const currentUsers = state.users || [];
-      const user = currentUsers.find(u => u.username?.toLowerCase() === cleanUser);
+      const user = currentUsers.find(u => normalizeUsername(u.username) === cleanUser);
 
       if (!user) {
         const lockRes = recordFailedLogin(cleanUser);

@@ -11,7 +11,8 @@ import { InitialStockParsedRow } from '../utils/excelUtils';
 import { calculateAllProjectStageTargets, applySmartTargetsToProjectSteps } from '../utils/smartBOMCalculator';
 import { 
   verifyPassword, hashPassword, ensureUsersPasswordsHashed, 
-  getAccountLockoutStatus, recordFailedLogin, recordSuccessfulLogin 
+  getAccountLockoutStatus, recordFailedLogin, recordSuccessfulLogin,
+  normalizeUsername, toEnglishDigits 
 } from '../utils/security';
 import { 
   soundEngine, requestBrowserNotificationPermission, sendNativeBrowserNotification, 
@@ -1233,7 +1234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Auth & User Management Logic
   const login = (username: string, pass: string): { success: boolean; message: string } => {
-    const cleanUser = username.trim().toLowerCase();
+    const cleanUser = normalizeUsername(username);
     
     // Check Brute-Force lockout
     const lockout = getAccountLockoutStatus(cleanUser);
@@ -1244,7 +1245,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    const found = users.find(u => u.username.toLowerCase() === cleanUser);
+    // Lookup user in state, fallback to localStorage if needed
+    let found = users.find(u => normalizeUsername(u.username) === cleanUser);
+    if (!found) {
+      try {
+        const rawUsers = localStorage.getItem(`${STORAGE_KEY}_users`);
+        if (rawUsers) {
+          const parsed = JSON.parse(rawUsers);
+          if (Array.isArray(parsed)) {
+            const localUser = parsed.find((u: User) => normalizeUsername(u.username) === cleanUser);
+            if (localUser) {
+              found = localUser;
+              setUsers(parsed);
+            }
+          }
+        }
+      } catch {}
+    }
+
     if (!found) {
       const lockRes = recordFailedLogin(cleanUser);
       if (lockRes.isNowLocked) {
@@ -1260,7 +1278,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'حساب کاربری شما غیرفعال شده است. لطفاً با مدیر سیستم تماس بگیرید.' };
     }
 
-    // Verify Password using SHA-256 Salted comparison
+    // Verify Password using SHA-256 Salted comparison with UTF-8 and Persian/English number tolerance
     const isPassValid = verifyPassword(pass, found.password, found.username);
     if (!isPassValid) {
       const lockRes = recordFailedLogin(cleanUser);
@@ -1279,7 +1297,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Login successful: reset failed attempt counter
     recordSuccessfulLogin(cleanUser);
 
-    // Auto-upgrade legacy password to cryptographic hash if needed
+    // Auto-upgrade legacy password or corrupted hash to cryptographic hash if needed
     const secureHashedPassword = hashPassword(pass, found.username);
     const updatedUserObj: User = {
       ...found,
@@ -1287,7 +1305,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     if (found.password !== secureHashedPassword) {
-      setUsers(prev => prev.map(u => u.id === found.id ? updatedUserObj : u));
+      setUsers(prev => {
+        const next = prev.map(u => u.id === found.id ? updatedUserObj : u);
+        pushStateToServer({ users: next });
+        return next;
+      });
     }
 
     setCurrentUser(updatedUserObj);
@@ -1303,41 +1325,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addUser = (userData: Omit<User, 'id'>) => {
     const rawPass = userData.password || '123456';
-    const securedPass = hashPassword(rawPass, userData.username);
+    const trimmedUsername = userData.username.trim();
+    const securedPass = hashPassword(rawPass, trimmedUsername);
 
     const newUser: User = {
       ...userData,
+      username: trimmedUsername,
       id: `usr-${Date.now()}`,
       password: securedPass,
       isActive: userData.isActive ?? true,
       allowedTabs: userData.allowedTabs || ['dashboard']
     };
-    setUsers(prev => [...prev, newUser]);
+    setUsers(prev => {
+      const nextUsers = [...prev, newUser];
+      pushStateToServer({ users: nextUsers });
+      return nextUsers;
+    });
     addAudit('تعریف کاربر جدید', 'کاربر', newUser.id, `ایجاد کاربر ${newUser.fullName} با نقش ${newUser.role} (رمز عبور رمزنگاری شد)`);
   };
 
   const updateUser = (id: string, updated: Partial<User>) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id !== id) return u;
-      let finalPassword = u.password;
-      if (updated.password && updated.password !== u.password) {
-        // Hash the new password if it's not already a hash
-        finalPassword = hashPassword(updated.password, (updated.username || u.username));
-      }
-      return {
-        ...u,
-        ...updated,
-        password: finalPassword
-      };
-    }));
+    setUsers(prev => {
+      const nextUsers = prev.map(u => {
+        if (u.id !== id) return u;
+        let finalPassword = u.password;
+        const targetUsername = (updated.username ? updated.username.trim() : u.username);
+        if (updated.password && updated.password !== u.password) {
+          finalPassword = hashPassword(updated.password, targetUsername);
+        }
+        return {
+          ...u,
+          ...updated,
+          username: targetUsername,
+          password: finalPassword
+        };
+      });
+      pushStateToServer({ users: nextUsers });
+      return nextUsers;
+    });
 
     if (currentUser.id === id) {
       setCurrentUser(prev => {
         let finalPassword = prev.password;
+        const targetUsername = (updated.username ? updated.username.trim() : prev.username);
         if (updated.password && updated.password !== prev.password) {
-          finalPassword = hashPassword(updated.password, (updated.username || prev.username));
+          finalPassword = hashPassword(updated.password, targetUsername);
         }
-        return { ...prev, ...updated, password: finalPassword };
+        return { ...prev, ...updated, username: targetUsername, password: finalPassword };
       });
     }
     addAudit('ویرایش کاربر', 'کاربر', id, `بروزرسانی مشخصات کاربر ${updated.fullName || id}`);
@@ -1351,12 +1385,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'رمز عبور فعلی نادرست می‌باشد.' };
     }
 
-    if (!newPass || newPass.length < 4) {
-      return { success: false, message: 'رمز عبور جدید باید حداقل ۴ کاراکتر باشد.' };
+    if (!newPass || newPass.length < 3) {
+      return { success: false, message: 'رمز عبور جدید باید حداقل ۳ کاراکتر باشد.' };
     }
 
     const hashedNew = hashPassword(newPass, target.username);
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: hashedNew } : u));
+    setUsers(prev => {
+      const nextUsers = prev.map(u => u.id === userId ? { ...u, password: hashedNew } : u);
+      pushStateToServer({ users: nextUsers });
+      return nextUsers;
+    });
     
     if (currentUser.id === userId) {
       setCurrentUser(prev => ({ ...prev, password: hashedNew }));
@@ -1370,12 +1408,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = users.find(u => u.id === userId);
     if (!target) return { success: false, message: 'کاربر یافت نشد.' };
 
-    if (!newPass || newPass.length < 4) {
-      return { success: false, message: 'رمز عبور باید حداقل ۴ کاراکتر باشد.' };
+    if (!newPass || newPass.length < 3) {
+      return { success: false, message: 'رمز عبور باید حداقل ۳ کاراکتر باشد.' };
     }
 
     const hashedNew = hashPassword(newPass, target.username);
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: hashedNew } : u));
+    setUsers(prev => {
+      const nextUsers = prev.map(u => u.id === userId ? { ...u, password: hashedNew } : u);
+      pushStateToServer({ users: nextUsers });
+      return nextUsers;
+    });
 
     addAudit('بازنشانی رمز عبور کاربر', 'کاربر', userId, `بازنشانی رمز عبور کاربر ${target.fullName} توسط مدیر سیستم`);
     return { success: true, message: `رمز عبور کاربر ${target.fullName} با موفقیت بازنشانی شد.` };
@@ -1383,7 +1425,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteUser = (id: string) => {
     if (id === 'usr-1') return; // Protect superadmin
-    setUsers(prev => prev.filter(u => u.id !== id));
+    setUsers(prev => {
+      const nextUsers = prev.filter(u => u.id !== id);
+      pushStateToServer({ users: nextUsers });
+      return nextUsers;
+    });
     addAudit('حذف کاربر', 'کاربر', id, `حذف حساب کاربری با شناسه ${id}`);
   };
 

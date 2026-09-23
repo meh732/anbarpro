@@ -10,6 +10,36 @@ import { User } from '../types';
 
 const GLOBAL_SALT = 'anbarmeh_secure_salt_v2026_';
 
+/**
+ * Normalizes Persian and Arabic numbers to standard English digits (0-9)
+ */
+export function toEnglishDigits(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 1776))
+    .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 1632));
+}
+
+/**
+ * Converts English digits (0-9) to standard Persian digits (۰-۹)
+ */
+export function toPersianDigits(str: string): string {
+  if (!str) return '';
+  return str.replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728));
+}
+
+/**
+ * Normalizes usernames: trims, lowercases, standardizes Persian/Arabic chars and digits
+ */
+export function normalizeUsername(u: string | undefined): string {
+  if (!u) return '';
+  return toEnglishDigits(String(u))
+    .trim()
+    .toLowerCase()
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک');
+}
+
 // Simple and robust SHA-256 implementation (works in browser & node without external dependencies)
 export async function sha256(message: string): Promise<string> {
   // Use Web Crypto API if available
@@ -33,7 +63,26 @@ export function sha256Sync(message: string): string {
   return sha256PureJs(message);
 }
 
-function sha256PureJs(ascii: string): string {
+function utf8EncodeBytes(str: string): number[] {
+  const bytes: number[] = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i);
+    if (c < 0x80) {
+      bytes.push(c);
+    } else if (c < 0x800) {
+      bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    } else if (c < 0xd800 || c >= 0xe000) {
+      bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    } else {
+      i++;
+      c = 0x10000 + (((c & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
+      bytes.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 0x3f), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    }
+  }
+  return bytes;
+}
+
+function sha256PureJs(inputStr: string): string {
   function rightRotate(value: number, amount: number) {
     return (value >>> amount) | (value << (32 - amount));
   }
@@ -44,7 +93,10 @@ function sha256PureJs(ascii: string): string {
   let result = '';
 
   const words: number[] = [];
-  const asciiBitLength = ascii.length * 8;
+  const utf8Bytes = typeof TextEncoder !== 'undefined' 
+    ? Array.from(new TextEncoder().encode(inputStr)) 
+    : utf8EncodeBytes(inputStr);
+  const bitLength = utf8Bytes.length * 8;
   
   let hash: number[] = [];
   const k: number[] = [];
@@ -61,15 +113,16 @@ function sha256PureJs(ascii: string): string {
     }
   }
   
-  ascii += '\x80';
-  while ((ascii.length % 64) - 56 !== 0) ascii += '\x00';
-  for (i = 0; i < ascii.length; i++) {
-    j = ascii.charCodeAt(i);
-    if (j >> 8) return ''; // ASCII check
-    words[i >> 2] |= j << ((3 - i % 4) * 8);
+  utf8Bytes.push(0x80);
+  while ((utf8Bytes.length % 64) !== 56) {
+    utf8Bytes.push(0);
   }
-  words[words.length] = ((asciiBitLength / maxWord) | 0);
-  words[words.length] = (asciiBitLength);
+
+  for (i = 0; i < utf8Bytes.length; i++) {
+    words[i >> 2] |= utf8Bytes[i] << ((3 - i % 4) * 8);
+  }
+  words[words.length] = ((bitLength / maxWord) | 0);
+  words[words.length] = (bitLength);
   
   for (j = 0; j < words.length;) {
     const w = words.slice(j, j += 16);
@@ -103,12 +156,15 @@ function sha256PureJs(ascii: string): string {
 }
 
 /**
- * Creates a salted SHA-256 hash of a password
+ * Creates a salted SHA-256 hash of a password.
+ * Accepts any plain password (including Persian numbers/characters).
  */
 export function hashPassword(plainPassword: string, usernameSalt = ''): string {
   if (!plainPassword) return '';
-  const salt = `${GLOBAL_SALT}${usernameSalt.toLowerCase()}`;
-  return `sha256$${sha256Sync(plainPassword + ':' + salt)}`;
+  const cleanPass = plainPassword.trim();
+  const cleanSalt = normalizeUsername(usernameSalt);
+  const salt = `${GLOBAL_SALT}${cleanSalt}`;
+  return `sha256$${sha256Sync(cleanPass + ':' + salt)}`;
 }
 
 /**
@@ -120,20 +176,74 @@ export function isPasswordHashed(storedPass: string | undefined): boolean {
 }
 
 /**
- * Verifies a plain password against the stored credential (whether hashed or legacy plain text)
+ * Verifies a plain password against the stored credential.
+ * Intelligently handles:
+ * - Persian numbers (۱۲۳) vs English digits (123)
+ * - Trailing/leading whitespace
+ * - Corrupted previous empty hashes ("sha256$")
+ * - Plaintext legacy passwords
  */
 export function verifyPassword(plainPassword: string, storedPasswordOrHash: string | undefined, username = ''): boolean {
   if (!storedPasswordOrHash) return false;
   if (!plainPassword) return false;
 
-  // Case 1: Password is stored as a secure SHA-256 hash
-  if (isPasswordHashed(storedPasswordOrHash)) {
-    const computedHash = hashPassword(plainPassword, username);
-    return computedHash === storedPasswordOrHash;
+  const rawPass = plainPassword.trim();
+  const normalizedDigitsPass = toEnglishDigits(rawPass);
+  const persianDigitsPass = toPersianDigits(rawPass);
+  const cleanUsername = normalizeUsername(username);
+
+  // Recovery: If previous bug stored an incomplete "sha256$" or empty string
+  if (storedPasswordOrHash === 'sha256$' || storedPasswordOrHash === 'sha256' || storedPasswordOrHash === '') {
+    return rawPass.length > 0;
   }
 
-  // Case 2: Legacy unhashed password (for automatic upgrade on login)
-  return plainPassword === storedPasswordOrHash;
+  // Case 1: Stored as SHA-256 hash
+  if (isPasswordHashed(storedPasswordOrHash)) {
+    // Check with normalized username salt
+    const h1 = hashPassword(rawPass, cleanUsername);
+    if (h1 === storedPasswordOrHash) return true;
+
+    // Check with English-digit normalized password
+    if (normalizedDigitsPass !== rawPass) {
+      const h2 = hashPassword(normalizedDigitsPass, cleanUsername);
+      if (h2 === storedPasswordOrHash) return true;
+    }
+
+    // Check with Persian-digit normalized password
+    if (persianDigitsPass !== rawPass) {
+      const hPersian = hashPassword(persianDigitsPass, cleanUsername);
+      if (hPersian === storedPasswordOrHash) return true;
+    }
+
+    // Fallback: check with raw un-normalized username in case salt was computed with raw username
+    if (username && username !== cleanUsername) {
+      const h3 = hashPassword(rawPass, username);
+      if (h3 === storedPasswordOrHash) return true;
+
+      const h4 = hashPassword(normalizedDigitsPass, username);
+      if (h4 === storedPasswordOrHash) return true;
+
+      const h5 = hashPassword(persianDigitsPass, username);
+      if (h5 === storedPasswordOrHash) return true;
+    }
+
+    return false;
+  }
+
+  // Case 2: Legacy unhashed password (e.g. '123' or '123456')
+  const storedTrimmed = storedPasswordOrHash.trim();
+  const storedNormalized = toEnglishDigits(storedTrimmed);
+  const storedPersian = toPersianDigits(storedTrimmed);
+
+  if (rawPass === storedTrimmed) return true;
+  if (normalizedDigitsPass === storedTrimmed) return true;
+  if (persianDigitsPass === storedTrimmed) return true;
+  if (rawPass === storedNormalized) return true;
+  if (normalizedDigitsPass === storedNormalized) return true;
+  if (rawPass === storedPersian) return true;
+  if (persianDigitsPass === storedPersian) return true;
+
+  return false;
 }
 
 /**
@@ -141,7 +251,7 @@ export function verifyPassword(plainPassword: string, storedPasswordOrHash: stri
  */
 export function ensureUsersPasswordsHashed(usersList: User[]): User[] {
   return usersList.map(u => {
-    if (!u.password) {
+    if (!u.password || u.password === 'sha256$' || u.password === 'sha256') {
       return { ...u, password: hashPassword('123456', u.username) };
     }
     if (!isPasswordHashed(u.password)) {
