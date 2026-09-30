@@ -327,7 +327,7 @@ class ServerStoreManager {
 
     const tempPath = `${this.filePath}.tmp`;
     try {
-      fs.writeFileSync(tempPath, JSON.stringify(stateToSave, null, 2), 'utf-8');
+      fs.writeFileSync(tempPath, JSON.stringify(stateToSave), 'utf-8');
       fs.renameSync(tempPath, this.filePath);
       console.log(`[ServerStore] Central database saved to disk. Version: ${stateToSave.version} (Items: ${stateToSave.items?.length || 0})`);
 
@@ -362,14 +362,14 @@ class ServerStoreManager {
     };
   }
 
-  public onStateChange(listener: (state: ServerDatabaseState) => void) {
+  public onStateChange(listener: (state: ServerDatabaseState, partialUpdates?: Partial<ServerDatabaseState>, sourceClientId?: string) => void) {
     this.emitter.on('state_change', listener);
     return () => {
       this.emitter.off('state_change', listener);
     };
   }
 
-  public updateState(partial: Partial<ServerDatabaseState>): ServerDatabaseState {
+  public updateState(partial: Partial<ServerDatabaseState>, sourceClientId?: string): ServerDatabaseState {
     const newVersion = Date.now();
     this.state = {
       ...this.state,
@@ -378,8 +378,8 @@ class ServerStoreManager {
       lastUpdated: new Date().toISOString(),
     };
 
-    // Broadcast instant state change to all SSE subscribers
-    this.emitter.emit('state_change', this.state);
+    // Broadcast instant state change to all SSE subscribers with delta & sourceClientId
+    this.emitter.emit('state_change', this.state, partial, sourceClientId);
 
     // Debounced sync to disk
     if (this.writeTimer) {
@@ -387,7 +387,7 @@ class ServerStoreManager {
     }
     this.writeTimer = setTimeout(() => {
       this.saveToDiskSync(this.state);
-    }, 200);
+    }, 250);
 
     return this.state;
   }

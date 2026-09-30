@@ -724,8 +724,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const serverVersionRef = useRef<number>(0);
   const isRemoteUpdatingRef = useRef<boolean>(false);
+  const hasLocalPendingChangesRef = useRef<boolean>(false);
+  const isPushingToServerRef = useRef<boolean>(false);
   const isInitialServerSyncDoneRef = useRef<boolean>(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const clientIdRef = useRef<string>(`client-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
 
   function loadStorage<T>(key: string, fallback: T): T {
     try {
@@ -739,7 +742,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }
 
-  // Save changes to localStorage (for instant offline cache)
+  // Save changes to localStorage (Debounced to keep the browser UI thread 100% fluid & responsive)
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
   }, [users]);
@@ -750,27 +753,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isAuthenticated, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_items`, JSON.stringify(items));
-    localStorage.setItem(`${STORAGE_KEY}_itemGroups`, JSON.stringify(itemGroups));
-    localStorage.setItem(`${STORAGE_KEY}_warehouses`, JSON.stringify(warehouses));
-    localStorage.setItem(`${STORAGE_KEY}_contractors`, JSON.stringify(contractors));
-    localStorage.setItem(`${STORAGE_KEY}_contractorContracts`, JSON.stringify(contractorContracts));
-    localStorage.setItem(`${STORAGE_KEY}_contractorTransactions`, JSON.stringify(contractorTransactions));
-    localStorage.setItem(`${STORAGE_KEY}_inventory`, JSON.stringify(inventory));
-    localStorage.setItem(`${STORAGE_KEY}_boms`, JSON.stringify(boms));
-    localStorage.setItem(`${STORAGE_KEY}_projects`, JSON.stringify(projects));
-    localStorage.setItem(`${STORAGE_KEY}_operators`, JSON.stringify(operators));
-    localStorage.setItem(`${STORAGE_KEY}_stockCountings`, JSON.stringify(stockCountings));
-    localStorage.setItem(`${STORAGE_KEY}_stockInDocs`, JSON.stringify(stockInDocs));
-    localStorage.setItem(`${STORAGE_KEY}_stockOutDocs`, JSON.stringify(stockOutDocs));
-    localStorage.setItem(`${STORAGE_KEY}_transfers`, JSON.stringify(transfers));
-    localStorage.setItem(`${STORAGE_KEY}_purchaseRequests`, JSON.stringify(purchaseRequests));
-    localStorage.setItem(`${STORAGE_KEY}_productionLogs`, JSON.stringify(productionLogs));
-    localStorage.setItem(`${STORAGE_KEY}_materialHandovers`, JSON.stringify(materialHandovers));
-    localStorage.setItem(`${STORAGE_KEY}_notifications`, JSON.stringify(notifications));
-    localStorage.setItem(`${STORAGE_KEY}_messages`, JSON.stringify(messages));
-    localStorage.setItem(`${STORAGE_KEY}_traceabilityEvents`, JSON.stringify(traceabilityEvents));
-    localStorage.setItem(`${STORAGE_KEY}_auditLogs`, JSON.stringify(auditLogs));
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_items`, JSON.stringify(items));
+        localStorage.setItem(`${STORAGE_KEY}_itemGroups`, JSON.stringify(itemGroups));
+        localStorage.setItem(`${STORAGE_KEY}_warehouses`, JSON.stringify(warehouses));
+        localStorage.setItem(`${STORAGE_KEY}_contractors`, JSON.stringify(contractors));
+        localStorage.setItem(`${STORAGE_KEY}_contractorContracts`, JSON.stringify(contractorContracts));
+        localStorage.setItem(`${STORAGE_KEY}_contractorTransactions`, JSON.stringify(contractorTransactions));
+        localStorage.setItem(`${STORAGE_KEY}_inventory`, JSON.stringify(inventory));
+        localStorage.setItem(`${STORAGE_KEY}_boms`, JSON.stringify(boms));
+        localStorage.setItem(`${STORAGE_KEY}_projects`, JSON.stringify(projects));
+        localStorage.setItem(`${STORAGE_KEY}_operators`, JSON.stringify(operators));
+        localStorage.setItem(`${STORAGE_KEY}_stockCountings`, JSON.stringify(stockCountings));
+        localStorage.setItem(`${STORAGE_KEY}_stockInDocs`, JSON.stringify(stockInDocs));
+        localStorage.setItem(`${STORAGE_KEY}_stockOutDocs`, JSON.stringify(stockOutDocs));
+        localStorage.setItem(`${STORAGE_KEY}_transfers`, JSON.stringify(transfers));
+        localStorage.setItem(`${STORAGE_KEY}_purchaseRequests`, JSON.stringify(purchaseRequests));
+        localStorage.setItem(`${STORAGE_KEY}_productionLogs`, JSON.stringify(productionLogs));
+        localStorage.setItem(`${STORAGE_KEY}_materialHandovers`, JSON.stringify(materialHandovers));
+        localStorage.setItem(`${STORAGE_KEY}_notifications`, JSON.stringify(notifications));
+        localStorage.setItem(`${STORAGE_KEY}_messages`, JSON.stringify(messages));
+        localStorage.setItem(`${STORAGE_KEY}_traceabilityEvents`, JSON.stringify(traceabilityEvents));
+        localStorage.setItem(`${STORAGE_KEY}_auditLogs`, JSON.stringify(auditLogs));
+      } catch (e) {
+        console.warn('[Cache] LocalStorage non-blocking write error:', e);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
   }, [
     items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
@@ -883,14 +894,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setServerVersion(version);
     setServerSyncStatus('connected');
     setLastSyncTime(new Date().toLocaleTimeString('fa-IR'));
+    hasLocalPendingChangesRef.current = false;
 
     setTimeout(() => {
       isRemoteUpdatingRef.current = false;
-    }, 150);
+      hasLocalPendingChangesRef.current = false;
+    }, 400);
   }, []);
 
   const pushStateToServer = useCallback(async (customPayload?: any) => {
-    if (!isInitialServerSyncDoneRef.current || isRemoteUpdatingRef.current) return;
+    if (!isInitialServerSyncDoneRef.current || isRemoteUpdatingRef.current || isPushingToServerRef.current) return;
+    isPushingToServerRef.current = true;
     try {
       const payload = customPayload || {
         items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects,
@@ -906,6 +920,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientVersion: serverVersionRef.current,
+          clientId: clientIdRef.current,
           updates: payload
         })
       });
@@ -923,6 +938,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch {
       setServerSyncStatus('offline');
+    } finally {
+      isPushingToServerRef.current = false;
+      hasLocalPendingChangesRef.current = false;
     }
   }, [
     items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects,
@@ -1191,9 +1209,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!isMounted || !event.data) return;
           try {
             const payload = JSON.parse(event.data);
-            if (payload.type === 'sync' && payload.data && payload.version) {
+            if (payload.type === 'sync' && payload.version) {
+              // 1. If this sync event was triggered by THIS EXACT client tab, acknowledge version and skip redundant re-render!
+              if (payload.sourceClientId && payload.sourceClientId === clientIdRef.current) {
+                serverVersionRef.current = payload.version;
+                setServerVersion(payload.version);
+                setServerSyncStatus('connected');
+                setLastSyncTime(new Date().toLocaleTimeString('fa-IR'));
+                return;
+              }
+
+              // 2. Incoming update from another user/device:
               if (payload.version > serverVersionRef.current) {
-                applyServerState(payload.data, payload.version);
+                if (payload.updates && typeof payload.updates === 'object') {
+                  applyServerState(payload.updates, payload.version);
+                } else if (payload.data) {
+                  applyServerState(payload.data, payload.version);
+                }
               }
             } else if (payload.type === 'init' && payload.version) {
               if (payload.version > serverVersionRef.current && isInitialServerSyncDoneRef.current) {
@@ -1233,9 +1265,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     connectSSE();
 
-    // Background safety poll interval (fallback if SSE drops)
+    // Background safety poll interval (fallback only when real-time SSE stream is offline)
     const pollInterval = setInterval(async () => {
       if (!isMounted || !isInitialServerSyncDoneRef.current) return;
+      // When real-time SSE stream is active and healthy (< 30ms latency), no need to waste bandwidth polling
+      if (sseSource && sseSource.readyState === EventSource.OPEN) return;
+
       try {
         const verRes = await fetch(getApiUrl('/api/data/version'));
         if (verRes.ok) {
@@ -1259,7 +1294,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setServerSyncStatus('offline');
         setIsRealtimeLive(false);
       }
-    }, 4000);
+    }, 10000);
 
     const onFocus = () => {
       if (!isInitialServerSyncDoneRef.current) return;
@@ -1283,13 +1318,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [applyServerState, serverUrl]);
 
-  // Fast auto-sync to server on any state mutation (50ms debounce)
+  // Ultra-fast auto-sync to server on any local state mutation (200ms debounce ensures immediate sync without echo ping-pong)
   useEffect(() => {
     if (!isInitialServerSyncDoneRef.current || isRemoteUpdatingRef.current) return;
+    hasLocalPendingChangesRef.current = true;
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => {
-      pushStateToServer();
-    }, 50);
+      if (hasLocalPendingChangesRef.current && !isRemoteUpdatingRef.current) {
+        pushStateToServer();
+      }
+    }, 200);
   }, [
     items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 

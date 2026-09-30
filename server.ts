@@ -455,13 +455,15 @@ async function startServer() {
   }, 15000);
 
   // Broadcast state changes in real time (< 30ms) to all connected clients
-  serverStore.onStateChange((newState) => {
+  serverStore.onStateChange((newState, partialUpdates, sourceClientId) => {
     if (sseClients.size === 0) return;
     const payload = JSON.stringify({
       type: 'sync',
       version: newState.version,
       lastUpdated: newState.lastUpdated,
-      data: newState
+      sourceClientId: sourceClientId || null,
+      updates: partialUpdates || null,
+      data: partialUpdates ? undefined : newState
     });
     for (const client of sseClients) {
       try {
@@ -475,18 +477,17 @@ async function startServer() {
   // 3. POST /api/sync - Real-time synchronization & delta merge from client
   app.post('/api/sync', (req, res) => {
     try {
-      const { clientVersion, updates } = req.body;
+      const { clientVersion, updates, clientId } = req.body;
       const currentState = serverStore.getState();
 
       if (updates && typeof updates === 'object' && Object.keys(updates).length > 0) {
-        // Apply client updates to server store
-        const updatedState = serverStore.updateState(updates);
+        // Apply client updates to server store with client origin tracking
+        const updatedState = serverStore.updateState(updates, clientId);
         return res.json({
           success: true,
           synced: true,
           serverVersion: updatedState.version,
           lastUpdated: updatedState.lastUpdated,
-          data: updatedState,
         });
       }
 
