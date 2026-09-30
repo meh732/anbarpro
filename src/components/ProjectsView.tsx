@@ -8,7 +8,7 @@ import {
   Boxes, Warehouse, Check, FileCheck, ShieldAlert, Sparkles,
   PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3,
   Pencil, Edit, Eye, Calculator, Zap, Home, Archive, LayoutGrid, List,
-  SlidersHorizontal, CheckSquare, Package, TrendingUp, FileSpreadsheet
+  SlidersHorizontal, CheckSquare, Package, TrendingUp, FileSpreadsheet, Copy
 } from 'lucide-react';
 import { SmartStageScalingModal } from './SmartStageScalingModal';
 import { ProjectBOMEditor, BOMRowItem, StepBOMConfig } from './ProjectBOMEditor';
@@ -992,7 +992,7 @@ const LinearStepCard: React.FC<{
 export const ProjectsView: React.FC = () => {
   const { 
     projects, items, boms, warehouses, inventory, contractors, 
-    addProject, updateProject, deleteProject, updateProjectStep, 
+    addProject, updateProject, deleteProject, duplicateProject, updateProjectStep, 
     updateProjectStepDetails, addProjectSubStep, deleteProjectStep, 
     createTransfer, language, hasActionPermission, liteMode,
     addBOM, updateBOM
@@ -1065,6 +1065,54 @@ export const ProjectsView: React.FC = () => {
   const [handoverModalData, setHandoverModalData] = useState<{ project: Project; step: ProjectStep } | null>(null);
   const [outputReceiptModalData, setOutputReceiptModalData] = useState<{ project: Project; step: ProjectStep } | null>(null);
   const [progressReportProject, setProgressReportProject] = useState<Project | null>(null);
+
+  // Duplicate Project Modal State
+  const [duplicateModalProject, setDuplicateModalProject] = useState<Project | null>(null);
+  const [dupName, setDupName] = useState('');
+  const [dupCode, setDupCode] = useState('');
+  const [dupClient, setDupClient] = useState('');
+  const [dupTargetQty, setDupTargetQty] = useState(100);
+  const [dupCopySteps, setDupCopySteps] = useState(true);
+
+  // In-app Toast Banner for user notifications
+  const [projectToast, setProjectToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const showProjectToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setProjectToast({ type, message });
+    setTimeout(() => setProjectToast(null), 5000);
+  };
+
+  // Optional BOM catalog persistence flags (false by default to prevent arbitrary BOM registration)
+  const [saveToBomCatalog, setSaveToBomCatalog] = useState(false);
+  const [editSaveToBomCatalog, setEditSaveToBomCatalog] = useState(false);
+
+  const handleOpenDuplicate = (proj: Project, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setDuplicateModalProject(proj);
+    setDupName(`${proj.name} (نسخه کپی)`);
+    setDupCode(`${proj.code}-COPY`);
+    setDupClient(proj.client || '');
+    setDupTargetQty(proj.targetQuantity || 100);
+    setDupCopySteps(true);
+  };
+
+  const handleExecuteDuplicate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!duplicateModalProject) return;
+    try {
+      const created = duplicateProject(duplicateModalProject.id, {
+        name: dupName,
+        code: dupCode,
+        client: dupClient,
+        targetQuantity: Number(dupTargetQty) || 100,
+        copySteps: dupCopySteps
+      });
+      setExpandedProjectId(created.id);
+      setDuplicateModalProject(null);
+      showProjectToast(`پروژه "${created.name}" با کد "${created.code}" با موفقیت تکثیر و در بالای لیست قرار گرفت.`, 'success');
+    } catch (err: any) {
+      showProjectToast(err.message || 'خطا در تکثیر پروژه', 'error');
+    }
+  };
 
   const handleOpenHandover = (step: ProjectStep, project?: Project) => {
     const proj = project || projects.find(p => p.id === expandedProjectId) || projects[0];
@@ -1316,6 +1364,7 @@ export const ProjectsView: React.FC = () => {
 
     setCustomSteps(initialSteps);
     initializeBOMRowsForAdd(finItem, initialSteps);
+    setSaveToBomCatalog(false);
     setIsModalOpen(true);
   };
 
@@ -1335,6 +1384,7 @@ export const ProjectsView: React.FC = () => {
     setEditProjTargetItemId(proj.targetFinishedItemId || '');
     setEditProjScrapPercent(proj.scrapAllowancePercent || 0);
 
+    setEditSaveToBomCatalog(false);
     initializeBOMRowsForEdit(proj);
   };
 
@@ -1389,8 +1439,8 @@ export const ProjectsView: React.FC = () => {
 
     const itemsToSave = allStepItems.length > 0 ? allStepItems : editBomRows;
 
-    // Persist BOM changes if any rows are configured
-    if (itemsToSave.length > 0 && editProjTargetItemId) {
+    // Persist BOM changes ONLY if user explicitly checked the catalog checkbox
+    if (editSaveToBomCatalog && itemsToSave.length > 0 && editProjTargetItemId) {
       const matched = boms.find(b => b.finishedItemId === editProjTargetItemId && b.isActive);
       const cleanedItems = itemsToSave.map(r => ({
         itemId: r.itemId,
@@ -1500,7 +1550,7 @@ export const ProjectsView: React.FC = () => {
 
   const handleRemoveStepRow = (id: string) => {
     if (customSteps.length <= 1) {
-      alert('پروژه باید حداقل دارای ۱ مرحله باشد.');
+      showProjectToast('پروژه باید حداقل دارای ۱ مرحله باشد.', 'error');
       return;
     }
     setCustomSteps(prev => {
@@ -1586,7 +1636,7 @@ export const ProjectsView: React.FC = () => {
     if (!name || !client) return;
 
     if (customSteps.length === 0) {
-      alert('لطفا حداقل یک مرحله برای پروژه تعریف کنید.');
+      showProjectToast('لطفا حداقل یک مرحله برای پروژه تعریف کنید.', 'error');
       return;
     }
 
@@ -1652,8 +1702,8 @@ export const ProjectsView: React.FC = () => {
 
     const itemsToSave = allStepItems.length > 0 ? allStepItems : bomRows;
 
-    // Persist BOM definition directly if user added/customized BOM rows
-    if (itemsToSave.length > 0 && targetFinishedItemId) {
+    // Persist BOM definition ONLY if user explicitly checked the catalog checkbox
+    if (saveToBomCatalog && itemsToSave.length > 0 && targetFinishedItemId) {
       const matched = boms.find(b => b.finishedItemId === targetFinishedItemId && b.isActive);
       const cleanedItems = itemsToSave.map(r => ({
         itemId: r.itemId,
@@ -1679,7 +1729,7 @@ export const ProjectsView: React.FC = () => {
       }
     }
 
-    alert(`پروژه جدید با ${stepsToSave.length} مرحله سفارشی و فرمول ساخت (BOM) مرحله‌به‌مرحله با موفقیت تعریف گردید.`);
+    showProjectToast(`پروژه جدید با ${stepsToSave.length} مرحله سفارشی و فرمول ساخت (BOM) مرحله‌به‌مرحله با موفقیت تعریف گردید.`, 'success');
     setIsModalOpen(false);
   };
 
@@ -1759,7 +1809,7 @@ export const ProjectsView: React.FC = () => {
 
   const handleAutoIssueMaterialTransfer = (proj: Project, materials: RequiredMaterialItem[]) => {
     if (materials.length === 0) {
-      alert('هیچ فرمول ساخت (BOM) فعال برای این محصول ثبت نشده است.');
+      showProjectToast('هیچ فرمول ساخت (BOM) فعال برای این محصول ثبت نشده است.', 'error');
       return;
     }
 
@@ -1771,7 +1821,7 @@ export const ProjectsView: React.FC = () => {
       }));
 
     if (itemsToTransfer.length === 0) {
-      alert('هیچ قطعه‌ای برای تحویل موجود نیست.');
+      showProjectToast('هیچ قطعه‌ای برای تحویل موجود نیست.', 'error');
       return;
     }
 
@@ -1796,7 +1846,7 @@ export const ProjectsView: React.FC = () => {
       updateProjectStep(proj.id, firstStep.id, 'Completed');
     }
 
-    alert(`حواله خروج انبار مرکزی و تخصیص به قفسه پروژه با موفقیت صادر گردید. مرحله ۱ پروژه (تامین مواد اولیه) نیز به وضعیت "تکمیل شد" ارتقا یافت.`);
+    showProjectToast(`حواله خروج انبار مرکزی و تخصیص به قفسه پروژه با موفقیت صادر گردید. مرحله ۱ پروژه (تامین مواد اولیه) نیز به وضعیت "تکمیل شد" ارتقا یافت.`, 'success');
     setBomExplosionProject(null);
   };
 
@@ -1823,6 +1873,31 @@ export const ProjectsView: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fadeIn">
+      {/* Toast Alert Banner */}
+      {projectToast && (
+        <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-md transition-all ${
+          projectToast.type === 'success' 
+            ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+            : 'bg-rose-50 border-rose-300 text-rose-900'
+        }`}>
+          <div className="flex items-center gap-2">
+            {projectToast.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            )}
+            <span>{projectToast.message}</span>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => setProjectToast(null)} 
+            className="p-1 hover:opacity-70 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Header Bar Matching Requested Design */}
       <div className="bg-white border border-slate-100/90 shadow-sm p-4 sm:p-5 rounded-3xl shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Right Section: Breadcrumb & Title */}
@@ -2021,6 +2096,16 @@ export const ProjectsView: React.FC = () => {
 
                     {/* Quick Action Tools */}
                     <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      {canAdd && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenDuplicate(proj, e)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                          title="کپی و تکثیر پروژه"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {canEdit && (
                         <button
                           type="button"
@@ -2116,6 +2201,18 @@ export const ProjectsView: React.FC = () => {
                       <Boxes className="w-4 h-4" />
                       <span>آنالیز قطعات و حواله به قفسه (BOM Explosion)</span>
                     </button>
+
+                    {canAdd && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDuplicate(activeProj)}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                        title="ایجاد نسخه کپی از این پروژه و کلیه مراحل آن"
+                      >
+                        <Copy className="w-4 h-4 text-emerald-600" />
+                        <span>کپی و تکثیر پروژه</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -2231,31 +2328,39 @@ export const ProjectsView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Actions: Edit & Delete buttons */}
-                    {(canEdit || canDelete) && (
-                      <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-1" onClick={e => e.stopPropagation()}>
-                        {canEdit && (
-                          <button
-                            type="button"
-                            onClick={(e) => handleOpenEditProject(proj, e)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="ویرایش پروژه و فرمول ساخت"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteProject(proj.id, e)}
-                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                            title="حذف پروژه"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    {/* Actions: Duplicate, Edit & Delete buttons */}
+                    <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-1" onClick={e => e.stopPropagation()}>
+                      {canAdd && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenDuplicate(proj, e)}
+                          className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                          title="کپی و تکثیر پروژه"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenEditProject(proj, e)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="ویرایش پروژه و فرمول ساخت"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteProject(proj.id, e)}
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="حذف پروژه"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
 
                     {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                   </div>
@@ -2643,6 +2748,19 @@ export const ProjectsView: React.FC = () => {
                 )}
               </div>
 
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 select-none font-medium">
+                  <input
+                    type="checkbox"
+                    checked={saveToBomCatalog}
+                    onChange={(e) => setSaveToBomCatalog(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                  />
+                  <span>ذخیره این مشخصات به عنوان فرمول ساخت (BOM) جدید در کاتالوگ عمومی فرمول‌ها</span>
+                </label>
+                <span className="text-[10px] text-slate-500">اختیاری (پیش‌فرض: خاموش)</span>
+              </div>
+
               <div className="sticky bottom-0 bg-white pt-3 pb-1 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
                 <button
                   type="button"
@@ -3008,6 +3126,19 @@ export const ProjectsView: React.FC = () => {
                   onChange={(e) => setEditProjDescription(e.target.value)}
                   className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 select-none font-medium">
+                  <input
+                    type="checkbox"
+                    checked={editSaveToBomCatalog}
+                    onChange={(e) => setEditSaveToBomCatalog(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                  />
+                  <span>به‌روزرسانی فرمول ساخت محصول در کاتالوگ عمومی فرمول‌های ساخت (BOM)</span>
+                </label>
+                <span className="text-[10px] text-slate-500">اختیاری (پیش‌فرض: خاموش)</span>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
@@ -4155,6 +4286,116 @@ export const ProjectsView: React.FC = () => {
           onOpenHandover={(st) => handleOpenHandover(st, progressReportProject)}
           onOpenOutputReceipt={(st) => handleOpenOutputReceipt(st, progressReportProject)}
         />
+      )}
+
+      {/* Duplicate / Copy Project Modal */}
+      {duplicateModalProject && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg shadow-2xl p-5 sm:p-6 space-y-4 max-h-[92vh] flex flex-col my-auto overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-2xl">
+                  <Copy className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    کپی و تکثیر پروژه: <span className="text-emerald-700">{duplicateModalProject.name}</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    ایجاد یک نسخه مستقل جدید با حفظ درخت مراحل و فرمول‌های ساخت BOM
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setDuplicateModalProject(null)} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-xl hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteDuplicate} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">نام پروژه جدید*</label>
+                <input
+                  type="text"
+                  required
+                  value={dupName}
+                  onChange={(e) => setDupName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">کد پروژه جدید*</label>
+                  <input
+                    type="text"
+                    required
+                    value={dupCode}
+                    onChange={(e) => setDupCode(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 font-mono font-bold text-emerald-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">کارفرما / سفارش‌دهنده</label>
+                  <input
+                    type="text"
+                    value={dupClient}
+                    onChange={(e) => setDupClient(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">تیراژ تولید هدف</label>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={dupTargetQty}
+                  onChange={(e) => setDupTargetQty(Math.max(1, Number(e.target.value)))}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 font-mono font-bold text-slate-900"
+                />
+              </div>
+
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5 space-y-2">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs text-emerald-950 font-bold select-none">
+                  <input
+                    type="checkbox"
+                    checked={dupCopySteps}
+                    onChange={(e) => setDupCopySteps(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-emerald-300"
+                  />
+                  <span>کپی تمامی مراحل ۵ گانه و زیرمراحل درختی به همراه فرمول‌های قطعات BOM</span>
+                </label>
+                <p className="text-[10px] text-emerald-800/80 pr-6 leading-relaxed">
+                  تمامی مراحل با کدهای مجزا شبیه‌سازی شده و وضعیت آن‌ها به حالت اولیه «در انتظار» برمی‌گردد تا پروژه جدید از ابتدا قابل اجرا باشد.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setDuplicateModalProject(null)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all text-xs"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all active:scale-95 text-xs flex items-center gap-1.5"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>تایید و ساخت نسخه کپی</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

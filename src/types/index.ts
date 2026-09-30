@@ -349,6 +349,7 @@ export interface BOMItem {
   quantityNeeded: number; // per 1 finished item
   unit: string;
   scrapAllowancePercent?: number; // درصد ضایعات پیش‌بینی شده
+  notes?: string;
 }
 
 export interface BOM {

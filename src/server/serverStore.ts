@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { EventEmitter } from 'events';
 import { 
   INITIAL_ITEMS, INITIAL_ITEM_GROUPS, INITIAL_WAREHOUSES, INITIAL_CONTRACTORS, 
   INITIAL_INVENTORY, INITIAL_BOMS, INITIAL_PROJECTS, INITIAL_OPERATORS, 
@@ -132,6 +133,7 @@ class ServerStoreManager {
   private state: ServerDatabaseState;
   private writeTimer: NodeJS.Timeout | null = null;
   private lastAutoBackupMs: number = 0;
+  private emitter = new EventEmitter();
 
   constructor() {
     this.dataDir = process.env.DATA_DIR 
@@ -360,6 +362,13 @@ class ServerStoreManager {
     };
   }
 
+  public onStateChange(listener: (state: ServerDatabaseState) => void) {
+    this.emitter.on('state_change', listener);
+    return () => {
+      this.emitter.off('state_change', listener);
+    };
+  }
+
   public updateState(partial: Partial<ServerDatabaseState>): ServerDatabaseState {
     const newVersion = Date.now();
     this.state = {
@@ -368,6 +377,9 @@ class ServerStoreManager {
       version: newVersion,
       lastUpdated: new Date().toISOString(),
     };
+
+    // Broadcast instant state change to all SSE subscribers
+    this.emitter.emit('state_change', this.state);
 
     // Debounced sync to disk
     if (this.writeTimer) {
@@ -413,6 +425,7 @@ class ServerStoreManager {
       lastUpdated: new Date().toISOString(),
     };
     this.saveToDiskSync(this.state);
+    this.emitter.emit('state_change', this.state);
     return this.state;
   }
 
@@ -433,6 +446,7 @@ class ServerStoreManager {
 
     this.state = defaultState;
     this.saveToDiskSync(this.state);
+    this.emitter.emit('state_change', this.state);
     return this.state;
   }
 
@@ -499,6 +513,7 @@ class ServerStoreManager {
 
     this.state = emptyState;
     this.saveToDiskSync(this.state, true);
+    this.emitter.emit('state_change', this.state);
     return this.state;
   }
 

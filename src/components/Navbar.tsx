@@ -21,7 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
     currentUser, setCurrentUser, logout, changePassword,
     setIsScannerOpen,
     companyName,
-    serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer,
+    serverSyncStatus, isRealtimeLive, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer,
     liteMode, setLiteMode,
     soundEnabled, setSoundEnabled,
     browserNotificationPermission, requestNotificationPermission, testBrowserNotification,
@@ -182,8 +182,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
               }`}></span>
             </span>
             <Server className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden md:inline text-[11px]">
-              {serverSyncStatus === 'connected' ? 'سرور لینوکس' : serverSyncStatus === 'syncing' ? 'همگام‌سازی...' : 'آفلاین'}
+            <span className="hidden md:inline text-[11px] font-bold">
+              {serverSyncStatus === 'connected' ? (isRealtimeLive ? 'سینک آنی و زنده' : 'سرور متصل') : serverSyncStatus === 'syncing' ? 'همگام‌سازی...' : 'آفلاین'}
             </span>
           </button>
 

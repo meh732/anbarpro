@@ -406,7 +406,7 @@ async function startServer() {
     }
   });
 
-  // 2. GET /api/data/version - Ultra-lightweight endpoint for 2-second background polling
+  // 2. GET /api/data/version - Ultra-lightweight endpoint for background polling
   app.get('/api/data/version', (req, res) => {
     try {
       const ver = serverStore.getVersion();
@@ -418,6 +418,57 @@ async function startServer() {
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 2.1 SSE: Real-Time Server-Sent Events stream for instant multi-computer sync (< 30ms latency)
+  const sseClients = new Set<express.Response>();
+
+  app.get('/api/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const currentState = serverStore.getState();
+    // Send immediate initial sync handshake
+    res.write(`data: ${JSON.stringify({ type: 'init', version: currentState.version, lastUpdated: currentState.lastUpdated })}\n\n`);
+
+    sseClients.add(res);
+
+    req.on('close', () => {
+      sseClients.delete(res);
+      res.end();
+    });
+  });
+
+  // Keep-alive heartbeat every 15s to keep connections alive through proxies / networks
+  setInterval(() => {
+    for (const client of sseClients) {
+      try {
+        client.write(`: heartbeat\n\n`);
+      } catch {
+        sseClients.delete(client);
+      }
+    }
+  }, 15000);
+
+  // Broadcast state changes in real time (< 30ms) to all connected clients
+  serverStore.onStateChange((newState) => {
+    if (sseClients.size === 0) return;
+    const payload = JSON.stringify({
+      type: 'sync',
+      version: newState.version,
+      lastUpdated: newState.lastUpdated,
+      data: newState
+    });
+    for (const client of sseClients) {
+      try {
+        client.write(`data: ${payload}\n\n`);
+      } catch {
+        sseClients.delete(client);
+      }
     }
   });
 

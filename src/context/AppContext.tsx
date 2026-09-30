@@ -148,6 +148,9 @@ interface AppContextType {
   addBOM: (bom: Omit<BOM, 'id' | 'createdAt'>) => void;
   updateBOM: (id: string, updated: Partial<BOM>) => void;
   deleteBOM: (id: string) => void;
+  deleteBOMComponentItem: (bomId: string, itemIndex: number) => void;
+  addBOMComponentItem: (bomId: string, item: { itemId: string; quantityNeeded: number; unit?: string; scrapAllowancePercent?: number; notes?: string }) => void;
+  updateBOMComponentItem: (bomId: string, itemIndex: number, updated: { quantityNeeded?: number; scrapAllowancePercent?: number; unit?: string; notes?: string }) => void;
   
   // Excel Batch Import Actions
   importItemsBatch: (newItems: Omit<Item, 'id' | 'createdAt'>[], groupsToCreate?: { name: string; subGroup: string }[]) => { count: number; updatedCount: number };
@@ -202,6 +205,7 @@ interface AppContextType {
   addProject: (proj: Omit<Project, 'id'>) => void;
   updateProject: (id: string, updated: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  duplicateProject: (projectId: string, customOptions?: { name?: string; code?: string; client?: string; targetQuantity?: number; copySteps?: boolean }) => Project;
   updateProjectStep: (projectId: string, stepId: string, status: 'Pending' | 'InProgress' | 'Completed') => void;
   updateProjectStepDetails: (projectId: string, stepId: string, updated: Partial<ProjectStep>) => void;
   addProjectSubStep: (projectId: string, parentStepId: string, step: Omit<ProjectStep, 'id'>) => void;
@@ -310,6 +314,7 @@ interface AppContextType {
 
   // Centralized Linux Server Real-Time Sync & Status
   serverSyncStatus: 'connected' | 'syncing' | 'offline' | 'error';
+  isRealtimeLive: boolean;
   lastSyncTime: string | null;
   serverVersion: number;
   serverInfo: any;
@@ -712,6 +717,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Centralized Linux Server Real-Time Sync State & Diagnostics
   const [serverSyncStatus, setServerSyncStatus] = useState<'connected' | 'syncing' | 'offline' | 'error'>('syncing');
+  const [isRealtimeLive, setIsRealtimeLive] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [serverVersion, setServerVersion] = useState<number>(0);
   const [serverInfo, setServerInfo] = useState<any>(null);
@@ -816,19 +822,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setInventory(prev => prev.length === 0 ? [] : prev);
       }
     }
-    if (data.boms) {
-      if (data.boms.length > 0) {
-        setBoms(data.boms);
-      } else {
-        setBoms(prev => prev.length === 0 ? [] : prev);
-      }
+    if (Array.isArray(data.boms)) {
+      setBoms(data.boms);
     }
-    if (data.projects) {
-      if (data.projects.length > 0) {
-        setProjects(data.projects);
-      } else {
-        setProjects(prev => prev.length === 0 ? [] : prev);
-      }
+    if (Array.isArray(data.projects)) {
+      setProjects(data.projects);
     }
     if (data.operators) setOperators(data.operators);
     if (data.stockCountings) setStockCountings(data.stockCountings);
@@ -1171,7 +1169,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     initServerConnection();
 
-    // Multi-client real-time synchronization interval (every 2s)
+    // =======================================================================
+    // REAL-TIME SERVER-SENT EVENTS (SSE) STREAM (< 30ms instant sync)
+    // =======================================================================
+    let sseSource: EventSource | null = null;
+    let sseReconnectTimer: NodeJS.Timeout | null = null;
+
+    const connectSSE = () => {
+      if (!isMounted) return;
+      try {
+        const streamUrl = getApiUrl('/api/events');
+        sseSource = new EventSource(streamUrl);
+
+        sseSource.onopen = () => {
+          if (!isMounted) return;
+          setServerSyncStatus('connected');
+          setIsRealtimeLive(true);
+        };
+
+        sseSource.onmessage = (event) => {
+          if (!isMounted || !event.data) return;
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'sync' && payload.data && payload.version) {
+              if (payload.version > serverVersionRef.current) {
+                applyServerState(payload.data, payload.version);
+              }
+            } else if (payload.type === 'init' && payload.version) {
+              if (payload.version > serverVersionRef.current && isInitialServerSyncDoneRef.current) {
+                fetch(getApiUrl('/api/data'))
+                  .then(r => r.json())
+                  .then(json => {
+                    if (json.success && json.data && json.version > serverVersionRef.current) {
+                      applyServerState(json.data, json.version);
+                    }
+                  })
+                  .catch(() => {});
+              }
+            }
+          } catch (err) {
+            console.error('[SSE] Failed to parse event payload:', err);
+          }
+        };
+
+        sseSource.onerror = () => {
+          if (sseSource) {
+            sseSource.close();
+            sseSource = null;
+          }
+          if (isMounted) {
+            setIsRealtimeLive(false);
+            if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
+            sseReconnectTimer = setTimeout(connectSSE, 2500);
+          }
+        };
+      } catch (err) {
+        console.warn('[SSE] EventSource initialization failed:', err);
+        if (isMounted) {
+          sseReconnectTimer = setTimeout(connectSSE, 3000);
+        }
+      }
+    };
+
+    connectSSE();
+
+    // Background safety poll interval (fallback if SSE drops)
     const pollInterval = setInterval(async () => {
       if (!isMounted || !isInitialServerSyncDoneRef.current) return;
       try {
@@ -1191,11 +1253,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setServerSyncStatus(prev => prev === 'syncing' ? prev : 'connected');
         } else {
           setServerSyncStatus('offline');
+          setIsRealtimeLive(false);
         }
       } catch {
         setServerSyncStatus('offline');
+        setIsRealtimeLive(false);
       }
-    }, 2000);
+    }, 4000);
 
     const onFocus = () => {
       if (!isInitialServerSyncDoneRef.current) return;
@@ -1212,18 +1276,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => {
       isMounted = false;
+      if (sseSource) sseSource.close();
+      if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
       clearInterval(pollInterval);
       window.removeEventListener('focus', onFocus);
     };
   }, [applyServerState, serverUrl]);
 
-  // Debounced auto-sync to server on any state mutation
+  // Fast auto-sync to server on any state mutation (50ms debounce)
   useEffect(() => {
     if (!isInitialServerSyncDoneRef.current || isRemoteUpdatingRef.current) return;
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => {
       pushStateToServer();
-    }, 300);
+    }, 50);
   }, [
     items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
@@ -2152,26 +2218,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  // BOM Management
+  // BOM Management (Full CRUD & Component Level Editing / Deletion)
   const addBOM = (bomData: Omit<BOM, 'id' | 'createdAt'>) => {
     const newBom: BOM = {
       ...bomData,
       id: `bom-${Date.now()}`,
       createdAt: new Date().toISOString().substring(0, 10),
     };
-    setBoms(prev => [newBom, ...prev]);
+    setBoms(prev => {
+      const updated = [newBom, ...prev];
+      pushStateToServer({ boms: updated });
+      return updated;
+    });
     addAudit('تعریف فرمول ساخت (BOM)', 'BOM', newBom.id, `ایجاد فرمول ساخت ${newBom.name}`);
   };
 
-  const updateBOM = (id: string, updated: Partial<BOM>) => {
-    setBoms(prev => prev.map(b => b.id === id ? { ...b, ...updated } : b));
-    addAudit('ویرایش فرمول ساخت', 'BOM', id, 'تغییر اقلام یا نسخه فرمول ساخت');
+  const updateBOM = (id: string, updatedFields: Partial<BOM>) => {
+    setBoms(prev => {
+      const updated = prev.map(b => b.id === id ? { ...b, ...updatedFields } : b);
+      pushStateToServer({ boms: updated });
+      return updated;
+    });
+    addAudit('ویرایش فرمول ساخت', 'BOM', id, 'تغییر مشخصات یا اقلام فرمول ساخت');
   };
 
   const deleteBOM = (id: string) => {
     const target = boms.find(b => b.id === id);
-    setBoms(prev => prev.filter(b => b.id !== id));
+    setBoms(prev => {
+      const updated = prev.filter(b => b.id !== id);
+      pushStateToServer({ boms: updated });
+      return updated;
+    });
     addAudit('حذف فرمول ساخت', 'BOM', id, `حذف فرمول ${target?.name || id}`);
+  };
+
+  const deleteBOMComponentItem = (bomId: string, itemIndex: number) => {
+    setBoms(prev => {
+      const updated = prev.map(b => {
+        if (b.id !== bomId) return b;
+        const newItems = b.items.filter((_, idx) => idx !== itemIndex);
+        return { ...b, items: newItems };
+      });
+      pushStateToServer({ boms: updated });
+      return updated;
+    });
+    addAudit('حذف قطعه از فرمول BOM', 'BOM', bomId, `حذف ردیف ${itemIndex + 1} از قطعات فرمول`);
+  };
+
+  const addBOMComponentItem = (
+    bomId: string, 
+    newItem: { itemId: string; quantityNeeded: number; unit?: string; scrapAllowancePercent?: number; notes?: string }
+  ) => {
+    setBoms(prev => {
+      const updated = prev.map(b => {
+        if (b.id !== bomId) return b;
+        const itemObj = items.find(i => i.id === newItem.itemId);
+        const newItems = [
+          ...b.items,
+          {
+            itemId: newItem.itemId,
+            quantityNeeded: Number(newItem.quantityNeeded) || 1,
+            unit: newItem.unit || itemObj?.unit || 'عدد',
+            scrapAllowancePercent: Number(newItem.scrapAllowancePercent) || 0,
+            notes: newItem.notes || '',
+          }
+        ];
+        return { ...b, items: newItems };
+      });
+      pushStateToServer({ boms: updated });
+      return updated;
+    });
+    addAudit('افزودن قطعه به فرمول BOM', 'BOM', bomId, `افزودن قطعه جدید به فرمول ساخت`);
+  };
+
+  const updateBOMComponentItem = (
+    bomId: string, 
+    itemIndex: number, 
+    updatedFields: { quantityNeeded?: number; scrapAllowancePercent?: number; unit?: string; notes?: string }
+  ) => {
+    setBoms(prev => {
+      const updated = prev.map(b => {
+        if (b.id !== bomId) return b;
+        const newItems = b.items.map((it, idx) => {
+          if (idx !== itemIndex) return it;
+          return {
+            ...it,
+            ...updatedFields,
+            quantityNeeded: updatedFields.quantityNeeded !== undefined ? Number(updatedFields.quantityNeeded) : it.quantityNeeded,
+            scrapAllowancePercent: updatedFields.scrapAllowancePercent !== undefined ? Number(updatedFields.scrapAllowancePercent) : it.scrapAllowancePercent,
+          };
+        });
+        return { ...b, items: newItems };
+      });
+      pushStateToServer({ boms: updated });
+      return updated;
+    });
+    addAudit('ویرایش قطعه در فرمول BOM', 'BOM', bomId, `ویرایش مشخصات ردیف ${itemIndex + 1} از فرمول`);
   };
 
   // =========================================================================
@@ -2427,25 +2569,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  // Project Management
+  // Project Management (Full CRUD & Instant Duplication Engine)
   const addProject = (projData: Omit<Project, 'id'>) => {
     const newProj: Project = {
       ...projData,
       id: `proj-${Date.now()}`,
     };
-    setProjects(prev => [newProj, ...prev]);
+    setProjects(prev => {
+      const updated = [newProj, ...prev];
+      pushStateToServer({ projects: updated });
+      return updated;
+    });
     addAudit('ایجاد پروژه جدید', 'Project', newProj.code, `تعریف پروژه ${newProj.name}`);
   };
 
-  const updateProject = (id: string, updated: Partial<Project>) => {
-    setProjects(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
+  const updateProject = (id: string, updatedFields: Partial<Project>) => {
+    setProjects(prev => {
+      const updated = prev.map(p => p.id === id ? { ...p, ...updatedFields } : p);
+      pushStateToServer({ projects: updated });
+      return updated;
+    });
     addAudit('ویرایش پروژه', 'Project', id, 'به‌روزرسانی مشخصات پروژه');
   };
 
   const deleteProject = (id: string) => {
     const target = projects.find(p => p.id === id);
-    setProjects(prev => prev.filter(p => p.id !== id));
+    setProjects(prev => {
+      const updated = prev.filter(p => p.id !== id);
+      pushStateToServer({ projects: updated });
+      return updated;
+    });
     addAudit('حذف پروژه', 'Project', id, `حذف پروژه ${target?.name || id}`);
+  };
+
+  const duplicateProject = (
+    projectId: string, 
+    customOptions?: { name?: string; code?: string; client?: string; targetQuantity?: number; copySteps?: boolean }
+  ): Project => {
+    const sourceProj = projects.find(p => p.id === projectId);
+    if (!sourceProj) {
+      throw new Error('پروژه مورد نظر جهت کپی یافت نشد.');
+    }
+
+    const newCode = customOptions?.code?.trim() || `${sourceProj.code}-کپی`;
+    const newName = customOptions?.name?.trim() || `${sourceProj.name} (نسخه کپی)`;
+    const newClient = customOptions?.client?.trim() || sourceProj.client;
+    const newTargetQuantity = customOptions?.targetQuantity !== undefined ? customOptions.targetQuantity : sourceProj.targetQuantity;
+
+    // Helper to recursively deep-clone steps with fresh unique IDs and reset progress/handover data
+    const cloneStepRecursive = (step: ProjectStep, parentIdxStr: string): ProjectStep => {
+      const newStepId = `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      return {
+        ...step,
+        id: newStepId,
+        status: 'Pending',
+        progressPercent: 0,
+        completedQuantity: 0,
+        scrapQuantity: 0,
+        lastHandoverDate: undefined,
+        lastHandoverDocNumber: undefined,
+        lastHandoverOperator: undefined,
+        outputQuantity: step.outputQuantity || step.targetQuantity || newTargetQuantity,
+        bomItems: step.bomItems ? step.bomItems.map(bi => ({ ...bi })) : [],
+        subSteps: step.subSteps && step.subSteps.length > 0
+          ? step.subSteps.map((ss, sIdx) => cloneStepRecursive(ss, `${parentIdxStr}.${sIdx + 1}`))
+          : [],
+      };
+    };
+
+    const clonedSteps = (customOptions?.copySteps !== false && sourceProj.steps)
+      ? sourceProj.steps.map((s, idx) => cloneStepRecursive(s, String(idx + 1)))
+      : [];
+
+    const newProj: Project = {
+      ...sourceProj,
+      id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code: newCode,
+      name: newName,
+      client: newClient,
+      targetQuantity: newTargetQuantity,
+      status: 'Planned',
+      progress: 0,
+      startDate: new Date().toLocaleDateString('fa-IR'),
+      steps: clonedSteps,
+      notes: sourceProj.notes 
+        ? `کپی‌شده از پروژه ${sourceProj.name} (${sourceProj.code}). ${sourceProj.notes}` 
+        : `کپی‌شده از پروژه ${sourceProj.name} (${sourceProj.code})`,
+    };
+
+    setProjects(prev => {
+      const updated = [newProj, ...prev];
+      pushStateToServer({ projects: updated });
+      return updated;
+    });
+
+    addAudit('کپی و تکثیر پروژه', 'Project', newProj.code, `ایجاد نسخه کپی از پروژه "${sourceProj.name}" با کد جدید "${newProj.code}"`);
+    return newProj;
   };
 
   const updateProjectStepDetails = (projectId: string, stepId: string, updated: Partial<ProjectStep>) => {
@@ -4209,9 +4428,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addContractorContract, updateContractorContract, deleteContractorContract,
       addContractorTransaction, updateContractorTransaction, deleteContractorTransaction,
       getContractorFinancialSummary,
-      addBOM, updateBOM, deleteBOM,
+      addBOM, updateBOM, deleteBOM, deleteBOMComponentItem, addBOMComponentItem, updateBOMComponentItem,
       importItemsBatch, importInitialStockBatch, importBOMsBatch, applySmartStageTargetsToProject,
-      addProject, updateProject, deleteProject, updateProjectStep, updateProjectStepDetails, addProjectSubStep, deleteProjectStep,
+      addProject, updateProject, deleteProject, duplicateProject, updateProjectStep, updateProjectStepDetails, addProjectSubStep, deleteProjectStep,
       createStockCountingSession, updateStockCountItem, updateStockCountingSession, deleteStockCountingSession, applyStockCountingAdjustments,
       createStockInDoc, updateStockInDoc, deleteStockInDoc,
       createStockOutDoc, updateStockOutDoc, deleteStockOutDoc,
@@ -4230,7 +4449,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isMobileMenuOpen, setIsMobileMenuOpen,
       isInstalled, setIsInstalled, companyName, setCompanyName,
       completeInstallation,
-      serverSyncStatus, lastSyncTime, serverVersion, serverInfo,
+      serverSyncStatus, isRealtimeLive, lastSyncTime, serverVersion, serverInfo,
       serverUrl, setServerUrl, getApiUrl, testServerConnection,
       forceSyncWithServer, resetServerDatabase,
       resetToEmptyDatabase, loadDemoData, resetToSetupWizard,

@@ -14,7 +14,8 @@ import { OfficialDocumentViewerModal, OfficialDocData } from './OfficialDocument
 export const BOMView: React.FC = () => {
   const { 
     boms, items, warehouses, inventory, projects, 
-    addBOM, updateBOM, deleteBOM, hasActionPermission,
+    addBOM, updateBOM, deleteBOM, deleteBOMComponentItem, addBOMComponentItem, updateBOMComponentItem,
+    hasActionPermission,
     createPurchaseRequest, createStockInDoc, currentUser, companyName
   } = useApp();
 
@@ -40,19 +41,49 @@ export const BOMView: React.FC = () => {
   // Feedback Notification
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
+  // In-app deletion confirm modal
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: 'bom' | 'item';
+    bomId: string;
+    itemIndex?: number;
+    title: string;
+    subtitle: string;
+  } | null>(null);
+
+  // Component Item Level Edit Modal
+  const [editingComponent, setEditingComponent] = useState<{
+    bomId: string;
+    itemIndex: number;
+    itemId: string;
+    name: string;
+    quantityNeeded: number;
+    unit: string;
+    scrapAllowancePercent: number;
+    notes: string;
+  } | null>(null);
+
+  // Add Component Item to Selected BOM Modal
+  const [isAddingComponentModalOpen, setIsAddingComponentModalOpen] = useState(false);
+  const [newCompItemId, setNewCompItemId] = useState(items[0]?.id || '');
+  const [newCompQty, setNewCompQty] = useState(1);
+  const [newCompUnit, setNewCompUnit] = useState('عدد');
+  const [newCompScrap, setNewCompScrap] = useState(0);
+  const [newCompNotes, setNewCompNotes] = useState('');
+
   const selectedBom = boms.find(b => b.id === selectedBomId) || boms[0];
   const finishedItem = items.find(i => i.id === selectedBom?.finishedItemId || i.code === selectedBom?.finishedItemId);
 
-  // Form State for new BOM
+  // Form State for new / edit BOM
   const [bomName, setBomName] = useState('');
   const [finishedItemId, setFinishedItemId] = useState(items.find(i => i.itemType === 'Finished')?.id || items[0]?.id || '');
   const [version, setVersion] = useState('v1.0');
   const [description, setDescription] = useState('');
+  const [isActiveStatus, setIsActiveStatus] = useState<boolean>(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [selectedProjectStepId, setSelectedProjectStepId] = useState<string>('');
 
-  const [bomItems, setBomItems] = useState<{ itemId: string; quantityNeeded: number; unit: string; scrapAllowancePercent: number }[]>([
-    { itemId: items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 2 }
+  const [bomItems, setBomItems] = useState<{ itemId: string; quantityNeeded: number; unit: string; scrapAllowancePercent: number; notes?: string }[]>([
+    { itemId: items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 2, notes: '' }
   ]);
 
   // Helper to extract flattened steps with code for a project
@@ -78,7 +109,7 @@ export const BOMView: React.FC = () => {
   });
 
   // Smart Capacity Calculation per BOM component
-  const simulationResults = (selectedBom?.items || []).map((bomIt) => {
+  const simulationResults = (selectedBom?.items || []).map((bomIt, itemIdx) => {
     const raw = items.find(i => i.id === bomIt.itemId || i.code === bomIt.itemId || i.name === bomIt.itemId);
     const matchedItemId = raw?.id || bomIt.itemId;
     const matchedItemCode = raw?.code || bomIt.itemId;
@@ -119,6 +150,7 @@ export const BOMView: React.FC = () => {
     const deficitCost = deficitQty * (raw?.unitPrice || 0);
 
     return {
+      itemIndex: itemIdx,
       bomIt,
       rawItem: raw,
       itemCode: raw?.code || bomIt.itemId,
@@ -161,7 +193,8 @@ export const BOMView: React.FC = () => {
   const handleAutoCreatePurchaseRequest = () => {
     const deficitItems = simulationResults.filter(r => r.deficitQty > 0);
     if (deficitItems.length === 0) {
-      alert('تمامی قطعات برای تیراژ انتخابی تامین است و کسری وجود ندارد.');
+      setActionSuccessMsg('تمامی قطعات برای تیراژ انتخابی تامین است و کسری وجود ندارد.');
+      setTimeout(() => setActionSuccessMsg(null), 4000);
       return;
     }
 
@@ -254,15 +287,14 @@ export const BOMView: React.FC = () => {
     setBomName('فرمول ساخت محصول جدید');
     setVersion('v1.0');
     setDescription('');
+    setIsActiveStatus(true);
     setSelectedProjectId('');
     setSelectedProjectStepId('');
     setFinishedItemId(items.find(i => i.itemType === 'Finished')?.id || items[0]?.id || '');
     setBomItems([
-      { itemId: items.find(i => i.code === 'E-PCB-001')?.id || items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 2 },
-      { itemId: items.find(i => i.code === 'E-IC-328')?.id || items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 1 },
-      { itemId: items.find(i => i.code === 'E-RES-0805-10K')?.id || items[0]?.id || '', quantityNeeded: 12, unit: 'عدد', scrapAllowancePercent: 3 },
-      { itemId: items.find(i => i.code === 'E-RES-0805-1K')?.id || items[0]?.id || '', quantityNeeded: 8, unit: 'عدد', scrapAllowancePercent: 3 },
-      { itemId: items.find(i => i.code === 'E-CAP-0805-100N')?.id || items[0]?.id || '', quantityNeeded: 8, unit: 'عدد', scrapAllowancePercent: 2 },
+      { itemId: items.find(i => i.code === 'E-PCB-001')?.id || items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 2, notes: '' },
+      { itemId: items.find(i => i.code === 'E-IC-328')?.id || items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 1, notes: '' },
+      { itemId: items.find(i => i.code === 'E-RES-0805-10K')?.id || items[0]?.id || '', quantityNeeded: 12, unit: 'عدد', scrapAllowancePercent: 3, notes: '' },
     ]);
     setIsModalOpen(true);
   };
@@ -273,35 +305,43 @@ export const BOMView: React.FC = () => {
     setBomName(bom.name);
     setVersion(bom.version);
     setDescription(bom.description || '');
+    setIsActiveStatus(bom.isActive ?? true);
     setFinishedItemId(bom.finishedItemId);
     setSelectedProjectId(bom.projectId || '');
     setSelectedProjectStepId(bom.projectStepId || '');
     setBomItems(bom.items.map(it => ({ 
       itemId: it.itemId,
       quantityNeeded: it.quantityNeeded,
-      unit: it.unit,
-      scrapAllowancePercent: it.scrapAllowancePercent ?? 0
+      unit: it.unit || items.find(x => x.id === it.itemId)?.unit || 'عدد',
+      scrapAllowancePercent: it.scrapAllowancePercent ?? 0,
+      notes: it.notes || ''
     })));
     setIsModalOpen(true);
   };
 
   const handleDelete = (bom: BOM, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (confirm(`آیا از حذف فرمول ساخت "${bom.name}" اطمینان دارید؟`)) {
-      deleteBOM(bom.id);
-      if (selectedBomId === bom.id) {
-        const remaining = boms.filter(b => b.id !== bom.id);
-        if (remaining.length > 0) {
-          setSelectedBomId(remaining[0].id);
-        }
-      }
-    }
+    setDeleteConfirmTarget({
+      type: 'bom',
+      bomId: bom.id,
+      title: 'حذف کامل فرمول ساخت (BOM)',
+      subtitle: `آیا از حذف دائم فرمول ساخت «${bom.name}» (نسخه ${bom.version}) مطمئن هستید؟ این عملیات قابل بازگشت نیست.`
+    });
+  };
+
+  const handleToggleBomActive = (bom: BOM, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const nextStatus = !bom.isActive;
+    updateBOM(bom.id, { isActive: nextStatus });
+    setActionSuccessMsg(`وضعیت فرمول «${bom.name}» به ${nextStatus ? '«فعال در خط تولید»' : '«بایگانی/غیرفعال»'} تغییر یافت.`);
+    setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
   const handleAddItemLine = () => {
+    const defaultRaw = items.find(i => i.itemType === 'RawMaterial' || i.itemType === 'Component') || items[0];
     setBomItems(prev => [
       ...prev,
-      { itemId: items[0]?.id || '', quantityNeeded: 1, unit: 'عدد', scrapAllowancePercent: 1 }
+      { itemId: defaultRaw?.id || '', quantityNeeded: 1, unit: defaultRaw?.unit || 'عدد', scrapAllowancePercent: 0, notes: '' }
     ]);
   };
 
@@ -314,10 +354,11 @@ export const BOMView: React.FC = () => {
         version,
         items: bomItems,
         description,
+        isActive: isActiveStatus,
         projectId: selectedProjectId || undefined,
         projectStepId: selectedProjectStepId || undefined,
       });
-      setActionSuccessMsg('فرمول ساخت (BOM) با موفقیت به‌روزرسانی شد.');
+      setActionSuccessMsg('فرمول ساخت (BOM) با تمامی مشخصات و قطعات با موفقیت به‌روزرسانی شد.');
     } else {
       addBOM({
         finishedItemId,
@@ -325,14 +366,99 @@ export const BOMView: React.FC = () => {
         version,
         items: bomItems,
         description,
-        isActive: true,
+        isActive: isActiveStatus,
         projectId: selectedProjectId || undefined,
         projectStepId: selectedProjectStepId || undefined,
       });
-      setActionSuccessMsg('فرمول ساخت (BOM) جدید با موفقیت ثبت شد.');
+      setActionSuccessMsg('فرمول ساخت (BOM) جدید با موفقیت تعریف و ثبت گردید.');
     }
     setIsModalOpen(false);
     setTimeout(() => setActionSuccessMsg(null), 5000);
+  };
+
+  // ----------------------------------------------------
+  // Component Item Level Handlers (Individual Edit/Delete)
+  // ----------------------------------------------------
+  const handleOpenEditComponent = (res: any) => {
+    setEditingComponent({
+      bomId: selectedBom.id,
+      itemIndex: res.itemIndex,
+      itemId: res.bomIt.itemId,
+      name: res.itemName,
+      quantityNeeded: res.quantityNeededPerUnit,
+      unit: res.unit,
+      scrapAllowancePercent: res.scrapPercent,
+      notes: res.bomIt.notes || '',
+    });
+  };
+
+  const handleSaveComponentEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingComponent) return;
+    updateBOMComponentItem(editingComponent.bomId, editingComponent.itemIndex, {
+      quantityNeeded: Number(editingComponent.quantityNeeded),
+      unit: editingComponent.unit,
+      scrapAllowancePercent: Number(editingComponent.scrapAllowancePercent),
+      notes: editingComponent.notes,
+    });
+    setActionSuccessMsg(`مشخصات قطعه "${editingComponent.name}" در فرمول ساخت با موفقیت به‌روز شد.`);
+    setEditingComponent(null);
+    setTimeout(() => setActionSuccessMsg(null), 4000);
+  };
+
+  const handleDeleteComponentItem = (bomId: string, itemIndex: number, itemName: string) => {
+    setDeleteConfirmTarget({
+      type: 'item',
+      bomId,
+      itemIndex,
+      title: 'حذف قطعه از فرمول ساخت',
+      subtitle: `آیا از حذف قطعه «${itemName}» از این فرمول ساخت (BOM) اطمینان دارید؟`
+    });
+  };
+
+  const handleOpenAddComponent = () => {
+    const defaultRaw = items.find(i => i.itemType === 'RawMaterial' || i.itemType === 'Component') || items[0];
+    setNewCompItemId(defaultRaw?.id || '');
+    setNewCompQty(1);
+    setNewCompUnit(defaultRaw?.unit || 'عدد');
+    setNewCompScrap(0);
+    setNewCompNotes('');
+    setIsAddingComponentModalOpen(true);
+  };
+
+  const handleSaveAddComponent = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBom || !newCompItemId) return;
+    const raw = items.find(i => i.id === newCompItemId);
+    addBOMComponentItem(selectedBom.id, {
+      itemId: newCompItemId,
+      quantityNeeded: Number(newCompQty) || 1,
+      unit: newCompUnit || raw?.unit || 'عدد',
+      scrapAllowancePercent: Number(newCompScrap) || 0,
+      notes: newCompNotes,
+    });
+    setIsAddingComponentModalOpen(false);
+    setActionSuccessMsg(`قطعه "${raw?.name || 'جدید'}" به فرمول ساخت "${selectedBom.name}" افزوده شد.`);
+    setTimeout(() => setActionSuccessMsg(null), 4000);
+  };
+
+  const handleExecuteConfirmedDelete = () => {
+    if (!deleteConfirmTarget) return;
+    if (deleteConfirmTarget.type === 'bom') {
+      deleteBOM(deleteConfirmTarget.bomId);
+      if (selectedBomId === deleteConfirmTarget.bomId) {
+        const remaining = boms.filter(b => b.id !== deleteConfirmTarget.bomId);
+        if (remaining.length > 0) {
+          setSelectedBomId(remaining[0].id);
+        }
+      }
+      setActionSuccessMsg('فرمول ساخت (BOM) با موفقیت حذف گردید.');
+    } else if (deleteConfirmTarget.type === 'item' && deleteConfirmTarget.itemIndex !== undefined) {
+      deleteBOMComponentItem(deleteConfirmTarget.bomId, deleteConfirmTarget.itemIndex);
+      setActionSuccessMsg('قطعه مورد نظر با موفقیت از این فرمول ساخت حذف شد.');
+    }
+    setDeleteConfirmTarget(null);
+    setTimeout(() => setActionSuccessMsg(null), 4000);
   };
 
   return (
@@ -468,9 +594,20 @@ export const BOMView: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="text-[10px] text-slate-400 mt-2 flex justify-between">
+                  <div className="text-[10px] text-slate-400 mt-2 flex items-center justify-between">
                     <span>{bom.items.length} قلم قطعه مجزا</span>
-                    <span>{bom.isActive ? 'فعال در خط تولید' : 'آرشیو'}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleBomActive(bom, e)}
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-colors ${
+                        bom.isActive 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
+                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                      }`}
+                      title="کلیک برای فعال / بایگانی کردن این فرمول ساخت"
+                    >
+                      {bom.isActive ? 'فعال در تولید' : 'بایگانی'}
+                    </button>
                   </div>
                 </div>
               );
@@ -486,14 +623,50 @@ export const BOMView: React.FC = () => {
               {/* Header Info */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 border-slate-200 gap-3">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-base text-slate-900">{selectedBom.name}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-extrabold text-base text-slate-900">{selectedBom.name}</h3>
                     <span className="font-mono text-xs text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full font-semibold">
                       {selectedBom.version}
                     </span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleBomActive(selectedBom, e)}
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors ${
+                        selectedBom.isActive 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
+                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                      }`}
+                      title="کلیک برای تغییر وضعیت فعال / آرشیو"
+                    >
+                      {selectedBom.isActive ? 'فعال در خط تولید' : 'آرشیو شده'}
+                    </button>
+
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(selectedBom)}
+                        className="px-2.5 py-1 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-200 transition-colors cursor-pointer"
+                        title="ویرایش مشخصات اصلی و تمامی قطعات این فرمول"
+                      >
+                        <Edit className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>ویرایش کامل فرمول</span>
+                      </button>
+                    )}
+
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(selectedBom)}
+                        className="px-2.5 py-1 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-200 transition-colors cursor-pointer"
+                        title="حذف کامل این فرمول ساخت"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                        <span>حذف فرمول</span>
+                      </button>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    محصول: <strong className="text-slate-800">{finishedItem?.name || selectedBom.finishedItemId}</strong>
+                    محصول نهایی: <strong className="text-slate-800">{finishedItem?.name || selectedBom.finishedItemId}</strong>
                     {selectedBom.description && ` — ${selectedBom.description}`}
                   </p>
                 </div>
@@ -619,6 +792,27 @@ export const BOMView: React.FC = () => {
                 )}
               </div>
 
+              {/* Table Toolbar: Title + Add New Component Button */}
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-indigo-600" />
+                  <h4 className="font-bold text-xs text-slate-800">
+                    اقلام و قطعات اولیه فرمول ساخت BOM ({simulationResults.length} قلم)
+                  </h4>
+                </div>
+
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddComponent}
+                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>افزودن قطعه جدید به این فرمول</span>
+                  </button>
+                )}
+              </div>
+
               {/* Component Requirements Breakdown Table */}
               <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-right text-xs text-slate-700">
@@ -631,88 +825,135 @@ export const BOMView: React.FC = () => {
                       <th className="whitespace-nowrap p-3 text-center">موجودی انبارها</th>
                       <th className="whitespace-nowrap p-3 text-center">ظرفیت ساخت قطعه</th>
                       <th className="whitespace-nowrap p-3 text-center">وضعیت تامین</th>
-                      <th className="whitespace-nowrap p-3 text-center">اقدام سریع</th>
+                      <th className="whitespace-nowrap p-3 text-center">عملیات و ویرایش قطعه</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {simulationResults.map((res, idx) => {
-                      return (
-                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="whitespace-nowrap p-3 font-mono font-bold text-indigo-600">{res.itemCode}</td>
-                          <td className="p-3">
-                            <div className="font-bold text-slate-800">{res.itemName}</div>
-                            {/* Detailed breakdown per warehouse badges */}
-                            {res.warehouseBreakdown.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {res.warehouseBreakdown.map((wh, wIdx) => (
-                                  <span key={wIdx} className="text-[9px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.2 rounded font-mono">
-                                    {wh.warehouseName}: {wh.quantity.toLocaleString('fa-IR')}
+                    {simulationResults.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-slate-400">
+                          <p className="font-medium text-xs">هیچ قطعه‌ای برای این فرمول ساخت ثبت نشده است.</p>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={handleOpenAddComponent}
+                              className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>افزودن اولین قطعه</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      simulationResults.map((res, idx) => {
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="whitespace-nowrap p-3 font-mono font-bold text-indigo-600">{res.itemCode}</td>
+                            <td className="p-3">
+                              <div className="font-bold text-slate-800">{res.itemName}</div>
+                              {res.bomIt.notes && (
+                                <span className="text-[10px] text-slate-500 block mt-0.5 font-sans">
+                                  {res.bomIt.notes}
+                                </span>
+                              )}
+                              {/* Detailed breakdown per warehouse badges */}
+                              {res.warehouseBreakdown.length > 0 ? (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {res.warehouseBreakdown.map((wh, wIdx) => (
+                                    <span key={wIdx} className="text-[9px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.2 rounded font-mono">
+                                      {wh.warehouseName}: {wh.quantity.toLocaleString('fa-IR')}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[9px] text-slate-400 mt-0.5 block">در هیچ انباری موجودی ثبت نشده</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap p-3 font-mono text-center text-slate-600">
+                              {res.quantityNeededPerUnit} {res.unit}
+                              {res.scrapPercent > 0 && (
+                                <span className="text-[9px] text-slate-400 block font-sans">({res.scrapPercent}٪ افت)</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap p-3 font-mono font-bold text-center text-indigo-600">
+                              {res.totalRequiredWithScrap.toLocaleString('fa-IR')} {res.unit}
+                            </td>
+                            <td className="whitespace-nowrap p-3 font-mono text-center">
+                              <strong className="text-slate-900 text-xs">{res.freeAvailableStock.toLocaleString('fa-IR')}</strong>
+                              <span className="text-[10px] text-slate-500 mr-1">{res.unit}</span>
+                              {res.totalReserved > 0 && (
+                                <span className="text-[9px] text-amber-600 block">({res.totalReserved} رزرو)</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap p-3 font-mono font-bold text-center text-slate-700">
+                              {res.maxProducibleFromThis.toLocaleString('fa-IR')} دستگاه
+                            </td>
+                            <td className="whitespace-nowrap p-3 text-center">
+                              {res.isSufficient ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  تامین است (۱۰۰٪)
+                                </span>
+                              ) : (
+                                <div className="space-y-0.5 inline-block">
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-bold inline-flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                    کسری دارد ({res.deficitQty.toLocaleString('fa-IR')} {res.unit})
                                   </span>
-                                ))}
+                                  <span className="text-[9px] text-slate-400 block font-mono">
+                                    پوشش: {res.coveragePercent}٪
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap p-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                {!res.isSufficient && (
+                                  <button
+                                    onClick={() => {
+                                      setQuickStockInItem({
+                                        itemId: res.rawItem?.id || res.bomIt.itemId,
+                                        name: res.itemName,
+                                        neededQty: res.deficitQty,
+                                      });
+                                      setQuickStockInQty(res.deficitQty);
+                                    }}
+                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-[10px] font-bold transition-all shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                                    title="ثبت سریع رسید ورود انبار برای تامین این کسری"
+                                  >
+                                    <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="hidden xl:inline">شارژ</span>
+                                  </button>
+                                )}
+
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditComponent(res)}
+                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                                    title="ویرایش مشخصات این قطعه (تعداد، افت مجاز، توضیحات)"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteComponentItem(selectedBom.id, res.itemIndex, res.itemName)}
+                                    className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                                    title="حذف این قطعه از فرمول ساخت"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
-                            ) : (
-                              <span className="text-[9px] text-slate-400 mt-0.5 block">در هیچ انباری موجودی ثبت نشده</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap p-3 font-mono text-center text-slate-600">
-                            {res.quantityNeededPerUnit} {res.unit}
-                            {res.scrapPercent > 0 && (
-                              <span className="text-[9px] text-slate-400 block font-sans">({res.scrapPercent}٪ افت)</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap p-3 font-mono font-bold text-center text-indigo-600">
-                            {res.totalRequiredWithScrap.toLocaleString('fa-IR')} {res.unit}
-                          </td>
-                          <td className="whitespace-nowrap p-3 font-mono text-center">
-                            <strong className="text-slate-900 text-xs">{res.freeAvailableStock.toLocaleString('fa-IR')}</strong>
-                            <span className="text-[10px] text-slate-500 mr-1">{res.unit}</span>
-                            {res.totalReserved > 0 && (
-                              <span className="text-[9px] text-amber-600 block">({res.totalReserved} رزرو)</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap p-3 font-mono font-bold text-center text-slate-700">
-                            {res.maxProducibleFromThis.toLocaleString('fa-IR')} دستگاه
-                          </td>
-                          <td className="whitespace-nowrap p-3 text-center">
-                            {res.isSufficient ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                تامین است (۱۰۰٪)
-                              </span>
-                            ) : (
-                              <div className="space-y-0.5 inline-block">
-                                <span className="px-2.5 py-1 rounded-full text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-bold inline-flex items-center gap-1">
-                                  <AlertTriangle className="w-3 h-3 text-rose-600" />
-                                  کسری دارد ({res.deficitQty.toLocaleString('fa-IR')} {res.unit})
-                                </span>
-                                <span className="text-[9px] text-slate-400 block font-mono">
-                                  پوشش: {res.coveragePercent}٪
-                                </span>
-                              </div>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap p-3 text-center">
-                            {!res.isSufficient && (
-                              <button
-                                onClick={() => {
-                                  setQuickStockInItem({
-                                    itemId: res.rawItem?.id || res.bomIt.itemId,
-                                    name: res.itemName,
-                                    neededQty: res.deficitQty,
-                                  });
-                                  setQuickStockInQty(res.deficitQty);
-                                }}
-                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-[10px] font-bold transition-all shadow-2xs inline-flex items-center gap-1 cursor-pointer"
-                                title="ثبت سریع رسید ورود انبار برای تامین این کسری"
-                              >
-                                <ArrowDownLeft className="w-3 h-3 text-emerald-600" />
-                                <span>شارژ موجودی</span>
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -808,7 +1049,7 @@ export const BOMView: React.FC = () => {
                     required
                     value={bomName}
                     onChange={(e) => setBomName(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500 font-bold"
                   />
                 </div>
 
@@ -823,7 +1064,7 @@ export const BOMView: React.FC = () => {
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">محصول یا نیمه‌ساخته خروجی*</label>
                   <select
                     value={finishedItemId}
@@ -834,6 +1075,19 @@ export const BOMView: React.FC = () => {
                       <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
                     ))}
                   </select>
+                </div>
+
+                <div className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg self-end">
+                  <input
+                    type="checkbox"
+                    id="bom-is-active-cb"
+                    checked={isActiveStatus}
+                    onChange={(e) => setIsActiveStatus(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                  />
+                  <label htmlFor="bom-is-active-cb" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    فرمول فعال در خط تولید (در محاسبات کسری لحاظ گردد)
+                  </label>
                 </div>
 
                 <div className="sm:col-span-2 bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 space-y-2">
@@ -912,57 +1166,103 @@ export const BOMView: React.FC = () => {
               {/* BOM Component Items */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-700">قطعات و ضریب کسر برای ۱ واحد محصول:</label>
+                  <label className="block text-xs font-bold text-slate-700">اقلام و قطعات مصرفی برای ۱ واحد محصول ({bomItems.length} قلم):</label>
                   <button
                     type="button"
                     onClick={handleAddItemLine}
-                    className="px-2 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded text-xs font-semibold flex items-center gap-1"
+                    className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" /> افزودن قطعه
+                    <Plus className="w-3.5 h-3.5" /> افزودن قطعه جدید
                   </button>
                 </div>
 
-                {bomItems.map((line, idx) => (
-                  <div key={idx} className="flex gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 items-center">
-                    <select
-                      value={line.itemId}
-                      onChange={(e) => {
-                        const copy = [...bomItems];
-                        copy[idx].itemId = e.target.value;
-                        setBomItems(copy);
-                      }}
-                      className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800"
-                    >
-                      {items.map(i => (
-                        <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="number"
-                      min={0.01}
-                      step="any"
-                      placeholder="تعداد"
-                      value={line.quantityNeeded}
-                      onChange={(e) => {
-                        const copy = [...bomItems];
-                        copy[idx].quantityNeeded = Number(e.target.value);
-                        setBomItems(copy);
-                      }}
-                      className="w-20 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800 font-mono text-center"
-                    />
-
-                    {bomItems.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setBomItems(bomItems.filter((_, i) => i !== idx))}
-                        className="text-rose-500 hover:text-rose-700 p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                {bomItems.length === 0 ? (
+                  <div className="p-4 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-center text-xs text-slate-500">
+                    هیچ قطعه‌ای ثبت نشده است. بر روی دکمه «افزودن قطعه جدید» کلیک کنید.
                   </div>
-                ))}
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {bomItems.map((line, idx) => (
+                      <div key={idx} className="flex flex-wrap gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 items-center text-xs">
+                        <span className="font-mono text-[10px] text-slate-400 w-5 text-center">{idx + 1}</span>
+
+                        <select
+                          value={line.itemId}
+                          onChange={(e) => {
+                            const copy = [...bomItems];
+                            copy[idx].itemId = e.target.value;
+                            const found = items.find(it => it.id === e.target.value);
+                            if (found?.unit) copy[idx].unit = found.unit;
+                            setBomItems(copy);
+                          }}
+                          className="flex-1 min-w-[140px] px-2 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800"
+                        >
+                          {items.map(i => (
+                            <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
+                          ))}
+                        </select>
+
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0.001}
+                            step="any"
+                            placeholder="تعداد"
+                            value={line.quantityNeeded}
+                            onChange={(e) => {
+                              const copy = [...bomItems];
+                              copy[idx].quantityNeeded = Number(e.target.value);
+                              setBomItems(copy);
+                            }}
+                            className="w-16 px-2 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 font-mono text-center"
+                            title="تعداد مورد نیاز در ۱ دستگاه"
+                          />
+                          <input
+                            type="text"
+                            placeholder="واحد"
+                            value={line.unit}
+                            onChange={(e) => {
+                              const copy = [...bomItems];
+                              copy[idx].unit = e.target.value;
+                              setBomItems(copy);
+                            }}
+                            className="w-14 px-2 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-700 text-center"
+                            title="واحد سنجش (عدد، کیلوگرم، متر و...)"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500">افت:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="any"
+                            placeholder="٪ افت"
+                            value={line.scrapAllowancePercent}
+                            onChange={(e) => {
+                              const copy = [...bomItems];
+                              copy[idx].scrapAllowancePercent = Number(e.target.value);
+                              setBomItems(copy);
+                            }}
+                            className="w-14 px-2 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 font-mono text-center"
+                            title="درصد ضایعات و افت مجاز تولید"
+                          />
+                          <span className="text-[10px] text-slate-400">٪</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setBomItems(bomItems.filter((_, i) => i !== idx))}
+                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer"
+                          title="حذف این ردیف قطعه"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -971,26 +1271,315 @@ export const BOMView: React.FC = () => {
                   rows={2}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
+                  placeholder="نکات فنی، مشخصات مونتاژ، استانداردهای ساخت و..."
                   className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
                 ></textarea>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                <div>
+                  {editingBom && canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsModalOpen(false);
+                        handleDelete(editingBom);
+                      }}
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>حذف کامل این فرمول</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs hover:bg-slate-200 font-medium transition-colors"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-2xs active:scale-95 transition-all"
+                  >
+                    {editingBom ? 'ذخیره تغییرات فرمول BOM' : 'ثبت فرمول ساخت جدید'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Component Item Level Edit Modal */}
+      {editingComponent && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                  <Edit className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    ویرایش قطعه در فرمول ساخت
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-bold text-indigo-600 mt-0.5">
+                    {editingComponent.name}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setEditingComponent(null)} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveComponentEdit} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">ضریب کسر (۱ دستگاه)*</label>
+                  <input
+                    type="number"
+                    min={0.001}
+                    step="any"
+                    required
+                    value={editingComponent.quantityNeeded}
+                    onChange={(e) => setEditingComponent({ ...editingComponent, quantityNeeded: Number(e.target.value) })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center font-bold text-slate-900 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">واحد سنجش</label>
+                  <input
+                    type="text"
+                    value={editingComponent.unit}
+                    onChange={(e) => setEditingComponent({ ...editingComponent, unit: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold text-slate-800 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">ضریب افت مجاز و ضایعات (درصد ٪)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="any"
+                  value={editingComponent.scrapAllowancePercent}
+                  onChange={(e) => setEditingComponent({ ...editingComponent, scrapAllowancePercent: Number(e.target.value) })}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center font-bold text-slate-900 focus:bg-white focus:border-indigo-500"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  این درصد به میزان مصرف هر قطعه افزوده شده تا ضایعات خط تولید جبران شود.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">توضیحات و مشخصه فنی قطعه</label>
+                <textarea
+                  rows={2}
+                  value={editingComponent.notes}
+                  onChange={(e) => setEditingComponent({ ...editingComponent, notes: e.target.value })}
+                  placeholder="محل نصب، تلرانس، آلیاژ یا برند خاص..."
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const comp = editingComponent;
+                      setEditingComponent(null);
+                      handleDeleteComponentItem(comp.bomId, comp.itemIndex, comp.name);
+                    }}
+                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>حذف این قطعه</span>
+                  </button>
+                )}
+
+                <div className="flex items-center gap-2 mr-auto">
+                  <button
+                    type="button"
+                    onClick={() => setEditingComponent(null)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs hover:bg-slate-200 font-medium"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-2xs active:scale-95 transition-all"
+                  >
+                    ذخیره تغییرات قطعه
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Component Item to Selected BOM Modal */}
+      {isAddingComponentModalOpen && selectedBom && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    افزودن قطعه جدید به فرمول ساخت
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-bold text-emerald-700 mt-0.5">
+                    {selectedBom.name}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsAddingComponentModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAddComponent} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">انتخاب کالا / ماده اولیه / نیمه‌ساخته*</label>
+                <select
+                  required
+                  value={newCompItemId}
+                  onChange={(e) => {
+                    setNewCompItemId(e.target.value);
+                    const it = items.find(x => x.id === e.target.value);
+                    if (it?.unit) setNewCompUnit(it.unit);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:bg-white focus:border-emerald-500"
+                >
+                  {items.map(i => (
+                    <option key={i.id} value={i.id}>{i.name} ({i.code}) — {i.itemType}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">تعداد در ۱ واحد محصول*</label>
+                  <input
+                    type="number"
+                    min={0.001}
+                    step="any"
+                    required
+                    value={newCompQty}
+                    onChange={(e) => setNewCompQty(Math.max(0.001, Number(e.target.value)))}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center font-bold text-slate-900 focus:bg-white focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">واحد سنجش</label>
+                  <input
+                    type="text"
+                    value={newCompUnit}
+                    onChange={(e) => setNewCompUnit(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold text-slate-800 focus:bg-white focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">ضریب افت مجاز و ضایعات (درصد ٪)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="any"
+                  value={newCompScrap}
+                  onChange={(e) => setNewCompScrap(Number(e.target.value))}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center font-bold text-slate-900 focus:bg-white focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">توضیحات و مشخصه فنی</label>
+                <textarea
+                  rows={2}
+                  value={newCompNotes}
+                  onChange={(e) => setNewCompNotes(e.target.value)}
+                  placeholder="مشخصات مونتاژ، تلرانس، برند و..."
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => setIsAddingComponentModalOpen(false)}
                   className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs hover:bg-slate-200 font-medium"
                 >
                   انصراف
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-2xs"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-2xs active:scale-95 transition-all flex items-center gap-1.5"
                 >
-                  ذخیره فرمول BOM
+                  <Plus className="w-4 h-4" />
+                  <span>افزودن قطعه به فرمول</span>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* In-App Deletion Safe Confirmation Modal */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
+            <div className="mx-auto w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="font-extrabold text-sm text-slate-900">
+                {deleteConfirmTarget.title}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {deleteConfirmTarget.subtitle}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteConfirmedDelete}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-95"
+              >
+                بله، حذف شود
+              </button>
+            </div>
           </div>
         </div>
       )}
