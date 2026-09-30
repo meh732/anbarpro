@@ -2680,10 +2680,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     };
 
-    setProjects(prev => prev.map(p => {
-      if (p.id !== projectId) return p;
-      return { ...p, steps: updateStepRec(p.steps) };
-    }));
+    setProjects(prev => {
+      const updated = prev.map(p => {
+        if (p.id !== projectId) return p;
+        return { ...p, steps: updateStepRec(p.steps) };
+      });
+      pushStateToServer({ projects: updated });
+      return updated;
+    });
     addAudit('ویرایش جزئیات مرحله پروژه', 'ProjectStep', stepId, 'تغییر مشخصات مرحله');
   };
 
@@ -2699,10 +2703,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
     };
 
-    setProjects(prev => prev.map(p => {
-      if (p.id !== projectId) return p;
-      return { ...p, steps: deleteStepRec(p.steps) };
-    }));
+    setProjects(prev => {
+      const updated = prev.map(p => {
+        if (p.id !== projectId) return p;
+        return { ...p, steps: deleteStepRec(p.steps) };
+      });
+      pushStateToServer({ projects: updated });
+      return updated;
+    });
     addAudit('حذف مرحله پروژه', 'ProjectStep', stepId, 'حذف مرحله از پروژه');
   };
 

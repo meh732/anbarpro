@@ -61,17 +61,8 @@ export const StepMaterialHandoverModal: React.FC<{
         }))
       );
     } else {
-      // Fallback to raw materials
-      const rawMaterials = items.filter(i => i.itemType === 'RawMaterial' || i.itemType === 'Component').slice(0, 2);
-      if (rawMaterials.length > 0) {
-        setHandoverItems(
-          rawMaterials.map(m => ({
-            itemId: m.id,
-            quantity: stepTarget,
-            notes: 'تحویل قطعات اولیه مرحله'
-          }))
-        );
-      }
+      // Professional ERP Standard: If no BOM items exist for this stage, initialize empty. Never pull arbitrary materials.
+      setHandoverItems([]);
     }
   }, [step, project, items, operators]);
 
@@ -250,7 +241,14 @@ export const StepMaterialHandoverModal: React.FC<{
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {handoverItems.map((hItem, idx) => {
+                  {handoverItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-4 text-center text-slate-400 bg-slate-50/50">
+                        این مرحله فاقد فرمول ساخت مصوب است. در صورت نیاز به تحویل کالا، از گزینه زیر قطعه مورد نظر را اضافه فرمایید.
+                      </td>
+                    </tr>
+                  ) : (
+                    handoverItems.map((hItem, idx) => {
                     const selItem = items.find(i => i.id === hItem.itemId);
                     const currentStock = inventory.find(inv => inv.itemId === hItem.itemId && inv.warehouseId === sourceWarehouseId)?.quantity || 0;
                     const isShortage = currentStock < hItem.quantity;
@@ -288,7 +286,7 @@ export const StepMaterialHandoverModal: React.FC<{
                         </td>
                       </tr>
                     );
-                  })}
+                  }))}
                 </tbody>
               </table>
             </div>

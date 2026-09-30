@@ -123,6 +123,23 @@ export const ProjectBOMEditor: React.FC<ProjectBOMEditorProps> = ({
     }));
   };
 
+  const handleClearCurrentStage = (stageIdx: number) => {
+    if (!stepBoms || !setStepBoms) return;
+    setStepBoms(prev => prev.map((cfg, idx) => {
+      if (idx !== stageIdx) return cfg;
+      return { ...cfg, items: [] };
+    }));
+  };
+
+  const handleClearAllStages = () => {
+    if (isStageMode && stepBoms && setStepBoms) {
+      setStepBoms(prev => prev.map(cfg => ({ ...cfg, items: [] })));
+    }
+    if (setBomRows) {
+      setBomRows([]);
+    }
+  };
+
   const handleStageRowChange = (
     stageIdx: number, 
     rowIdx: number, 
@@ -262,8 +279,32 @@ export const ProjectBOMEditor: React.FC<ProjectBOMEditorProps> = ({
           </div>
         </div>
 
-        {/* Global Action / Current Stage Add Button */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Global Action / Current Stage Add & Clear Buttons */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {isStageMode && activeStepIndex !== -1 && (stepBoms?.[activeStepIndex]?.items?.length || 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => handleClearCurrentStage(activeStepIndex)}
+              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+              title="حذف کلیه اقلام فرمول این مرحله"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>پاکسازی اقلام این مرحله</span>
+            </button>
+          )}
+
+          {allStageItems.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAllStages}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+              title="حذف کامل کلیه اقلام فرمول از تمام مراحل (پروژه بدون فرمول)"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>حذف کل فرمول (بدون فرمول)</span>
+            </button>
+          )}
+
           {isStageMode && activeStepIndex !== -1 ? (
             <button
               type="button"

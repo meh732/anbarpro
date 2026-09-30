@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Project, ProjectStatus, ProjectStep } from '../types';
+import { Project, ProjectStatus, ProjectStep, BOMItem } from '../types';
 import { 
   Factory, Plus, CheckCircle2, Clock, PlayCircle, 
   ChevronDown, ChevronUp, User, Users, Calendar, X, GitBranch, Building2,
@@ -445,6 +445,8 @@ const LinearStepCard: React.FC<{
   onDeleteStep?: (stepId: string, projectId: string) => void;
   onHandoverStep?: (step: ProjectStep, project?: Project) => void;
   onRecordOutput?: (step: ProjectStep, project?: Project) => void;
+  onClearStepBom?: (projectId: string, stepId: string) => void;
+  onRemoveSingleBomItem?: (projectId: string, stepId: string, itemIdx: number) => void;
   canAddSubStep?: boolean;
 }> = ({
   step,
@@ -463,6 +465,8 @@ const LinearStepCard: React.FC<{
   onDeleteStep,
   onHandoverStep,
   onRecordOutput,
+  onClearStepBom,
+  onRemoveSingleBomItem,
   canAddSubStep = true,
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -812,14 +816,30 @@ const LinearStepCard: React.FC<{
           {/* Step-Specific BOM Items Section */}
           {stepBomItems.length > 0 && (
             <div className="bg-white border border-indigo-100 rounded-xl p-3.5 space-y-2.5 shadow-2xs">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h5 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-indigo-600" />
                   <span>مواد اولیه و قطعات مصرفی فرمول ساخت (BOM) این مرحله:</span>
                 </h5>
-                <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-mono font-bold">
-                  {stepBomItems.length} قلم قطعه
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-mono font-bold">
+                    {stepBomItems.length} قلم قطعه
+                  </span>
+                  {onClearStepBom && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClearStepBom(projectId, step.id);
+                      }}
+                      className="text-[11px] text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200 transition-colors flex items-center gap-1 font-bold shadow-2xs cursor-pointer"
+                      title="حذف و پاکسازی کامل فرمول ساخت از این مرحله"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>حذف فرمول این مرحله</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -832,6 +852,7 @@ const LinearStepCard: React.FC<{
                       <th className="p-2 w-16 text-center">واحد</th>
                       <th className="p-2 w-20 text-center">ضایعات (٪)</th>
                       <th className="p-2 w-28 text-center bg-indigo-50/60 text-indigo-950">کل مصرف پروژه</th>
+                      {onRemoveSingleBomItem && <th className="p-2 w-10 text-center">حذف</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -842,8 +863,15 @@ const LinearStepCard: React.FC<{
                         <tr key={bIdx} className="hover:bg-slate-50/70">
                           <td className="p-2 text-center text-slate-400 font-mono text-[10px]">{bIdx + 1}</td>
                           <td className="p-2">
-                            <div className="font-bold text-slate-800">{selIt?.name || bomIt.itemId}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">{selIt?.code}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-800">{selIt?.name || bomIt.itemId}</span>
+                              {!selIt && (
+                                <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-300 font-normal">
+                                  شناسه نامعتبر / ثبت‌نشده در کاتالوگ
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">{selIt?.code || 'کد در سیستم تعریف نشده'}</div>
                           </td>
                           <td className="p-2 text-center font-mono font-bold text-slate-800">{bomIt.quantityNeeded}</td>
                           <td className="p-2 text-center text-slate-600 text-[11px]">{selIt?.unit || bomIt.unit}</td>
@@ -851,6 +879,21 @@ const LinearStepCard: React.FC<{
                           <td className="p-2 text-center bg-indigo-50/30 font-mono font-bold text-indigo-700">
                             {totalReq.toLocaleString('fa-IR')} {selIt?.unit || bomIt.unit}
                           </td>
+                          {onRemoveSingleBomItem && (
+                            <td className="p-2 text-center">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onRemoveSingleBomItem(projectId, step.id, bIdx);
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                title="حذف این قلم از فرمول این مرحله"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -907,6 +950,8 @@ const LinearStepCard: React.FC<{
                     onDeleteStep={onDeleteStep}
                     onHandoverStep={onHandoverStep}
                     onRecordOutput={onRecordOutput}
+                    onClearStepBom={onClearStepBom}
+                    onRemoveSingleBomItem={onRemoveSingleBomItem}
                     canAddSubStep={canAddSubStep}
                   />
                 ))}
@@ -1047,6 +1092,7 @@ export const ProjectsView: React.FC = () => {
   const [editStepOutputQty, setEditStepOutputQty] = useState(1);
   const [editStepScrapPercent, setEditStepScrapPercent] = useState<number>(0);
   const [editStepStatus, setEditStepStatus] = useState<'Pending' | 'InProgress' | 'Completed'>('Pending');
+  const [editStepBomItems, setEditStepBomItems] = useState<BOMItem[]>([]);
 
   // BOM Explosion Modal state
   const [bomExplosionProject, setBomExplosionProject] = useState<Project | null>(null);
@@ -1494,6 +1540,7 @@ export const ProjectsView: React.FC = () => {
     setEditStepOutputQty(step.outputQuantity || 1);
     setEditStepScrapPercent(step.scrapAllowancePercent || 0);
     setEditStepStatus(step.status || 'Pending');
+    setEditStepBomItems(step.bomItems ? step.bomItems.map(it => ({ ...it })) : []);
   };
 
   const handleSaveEditStep = (e: React.FormEvent) => {
@@ -1516,9 +1563,52 @@ export const ProjectsView: React.FC = () => {
       outputItemId: editStepOutputItemId || undefined,
       outputQuantity: editStepOutputQty || undefined,
       scrapAllowancePercent: Number(editStepScrapPercent) || 0,
+      bomItems: editStepBomItems,
     });
 
     setEditingStepData(null);
+  };
+
+  const handleClearStepBom = (projectId: string, stepId: string) => {
+    if (confirm('آیا از حذف کامل فرمول ساخت و اقلام مصرفی این مرحله اطمینان دارید؟')) {
+      updateProjectStepDetails(projectId, stepId, { bomItems: [] });
+      showProjectToast('فرمول ساخت این مرحله با موفقیت پاکسازی شد.', 'success');
+    }
+  };
+
+  const handleRemoveSingleBomItem = (projectId: string, stepId: string, itemIdx: number) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const findStepRec = (steps: ProjectStep[]): ProjectStep | undefined => {
+      for (const s of steps) {
+        if (s.id === stepId) return s;
+        if (s.subSteps) {
+          const found = findStepRec(s.subSteps);
+          if (found) return found;
+        }
+      }
+    };
+    const targetStep = findStepRec(proj.steps);
+    if (!targetStep || !targetStep.bomItems) return;
+    const updatedItems = targetStep.bomItems.filter((_, i) => i !== itemIdx);
+    updateProjectStepDetails(projectId, stepId, { bomItems: updatedItems });
+    showProjectToast('قلم انتخابی از فرمول ساخت مرحله حذف گردید.', 'success');
+  };
+
+  const handleClearAllProjectBoms = (projectId: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    if (confirm(`آیا از حذف کامل فرمول ساخت از تمامی مراحل پروژه «${proj.name}» اطمینان دارید؟`)) {
+      const clearRec = (steps: ProjectStep[]): ProjectStep[] => {
+        return steps.map(s => ({
+          ...s,
+          bomItems: [],
+          subSteps: s.subSteps ? clearRec(s.subSteps) : [],
+        }));
+      };
+      updateProject(projectId, { steps: clearRec(proj.steps || []) });
+      showProjectToast('کلیه اقلام فرمول ساخت از تمامی مراحل پروژه حذف گردید.', 'success');
+    }
   };
 
   const handleDeleteStep = (stepId: string, projectId: string) => {
@@ -2221,6 +2311,18 @@ export const ProjectsView: React.FC = () => {
                       </button>
                     )}
 
+                    {(activeProj.steps || []).some(s => (s.bomItems && s.bomItems.length > 0)) && (
+                      <button
+                        type="button"
+                        onClick={() => handleClearAllProjectBoms(activeProj.id)}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                        title="حذف کامل فرمول ساخت از کلیه مراحل این پروژه"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-600" />
+                        <span>حذف کامل فرمول ساخت پروژه</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => setExpandedProjectId(null)}
@@ -2264,6 +2366,8 @@ export const ProjectsView: React.FC = () => {
                         onDeleteStep={canDelete ? handleDeleteStep : undefined}
                         onHandoverStep={handleOpenHandover}
                         onRecordOutput={handleOpenOutputReceipt}
+                        onClearStepBom={handleClearStepBom}
+                        onRemoveSingleBomItem={handleRemoveSingleBomItem}
                         canAddSubStep={canAdd}
                       />
                     ))}
@@ -2420,6 +2524,18 @@ export const ProjectsView: React.FC = () => {
                           <Boxes className="w-4 h-4" />
                           <span>آنالیز قطعات و حواله به قفسه (BOM Explosion)</span>
                         </button>
+
+                        {(proj.steps || []).some(s => (s.bomItems && s.bomItems.length > 0)) && (
+                          <button
+                            type="button"
+                            onClick={() => handleClearAllProjectBoms(proj.id)}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                            title="حذف و پاکسازی کامل فرمول ساخت از تمامی مراحل این پروژه"
+                          >
+                            <Trash2 className="w-4 h-4 text-rose-600" />
+                            <span>حذف کامل فرمول پروژه</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -2443,6 +2559,8 @@ export const ProjectsView: React.FC = () => {
                           onDeleteStep={canDelete ? handleDeleteStep : undefined}
                           onHandoverStep={handleOpenHandover}
                           onRecordOutput={handleOpenOutputReceipt}
+                          onClearStepBom={handleClearStepBom}
+                          onRemoveSingleBomItem={handleRemoveSingleBomItem}
                         />
                       ))}
                     </div>
@@ -3122,7 +3240,26 @@ export const ProjectsView: React.FC = () => {
                 </button>
 
                 {showBOMSectionInEdit && (
-                  <div className="p-3 bg-white">
+                  <div className="p-3 bg-white space-y-3">
+                    {editStepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0) > 0 && (
+                      <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <span className="text-xs text-rose-800 font-medium">
+                          این پروژه در حال حاضر دارای اقلام فرمول ساخت است. در صورتی که این پروژه فرمول ساخت ندارد، می‌توانید با یک کلیک تمامی اقلام را پاکسازی فرمایید:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditStepBoms(prev => prev.map(s => ({ ...s, items: [] })));
+                            setEditBomRows([]);
+                          }}
+                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف کامل فرمول ساخت از این پروژه</span>
+                        </button>
+                      </div>
+                    )}
+
                     <ProjectBOMEditor
                       targetItemId={editProjTargetItemId}
                       items={items}
@@ -3318,6 +3455,125 @@ export const ProjectsView: React.FC = () => {
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Step BOM Items Section in Edit Step Modal */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>اقلام فرمول ساخت (BOM) این مرحله:</span>
+                  </label>
+                  {editStepBomItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditStepBomItems([])}
+                      className="text-[10px] text-rose-600 hover:text-rose-800 font-bold hover:bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200 flex items-center gap-1 cursor-pointer transition-colors"
+                      title="حذف کلیه اقلام فرمول ساخت از این مرحله"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>حذف کل اقلام فرمول این مرحله</span>
+                    </button>
+                  )}
+                </div>
+
+                {editStepBomItems.length === 0 ? (
+                  <div className="text-[11px] text-slate-500 bg-white p-2.5 rounded-lg border border-slate-200 text-center">
+                    این مرحله در حال حاضر بدون فرمول ساخت است (هیچ قطعه یا ماده اولیه‌ای مصرف نمی‌شود).
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-100 text-slate-600 text-[10px]">
+                        <tr>
+                          <th className="p-1.5">کالا / قطعه</th>
+                          <th className="p-1.5 w-16 text-center">تعداد</th>
+                          <th className="p-1.5 w-16 text-center">ضایعات</th>
+                          <th className="p-1.5 w-8 text-center">حذف</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {editStepBomItems.map((it, idx) => {
+                          const itemObj = items.find(i => i.id === it.itemId);
+                          return (
+                            <tr key={idx}>
+                              <td className="p-1.5">
+                                <div className="font-bold text-slate-800 truncate max-w-[140px]">{itemObj?.name || it.itemId}</div>
+                                {!itemObj && <div className="text-[9px] text-amber-600">ناموجود در کاتالوگ</div>}
+                              </td>
+                              <td className="p-1.5 text-center">
+                                <input
+                                  type="number"
+                                  min="0.01"
+                                  step="any"
+                                  value={it.quantityNeeded}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setEditStepBomItems(prev => prev.map((x, i) => i === idx ? { ...x, quantityNeeded: val } : x));
+                                  }}
+                                  className="w-14 p-1 border rounded text-center font-mono text-xs"
+                                />
+                              </td>
+                              <td className="p-1.5 text-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={it.scrapAllowancePercent || 0}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setEditStepBomItems(prev => prev.map((x, i) => i === idx ? { ...x, scrapAllowancePercent: val } : x));
+                                  }}
+                                  className="w-12 p-1 border rounded text-center font-mono text-xs"
+                                />
+                              </td>
+                              <td className="p-1.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditStepBomItems(prev => prev.filter((_, i) => i !== idx))}
+                                  className="text-slate-400 hover:text-rose-600 p-0.5"
+                                  title="حذف این قلم"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Add part dropdown */}
+                <div className="pt-1">
+                  <select
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      const sel = items.find(i => i.id === e.target.value);
+                      setEditStepBomItems(prev => [
+                        ...prev,
+                        {
+                          itemId: e.target.value,
+                          quantityNeeded: 1,
+                          unit: sel?.unit || 'عدد',
+                          scrapAllowancePercent: 0,
+                        }
+                      ]);
+                      e.target.value = '';
+                    }}
+                    className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-700 font-medium"
+                  >
+                    <option value="">+ افزودن قطعه / ماده اولیه به این مرحله...</option>
+                    {items
+                      .filter(i => !editStepBomItems.some(bi => bi.itemId === i.id))
+                      .map(it => (
+                        <option key={it.id} value={it.id}>
+                          {it.name} ({it.code}) - {it.unit}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
