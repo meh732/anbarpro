@@ -65,6 +65,31 @@ export const ProjectBOMEditor: React.FC<ProjectBOMEditorProps> = ({
   // ----------------------------------------------------
   const currentStepConfig = isStageMode && stepBoms ? stepBoms[activeStepIndex] : null;
 
+  const handleImportExistingBom = () => {
+    if (!existingBom || !existingBom.items || existingBom.items.length === 0) return;
+    if (isStageMode && stepBoms && setStepBoms) {
+      const targetStageIdx = activeStepIndex === -1 ? 0 : activeStepIndex;
+      setStepBoms(prev => prev.map((cfg, idx) => {
+        if (idx !== targetStageIdx) return cfg;
+        const newItems: BOMRowItem[] = existingBom.items.map(it => ({
+          itemId: it.itemId,
+          quantityNeeded: it.quantityNeeded || 1,
+          unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+          scrapAllowancePercent: it.scrapAllowancePercent ?? 2,
+        }));
+        return { ...cfg, items: [...cfg.items, ...newItems] };
+      }));
+    } else if (setBomRows) {
+      const newItems: BOMRowItem[] = existingBom.items.map(it => ({
+        itemId: it.itemId,
+        quantityNeeded: it.quantityNeeded || 1,
+        unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+        scrapAllowancePercent: it.scrapAllowancePercent ?? 2,
+      }));
+      setBomRows(prev => [...prev, ...newItems]);
+    }
+  };
+
   const handleAddRowToStage = (stageIdx: number) => {
     if (!stepBoms || !setStepBoms) return;
     const defaultItem = items.find(i => i.id !== targetItemId && (i.itemType === 'RawMaterial' || i.itemType === 'Component')) || items[0];
@@ -209,19 +234,30 @@ export const ProjectBOMEditor: React.FC<ProjectBOMEditorProps> = ({
                 فرمول ساخت و مصرف قطعات (BOM) به تفکیک مراحل
               </h4>
               {existingBom ? (
-                <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  نسخه فعال: {existingBom.version}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    فرمول فعال کاتالوگ: {existingBom.name} ({existingBom.version})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleImportExistingBom}
+                    className="text-[10px] bg-white hover:bg-emerald-50 text-emerald-800 font-bold px-2.5 py-1 rounded-lg border border-emerald-300 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    📥 بارگذاری قطعات این فرمول در مرحله
+                  </button>
+                </div>
               ) : (
-                <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-indigo-200">
-                  <Sparkles className="w-3 h-3 text-indigo-500" />
-                  فرمول جدید پروژه
+                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-slate-200">
+                  <Info className="w-3 h-3 text-slate-500" />
+                  فاقد فرمول ساخت اولیه در سیستم (اختیاری)
                 </span>
               )}
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              مواد اولیه و قطعات لازم برای ساخت هر واحد «<strong className="text-indigo-700">{targetItem?.name || 'محصول انتخاب‌شده'}</strong>» را به تفکیک هر مرحله تعریف فرمایید.
+              {existingBom 
+                ? `فرمول ساخت استاندارد برای «${targetItem?.name || 'محصول'}» در سیستم موجود است. می‌توانید آن را بارگذاری فرمایید یا سفارشی‌سازی کنید.`
+                : `هیچ فرمول ساختی برای «${targetItem?.name || 'محصول'}» تعریف نشده است. در صورت نیاز قطعات هر مرحله را مشخص فرمایید یا بدون فرمول ادامه دهید.`}
             </p>
           </div>
         </div>

@@ -2648,12 +2648,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       name: newName,
       client: newClient,
       targetQuantity: newTargetQuantity,
-      status: 'Planned',
-      progress: 0,
+      status: 'Planning',
+      progressPercent: 0,
       startDate: new Date().toLocaleDateString('fa-IR'),
       steps: clonedSteps,
-      notes: sourceProj.notes 
-        ? `کپی‌شده از پروژه ${sourceProj.name} (${sourceProj.code}). ${sourceProj.notes}` 
+      description: sourceProj.description 
+        ? `کپی‌شده از پروژه ${sourceProj.name} (${sourceProj.code}). ${sourceProj.description}` 
         : `کپی‌شده از پروژه ${sourceProj.name} (${sourceProj.code})`,
     };
 

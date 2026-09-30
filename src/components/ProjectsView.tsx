@@ -1166,6 +1166,7 @@ export const ProjectsView: React.FC = () => {
     const matched = boms.find(b => b.finishedItemId === itemId && b.isActive);
     let rows: BOMRowItem[] = [];
 
+    // ONLY load BOM rows if an official BOM formula has been defined and registered for this item
     if (matched && Array.isArray(matched.items) && matched.items.length > 0) {
       rows = matched.items.map(it => ({
         itemId: it.itemId,
@@ -1174,15 +1175,8 @@ export const ProjectsView: React.FC = () => {
         scrapAllowancePercent: it.scrapAllowancePercent ?? 2,
       }));
     } else {
-      const defaultMaterials = items.filter(i => i.id !== itemId && (i.itemType === 'RawMaterial' || i.itemType === 'Component')).slice(0, 4);
-      if (defaultMaterials.length > 0) {
-        rows = defaultMaterials.map(m => ({
-          itemId: m.id,
-          quantityNeeded: 1,
-          unit: m.unit || 'عدد',
-          scrapAllowancePercent: 2,
-        }));
-      }
+      // Professional ERP principle: Never fabricate imaginary parts if no BOM formula exists!
+      rows = [];
     }
     setBomRows(rows);
 
@@ -1198,14 +1192,6 @@ export const ProjectsView: React.FC = () => {
             unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
             scrapAllowancePercent: it.scrapAllowancePercent ?? (st.scrapAllowancePercent || 0),
           }));
-        }
-      }
-
-      if (stageItems.length === 0 && rows.length > 0) {
-        if (idx === 1) {
-          stageItems = rows.slice(0, Math.ceil(rows.length / 2));
-        } else if (idx === stepsToUse.length - 1 && rows.length > 1) {
-          stageItems = rows.slice(Math.ceil(rows.length / 2));
         }
       }
 
@@ -1227,17 +1213,39 @@ export const ProjectsView: React.FC = () => {
     const matched = boms.find(b => b.finishedItemId === targetItemId && b.isActive);
     let rows: BOMRowItem[] = [];
 
-    if (matched && Array.isArray(matched.items) && matched.items.length > 0) {
+    const stepsToMap = proj?.steps || [];
+    const aggregatedStepItems: BOMRowItem[] = [];
+    stepsToMap.forEach(st => {
+      (st.bomItems || []).forEach(it => {
+        if (!it.itemId) return;
+        const exist = aggregatedStepItems.find(x => x.itemId === it.itemId);
+        if (exist) {
+          exist.quantityNeeded = (exist.quantityNeeded || 0) + (it.quantityNeeded || 0);
+        } else {
+          aggregatedStepItems.push({
+            itemId: it.itemId,
+            quantityNeeded: it.quantityNeeded || 1,
+            unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
+            scrapAllowancePercent: it.scrapAllowancePercent ?? 0,
+          });
+        }
+      });
+    });
+
+    if (aggregatedStepItems.length > 0) {
+      rows = aggregatedStepItems;
+    } else if (matched && Array.isArray(matched.items) && matched.items.length > 0) {
       rows = matched.items.map(it => ({
         itemId: it.itemId,
         quantityNeeded: it.quantityNeeded || 1,
         unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
         scrapAllowancePercent: it.scrapAllowancePercent ?? 2,
       }));
+    } else {
+      rows = [];
     }
     setEditBomRows(rows);
 
-    const stepsToMap = proj?.steps || [];
     const builtStepBoms: StepBOMConfig[] = stepsToMap.map((st, idx) => {
       let stageItems: BOMRowItem[] = [];
       if (st.bomItems && Array.isArray(st.bomItems) && st.bomItems.length > 0) {
@@ -1270,7 +1278,7 @@ export const ProjectsView: React.FC = () => {
     setEditStepBoms(builtStepBoms);
   };
 
-  // Custom Steps Form State (With Output Items & Default Step 1: Material Transfer)
+  // Custom Steps Form State (With Output Items & Clean Default Production Steps)
   interface CustomStepFormItem {
     id: string;
     name: string;
@@ -1285,7 +1293,7 @@ export const ProjectsView: React.FC = () => {
   const defaultInitialSteps: CustomStepFormItem[] = [
     { 
       id: 'step-init-1', 
-      name: 'تحویل و تخصیص مواد اولیه از انبار مرکزی به قفسه پروژه در خط تولید', 
+      name: 'تحویل و تخصیص قطعات از انبار به خط تولید', 
       operator: 'انباردار انبار مرکزی', 
       isOutsourced: false,
       outputItemId: '',
@@ -1293,27 +1301,27 @@ export const ProjectsView: React.FC = () => {
     },
     { 
       id: 'step-init-2', 
-      name: 'مونتاژ برد الکترونیکی (مونتاژ SMD و لحیم‌کاری)', 
-      operator: 'تیم مونتاژ الکترونیک', 
+      name: 'تولید، مونتاژ و آماده‌سازی قطعات', 
+      operator: 'اپراتور تولید', 
       isOutsourced: false,
-      outputItemId: items.find(i => i.itemType === 'SemiFinished')?.id || '',
-      scrapAllowancePercent: 2
+      outputItemId: '',
+      scrapAllowancePercent: 0
     },
     { 
       id: 'step-init-3', 
-      name: 'تست عملکردی، کالیبراسیون و کنترل کیفیت QC', 
-      operator: 'تکنیسین تست و QC', 
+      name: 'کنترل کیفیت، تست و بازرسی فنی (QC)', 
+      operator: 'تکنیسین کنترل کیفیت', 
       isOutsourced: false,
       outputItemId: '',
       scrapAllowancePercent: 0
     },
     { 
       id: 'step-init-4', 
-      name: 'مونتاژ مکانیکی در قاب، بسته‌بندی و تحویل به انبار محصول نهایی', 
-      operator: 'اپراتور مونتاژ نهایی', 
+      name: 'بسته‌بندی و تحویل به انبار محصول نهایی', 
+      operator: 'اپراتور بسته‌بندی و تحویل', 
       isOutsourced: false,
-      outputItemId: items.find(i => i.itemType === 'Finished')?.id || '',
-      scrapAllowancePercent: 1
+      outputItemId: '',
+      scrapAllowancePercent: 0
     },
   ];
   const [customSteps, setCustomSteps] = useState<CustomStepFormItem[]>(defaultInitialSteps);
@@ -1323,14 +1331,13 @@ export const ProjectsView: React.FC = () => {
     setName('');
     setClient('');
     setScrapAllowancePercent(0);
-    const semiItem = items.find(i => i.itemType === 'SemiFinished')?.id || '';
     const finItem = targetFinishedItemId || items.find(i => i.itemType === 'Finished')?.id || items[0]?.id || '';
     setTargetFinishedItemId(finItem);
 
-    const initialSteps = [
+    const initialSteps: CustomStepFormItem[] = [
       { 
         id: `step-${Date.now()}-1`, 
-        name: 'تحویل و تخصیص قطعات از انبار مرکزی به قفسه پروژه در خط تولید', 
+        name: 'تحویل و تخصیص قطعات از انبار به خط تولید', 
         operator: 'انباردار انبار مرکزی', 
         isOutsourced: false,
         outputItemId: '',
@@ -1338,15 +1345,15 @@ export const ProjectsView: React.FC = () => {
       },
       { 
         id: `step-${Date.now()}-2`, 
-        name: 'مونتاژ برد الکترونیکی (مونتاژ SMD و لحیم‌کاری)', 
-        operator: 'تیم مونتاژ الکترونیک', 
+        name: 'تولید، مونتاژ و آماده‌سازی قطعات', 
+        operator: 'اپراتور خط تولید', 
         isOutsourced: false,
-        outputItemId: semiItem,
-        scrapAllowancePercent: 2
+        outputItemId: '',
+        scrapAllowancePercent: 0
       },
       { 
         id: `step-${Date.now()}-3`, 
-        name: 'تست عملکردی، برنامه‌ریزی و کنترل کیفیت QC', 
+        name: 'کنترل کیفیت، تست و بازرسی فنی (QC)', 
         operator: 'تکنیسین کنترل کیفیت', 
         isOutsourced: false,
         outputItemId: '',
@@ -1354,11 +1361,11 @@ export const ProjectsView: React.FC = () => {
       },
       { 
         id: `step-${Date.now()}-4`, 
-        name: 'مونتاژ مکانیکی، بسته‌بندی و تحویل نهایی به انبار محصول', 
-        operator: 'اپراتور مونتاژ نهایی', 
+        name: 'بسته‌بندی و تحویل به انبار محصول نهایی', 
+        operator: 'اپراتور بسته‌بندی و تحویل', 
         isOutsourced: false,
-        outputItemId: finItem,
-        scrapAllowancePercent: 1
+        outputItemId: '',
+        scrapAllowancePercent: 0
       },
     ];
 
@@ -1395,8 +1402,8 @@ export const ProjectsView: React.FC = () => {
     // Map editStepBoms into the project steps
     const updatedSteps = (editingProject.steps || []).map((st, idx) => {
       const stepBomConfig = editStepBoms.find(sb => sb.stepId === st.id || sb.stepNumber === (st.stepNumber || idx + 1));
-      if (stepBomConfig && stepBomConfig.items && stepBomConfig.items.length > 0) {
-        const stepItems = stepBomConfig.items.map(it => ({
+      if (stepBomConfig) {
+        const stepItems = (stepBomConfig.items || []).map(it => ({
           itemId: it.itemId,
           quantityNeeded: Number(it.quantityNeeded) || 1,
           unit: it.unit || items.find(i => i.id === it.itemId)?.unit || 'عدد',
@@ -2725,8 +2732,14 @@ export const ProjectsView: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Boxes className="w-4 h-4 text-indigo-600" />
                     <span>تعریف و تنظیم فرمول ساخت (BOM) برای مراحل پروژه</span>
-                    <span className="text-[10px] bg-indigo-200 text-indigo-800 font-mono px-2 py-0.5 rounded-full">
-                      {stepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0)} قلم قطعه در مراحل
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                      stepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0) > 0
+                        ? 'bg-indigo-200 text-indigo-800'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {stepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0) > 0
+                        ? `${stepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0)} قلم قطعه در مراحل`
+                        : 'بدون فرمول (اختیاری)'}
                     </span>
                   </div>
                   {showBOMSectionInAdd ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4 text-indigo-600" />}
@@ -3095,8 +3108,14 @@ export const ProjectsView: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Boxes className="w-4 h-4 text-indigo-600" />
                     <span>تعریف و ویرایش فرمول ساخت (BOM) مراحل پروژه</span>
-                    <span className="text-[10px] bg-indigo-200 text-indigo-800 font-mono px-2 py-0.5 rounded-full">
-                      {editStepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0)} قلم قطعه در مراحل
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                      editStepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0) > 0
+                        ? 'bg-indigo-200 text-indigo-800'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {editStepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0) > 0
+                        ? `${editStepBoms.reduce((acc, s) => acc + (s.items?.length || 0), 0)} قلم قطعه در مراحل`
+                        : 'بدون فرمول (اختیاری)'}
                     </span>
                   </div>
                   {showBOMSectionInEdit ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4 text-indigo-600" />}
