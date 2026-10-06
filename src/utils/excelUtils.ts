@@ -31,6 +31,7 @@ export function parseSafeNumber(val: any, defaultValue = 0): number {
   const cleanStr = norm
     .replace(/[,،٬\s_]/g, '')
     .replace(/[ریال|تومان|تومن|ت|ر|USD|\$|IRR|TOMAN]/gi, '')
+    .replace(/(\d+)\/(\d+)/g, '$1.$2')
     .trim();
 
   const directNum = parseFloat(cleanStr);
@@ -39,8 +40,8 @@ export function parseSafeNumber(val: any, defaultValue = 0): number {
   }
 
   // 2. Fallback regex extraction: extracts the first floating/integer number
-  // Handles values like "تعداد: 250 عدد", "12.5 کیلوگرم", "1,500 pcs", "100 pcs"
-  const regexMatch = norm.replace(/[,،٬]/g, '').match(/[-+]?\d+(?:\.\d+)?/);
+  // Handles values like "تعداد: 250 عدد", "12.5 کیلوگرم", "1,500 pcs", "100 pcs", "۶۵۰ عدد"
+  const regexMatch = norm.replace(/[,،٬]/g, '').replace(/(\d+)\/(\d+)/g, '$1.$2').match(/[-+]?\d+(?:\.\d+)?/);
   if (regexMatch) {
     const extracted = parseFloat(regexMatch[0]);
     if (!isNaN(extracted) && isFinite(extracted)) {
@@ -78,31 +79,41 @@ export function cleanHeaderKey(key: string): string {
 
 /**
  * Retrieves the first matching value from a row based on candidate keys (exact or normalized)
+ * Prioritizes high-specificity candidates first, preventing early false-positive substring matches
  */
 export function getRowField(row: Record<string, any>, candidateKeys: string[]): any {
   if (!row || typeof row !== 'object') return undefined;
 
-  // 1. Direct check
+  // 1. Direct exact key lookup
   for (const k of candidateKeys) {
     if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
       return row[k];
     }
   }
 
-  // 2. Normalized check
-  const normalizedCandidateKeys = candidateKeys.map(cleanHeaderKey);
   const rowEntries = Object.entries(row);
-  for (const [rawKey, rawVal] of rowEntries) {
-    if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
-    const normKey = cleanHeaderKey(rawKey);
-    if (
-      normalizedCandidateKeys.some(cand => 
-        normKey === cand || 
-        (cand.length >= 3 && normKey.includes(cand)) || 
-        (normKey.length >= 3 && cand.includes(normKey))
-      )
-    ) {
-      return rawVal;
+
+  // 2. Exact normalized match in candidate priority order
+  for (const cand of candidateKeys) {
+    const normCand = cleanHeaderKey(cand);
+    for (const [rawKey, rawVal] of rowEntries) {
+      if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
+      if (cleanHeaderKey(rawKey) === normCand) {
+        return rawVal;
+      }
+    }
+  }
+
+  // 3. Substring match in candidate priority order (cand length >= 3)
+  for (const cand of candidateKeys) {
+    const normCand = cleanHeaderKey(cand);
+    if (normCand.length < 3) continue;
+    for (const [rawKey, rawVal] of rowEntries) {
+      if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
+      const normKey = cleanHeaderKey(rawKey);
+      if (normKey === normCand || normKey.includes(normCand) || normCand.includes(normKey)) {
+        return rawVal;
+      }
     }
   }
 
@@ -131,7 +142,8 @@ function extractRowsFromWorkbook(workbook: XLSX.WorkBook): { rawRows: Record<str
   };
 
   // Inspect each sheet in workbook
-  for (const sheetName of workbook.SheetNames) {
+  for (let sIdx = 0; sIdx < workbook.SheetNames.length; sIdx++) {
+    const sheetName = workbook.SheetNames[sIdx];
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
 
@@ -194,11 +206,49 @@ function extractRowsFromWorkbook(workbook: XLSX.WorkBook): { rawRows: Record<str
       }
     }
 
-    if (extractedRows.length > 0 && maxHeaderScore > bestResult.score) {
+    // Overall Sheet Relevance Scoring:
+    // Boost sheets that contain transactional data and quantity columns,
+    // and heavily penalize reference / lookup sheets (e.g. "لیست کدهای معتبر کالا", "لیست انبارها")
+    let sheetScore = maxHeaderScore;
+
+    // Quantity column detection in headers
+    const hasQuantityCol = headers.some(h => {
+      const c = cleanHeaderKey(h);
+      return c.includes('تعداد') || c.includes('مقدار') || c.includes('تیراژ') || c.includes('میزان') || c.includes('qty') || c.includes('quantity') || c.includes('count');
+    });
+    if (hasQuantityCol) {
+      sheetScore += 35;
+    }
+
+    const normSheetName = cleanHeaderKey(sheetName);
+    // Primary first sheet priority
+    if (sIdx === 0) {
+      sheetScore += 20;
+    }
+    // Transactional sheet name keywords
+    if (
+      normSheetName.includes('اقلام') || normSheetName.includes('رسید') || 
+      normSheetName.includes('ورود') || normSheetName.includes('خروج') || 
+      normSheetName.includes('حواله') || normSheetName.includes('کالا') || 
+      normSheetName.includes('data') || normSheetName.includes('sheet1')
+    ) {
+      sheetScore += 25;
+    }
+    // Secondary lookup/reference sheet name penalty
+    if (
+      normSheetName.includes('معتبر') || normSheetName.includes('مرجع') || 
+      normSheetName.includes('انبارها') || normSheetName.includes('راهنما') || 
+      normSheetName.includes('reference') || normSheetName.includes('lookup') || 
+      normSheetName.includes('ref') || normSheetName.includes('guide') || normSheetName.includes('codes')
+    ) {
+      sheetScore -= 50;
+    }
+
+    if (extractedRows.length > 0 && sheetScore > bestResult.score) {
       bestResult = {
         rawRows: extractedRows,
         sheetName,
-        score: maxHeaderScore
+        score: sheetScore
       };
     }
   }
@@ -1336,18 +1386,18 @@ export async function parseStockMovementItemsFromExcel(
       if (it.id) itemById.set(it.id, it);
     });
 
-    // Specific quantity candidates prioritized by document type
+    // Specific quantity candidates prioritized by document type (Specific quantity phrases only, no generic document terms)
     const inQtyCandidates = [
-      'تعداد ورود', 'مقدار ورود', 'تعداد وارده', 'مقدار وارده', 'وارده', 'ورود',
-      'تعداد رسید', 'مقدار رسید', 'رسید', 'تعداد / مقدار', 'تعداد/مقدار', 'تعداد', 'مقدار',
-      'تعداد اقلام', 'مقدار اقلام', 'تیراژ', 'میزان', 'حجم', 'وزن', 'متراژ', 'عدد',
-      'qty_in', 'quantity_in', 'in_qty', 'incoming', 'received', 'in', 'quantity', 'qty', 'count', 'amount'
+      'تعداد / مقدار', 'تعداد/مقدار', 'تعداد ورود', 'مقدار ورود', 'تعداد وارده', 'مقدار وارده', 
+      'تعداد رسید', 'مقدار رسید', 'تعداد کل', 'تعداد اقلام', 'مقدار اقلام', 'تعداد کالا', 'تعداد', 'مقدار',
+      'میزان', 'تیراژ', 'حجم', 'وزن', 'متراژ',
+      'qty_in', 'quantity_in', 'in_qty', 'incoming', 'received', 'quantity', 'qty', 'count', 'amount'
     ];
     const outQtyCandidates = [
-      'تعداد خروج', 'مقدار خروج', 'تعداد صادره', 'مقدار صادره', 'صادره', 'خروج',
-      'تعداد حواله', 'مقدار حواله', 'حواله', 'مصرف', 'تعداد / مقدار', 'تعداد/مقدار', 'تعداد', 'مقدار',
-      'تعداد اقلام', 'مقدار اقلام', 'تیراژ', 'میزان', 'حجم', 'وزن', 'متراژ', 'عدد',
-      'qty_out', 'quantity_out', 'out_qty', 'outgoing', 'issued', 'out', 'quantity', 'qty', 'count', 'amount'
+      'تعداد / مقدار', 'تعداد/مقدار', 'تعداد خروج', 'مقدار خروج', 'تعداد صادره', 'مقدار صادره',
+      'تعداد حواله', 'مقدار حواله', 'تعداد مصرف', 'مقدار مصرف', 'تعداد کل', 'تعداد اقلام', 'مقدار اقلام', 'تعداد کالا', 'تعداد', 'مقدار',
+      'میزان', 'تیراژ', 'حجم', 'وزن', 'متراژ',
+      'qty_out', 'quantity_out', 'out_qty', 'outgoing', 'issued', 'quantity', 'qty', 'count', 'amount'
     ];
     const preferredQtyCandidates = docType === 'OUT' ? outQtyCandidates : inQtyCandidates;
 
@@ -1399,31 +1449,77 @@ export async function parseStockMovementItemsFromExcel(
         return;
       }
 
-      // 2. Extract Quantity from Excel
-      let rawQty = getRowField(row, preferredQtyCandidates);
+      // 2. Extract Quantity from Excel with 3-tier smart resolution
+      let rawQty: any = undefined;
+      let qty = 0;
 
-      // Fallback: Scan columns for any header mentioning quantity terms
-      if (rawQty === undefined || rawQty === null || String(rawQty).trim() === '') {
+      // Strategy A: Check candidate quantity columns in priority order
+      const candQty = getRowField(row, preferredQtyCandidates);
+      if (candQty !== undefined && candQty !== null && String(candQty).trim() !== '') {
+        const parsed = parseSafeNumber(candQty, 0);
+        if (parsed > 0) {
+          rawQty = candQty;
+          qty = parsed;
+        }
+      }
+
+      // Strategy B: Scan columns for quantity keywords, strictly excluding non-quantity metadata
+      if (qty <= 0) {
+        for (const [colKey, colVal] of Object.entries(row)) {
+          if (colVal === undefined || colVal === null || String(colVal).trim() === '') continue;
+          const kClean = cleanHeaderKey(colKey);
+
+          // Exclude columns that represent other non-quantity fields
+          if (
+            kClean.includes('قیمت') || kClean.includes('فی') || kClean.includes('مبلغ') || kClean.includes('ارزش') ||
+            kClean.includes('کد') || kClean.includes('نام') || kClean.includes('عنوان') || kClean.includes('بارکد') ||
+            kClean.includes('شماره') || kClean.includes('تاریخ') || kClean.includes('ساعت') ||
+            kClean.includes('شرح') || kClean.includes('توضیح') || kClean.includes('یادداشت') || kClean.includes('علت') ||
+            kClean.includes('واحد') || kClean.includes('سنجش') || kClean.includes('ردیف')
+          ) {
+            continue;
+          }
+
+          if (
+            kClean.includes('تعداد') || kClean.includes('مقدار') || 
+            kClean.includes('تیراژ') || kClean.includes('میزان') || 
+            kClean.includes('qty') || kClean.includes('quantity') || kClean.includes('count') || kClean.includes('amount')
+          ) {
+            const parsed = parseSafeNumber(colVal, 0);
+            if (parsed > 0) {
+              rawQty = colVal;
+              qty = parsed;
+              break;
+            }
+          }
+        }
+      }
+
+      // Strategy C: Safe numeric fallback - unassigned positive numeric column that isn't price, code or row index
+      if (qty <= 0) {
         for (const [colKey, colVal] of Object.entries(row)) {
           if (colVal === undefined || colVal === null || String(colVal).trim() === '') continue;
           const kClean = cleanHeaderKey(colKey);
           if (
-            kClean.includes('تعداد') || kClean.includes('مقدار') || 
-            kClean.includes('وارده') || kClean.includes('صادره') || 
-            kClean.includes('ورود') || kClean.includes('خروج') || 
-            kClean.includes('رسید') || kClean.includes('حواله') || 
-            kClean.includes('qty') || kClean.includes('quantity') || kClean.includes('count')
+            kClean.includes('کد') || kClean.includes('نام') || kClean.includes('بارکد') ||
+            kClean.includes('قیمت') || kClean.includes('فی') || kClean.includes('مبلغ') ||
+            kClean.includes('ردیف') || kClean.includes('شماره') || kClean.includes('تاریخ') ||
+            kClean.includes('واحد')
           ) {
+            continue;
+          }
+          const parsed = parseSafeNumber(colVal, 0);
+          if (parsed > 0 && parsed !== matchedItem.unitPrice) {
             rawQty = colVal;
+            qty = parsed;
             break;
           }
         }
       }
 
-      const qty = parseSafeNumber(rawQty, 0);
-
       if (qty <= 0) {
-        errors.push(`ردیف ${rowNum}: مقدار وارد شده برای کالای "${matchedItem.name}" نامعتبر است (مقدار دریافتی از اکسل: ${rawQty ?? 'خالی'}). لطفا عددی بزرگتر از صفر در ستون تعداد وارد کنید.`);
+        const attemptVal = rawQty ?? getRowField(row, preferredQtyCandidates) ?? 'خالی';
+        errors.push(`ردیف ${rowNum}: مقدار وارد شده برای کالای "${matchedItem.name}" نامعتبر است (مقدار دریافتی از اکسل: ${attemptVal}). لطفا عددی بزرگتر از صفر در ستون تعداد وارد کنید.`);
         return;
       }
 
@@ -1432,7 +1528,7 @@ export async function parseStockMovementItemsFromExcel(
       const parsedUnitPrice = rawUnitPrice !== undefined ? parseSafeNumber(rawUnitPrice, matchedItem.unitPrice || 0) : (matchedItem.unitPrice || 0);
 
       // 4. Notes
-      const rawNotes = getRowField(row, ['توضیحات / شماره ردیف / علت', 'توضیحات', 'یادداشت', 'شرح', 'علت', 'ردیف', 'notes', 'description', 'reason', 'memo']);
+      const rawNotes = getRowField(row, ['توضیحات / شماره ردیف / علت', 'توضیحات', 'یادداشت', 'شرح', 'علت', 'notes', 'description', 'reason', 'memo']);
       const notes = parseSafeString(rawNotes, '');
 
       parsedItems.push({
