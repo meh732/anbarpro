@@ -2394,23 +2394,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prevItems.forEach(it => itemsMap.set(it.code.toLowerCase().trim(), it));
 
       newItemsList.forEach(rawItem => {
-        const key = rawItem.code.toLowerCase().trim();
-        const existing = itemsMap.get(key);
-        if (existing) {
-          // Update existing item
-          itemsMap.set(key, {
-            ...existing,
-            ...rawItem,
-          });
+        const rawWithOld = rawItem as any;
+        const oldCodeKey = rawWithOld.oldCode ? String(rawWithOld.oldCode).toLowerCase().trim() : '';
+        const oldNameKey = rawWithOld.oldName ? String(rawWithOld.oldName).toLowerCase().trim() : '';
+        const currentCodeKey = rawItem.code ? String(rawItem.code).toLowerCase().trim() : '';
+        const currentNameKey = rawItem.name ? String(rawItem.name).toLowerCase().trim() : '';
+
+        let existingItem: Item | undefined = undefined;
+        let matchedMapKey: string | undefined = undefined;
+
+        if (oldCodeKey) {
+          for (const [mapKey, itemObj] of itemsMap.entries()) {
+            if (itemObj.code.toLowerCase().trim() === oldCodeKey) {
+              existingItem = itemObj;
+              matchedMapKey = mapKey;
+              break;
+            }
+          }
+        }
+
+        if (!existingItem && oldNameKey) {
+          for (const [mapKey, itemObj] of itemsMap.entries()) {
+            if (itemObj.name.toLowerCase().trim() === oldNameKey) {
+              existingItem = itemObj;
+              matchedMapKey = mapKey;
+              break;
+            }
+          }
+        }
+
+        if (!existingItem && currentCodeKey) {
+          for (const [mapKey, itemObj] of itemsMap.entries()) {
+            if (itemObj.code.toLowerCase().trim() === currentCodeKey) {
+              existingItem = itemObj;
+              matchedMapKey = mapKey;
+              break;
+            }
+          }
+        }
+
+        if (!existingItem && currentNameKey) {
+          for (const [mapKey, itemObj] of itemsMap.entries()) {
+            if (itemObj.name.toLowerCase().trim() === currentNameKey) {
+              existingItem = itemObj;
+              matchedMapKey = mapKey;
+              break;
+            }
+          }
+        }
+
+        if (existingItem && matchedMapKey) {
+          // Update existing item (replacing code/name/price/description in place)
+          itemsMap.delete(matchedMapKey);
+          const cleanItemProps = { ...rawItem };
+          delete (cleanItemProps as any).oldCode;
+          delete (cleanItemProps as any).oldName;
+
+          const updatedItem: Item = {
+            ...existingItem,
+            ...cleanItemProps,
+            id: existingItem.id,
+            createdAt: existingItem.createdAt
+          };
+          itemsMap.set(updatedItem.code.toLowerCase().trim(), updatedItem);
           updatedCount++;
         } else {
           // Create new item
+          const cleanItemProps = { ...rawItem };
+          delete (cleanItemProps as any).oldCode;
+          delete (cleanItemProps as any).oldName;
+
           const newItem: Item = {
-            ...rawItem,
+            ...cleanItemProps,
             id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             createdAt: dateStr,
           };
-          itemsMap.set(key, newItem);
+          itemsMap.set(newItem.code.toLowerCase().trim(), newItem);
           addedCount++;
         }
       });

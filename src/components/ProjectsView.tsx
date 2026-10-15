@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Project, ProjectStatus, ProjectStep, BOMItem } from '../types';
+import { Project, ProjectStatus, ProjectStep, BOMItem, Item } from '../types';
 import { 
   Factory, Plus, CheckCircle2, Clock, PlayCircle, 
   ChevronDown, ChevronUp, User, Users, Calendar, X, GitBranch, Building2,
@@ -8,7 +8,7 @@ import {
   Boxes, Warehouse, Check, FileCheck, ShieldAlert, Sparkles,
   PieChart, BarChart3, FolderTree, FileText, Search, DollarSign, Layers3,
   Pencil, Edit, Eye, Calculator, Zap, Home, Archive, LayoutGrid, List,
-  SlidersHorizontal, CheckSquare, Package, TrendingUp, FileSpreadsheet, Copy
+  SlidersHorizontal, CheckSquare, Package, TrendingUp, FileSpreadsheet, Copy, ArrowLeft
 } from 'lucide-react';
 import { SmartStageScalingModal } from './SmartStageScalingModal';
 import { ProjectBOMEditor, BOMRowItem, StepBOMConfig } from './ProjectBOMEditor';
@@ -1040,7 +1040,7 @@ export const ProjectsView: React.FC = () => {
     addProject, updateProject, deleteProject, duplicateProject, updateProjectStep, 
     updateProjectStepDetails, addProjectSubStep, deleteProjectStep, 
     createTransfer, language, hasActionPermission, liteMode,
-    addBOM, updateBOM
+    addBOM, updateBOM, setActiveTab, currentUser
   } = useApp();
 
   const isFa = language === 'fa';
@@ -1096,6 +1096,22 @@ export const ProjectsView: React.FC = () => {
 
   // BOM Explosion Modal state
   const [bomExplosionProject, setBomExplosionProject] = useState<Project | null>(null);
+  const [explosionSourceWhId, setExplosionSourceWhId] = useState<string>('');
+  const [explosionTargetWhId, setExplosionTargetWhId] = useState<string>('');
+  const [explosionCustomNotes, setExplosionCustomNotes] = useState<string>('');
+  const [explosionIssuedTransferDoc, setExplosionIssuedTransferDoc] = useState<{ docNumber: string; targetWhName: string } | null>(null);
+
+  // Initialize source and destination warehouses when BOM Explosion modal opens
+  useEffect(() => {
+    if (bomExplosionProject) {
+      const defaultSource = warehouses.find(w => w.warehouseType === 'Central' || (w.warehouseType as string) === 'RawMaterials')?.id || warehouses[0]?.id || 'wh-raw';
+      const defaultTarget = warehouses.find(w => w.linkedProjectId === bomExplosionProject.id || w.warehouseType === 'Production')?.id || warehouses[1]?.id || warehouses[0]?.id || 'wh-prod-p101';
+      setExplosionSourceWhId(defaultSource);
+      setExplosionTargetWhId(defaultTarget);
+      setExplosionCustomNotes('');
+      setExplosionIssuedTransferDoc(null);
+    }
+  }, [bomExplosionProject, warehouses]);
 
   // Smart BOM Scaling Modal state
   const [smartScalingProject, setSmartScalingProject] = useState<Project | null>(null);
@@ -1839,21 +1855,129 @@ export const ProjectsView: React.FC = () => {
     quantityPerUnit: number;
     scrapPercent: number;
     totalNeededWithScrap: number;
-    centralStock: number;
-    projectRackStock: number;
+    sourceStock: number;
+    destStock: number;
     shortage: number;
     isSemiFinished: boolean;
+    stageConsumers: string[];
   }
 
-  const getCalculatedProjectBOM = (proj: Project): RequiredMaterialItem[] => {
+  const getCalculatedProjectBOM = (
+    proj: Project, 
+    sourceWhId?: string, 
+    targetWhId?: string
+  ): RequiredMaterialItem[] => {
     const result: Map<string, RequiredMaterialItem> = new Map();
     if (!proj) return [];
 
-    const explode = (itemId: string, currentTargetQty: number, visited = new Set<string>()) => {
+    const effectiveSourceWh = sourceWhId || explosionSourceWhId || 'wh-raw';
+    const effectiveTargetWh = targetWhId || explosionTargetWhId || 'wh-prod-p101';
+
+    const getStockInWh = (itemId: string, whId: string) => {
+      return (inventory || [])
+        .filter(inv => inv.itemId === itemId && inv.warehouseId === whId)
+        .reduce((sum, curr) => sum + (curr.quantity || 0), 0);
+    };
+
+    const addOrMergeComponent = (
+      compItem: Item,
+      qtyPerUnit: number,
+      totalQty: number,
+      scrapRate: number,
+      consumerStageTitle: string
+    ) => {
+      const sourceStock = getStockInWh(compItem.id, effectiveSourceWh);
+      const destStock = getStockInWh(compItem.id, effectiveTargetWh);
+      const existing = result.get(compItem.id);
+
+      if (existing) {
+        existing.totalNeededWithScrap += totalQty;
+        existing.shortage = Math.max(0, existing.totalNeededWithScrap - existing.sourceStock);
+        if (consumerStageTitle && !existing.stageConsumers.includes(consumerStageTitle)) {
+          existing.stageConsumers.push(consumerStageTitle);
+        }
+      } else {
+        result.set(compItem.id, {
+          itemId: compItem.id,
+          itemCode: compItem.code || '',
+          itemName: compItem.name || '',
+          unit: compItem.unit || 'عدد',
+          quantityPerUnit: qtyPerUnit,
+          scrapPercent: scrapRate,
+          totalNeededWithScrap: totalQty,
+          sourceStock,
+          destStock,
+          shortage: Math.max(0, totalQty - sourceStock),
+          isSemiFinished: compItem.itemType === 'SemiFinished',
+          stageConsumers: consumerStageTitle ? [consumerStageTitle] : []
+        });
+      }
+    };
+
+    // 1. Traverse all project steps and sub-steps (stages & sub-stages)
+    const flattenedSteps = flattenProjectSteps(proj.steps || [], '', 0);
+    let foundStageBOMs = false;
+
+    flattenedSteps.forEach(({ step, code }) => {
+      const stepTargetQty = step.targetQuantity || step.outputQuantity || proj.targetQuantity || 1;
+      const stepScrap = step.scrapAllowancePercent !== undefined ? step.scrapAllowancePercent : (proj.scrapAllowancePercent || 0);
+      const stepTitle = `${code ? `مرحله ${code}: ` : ''}${step.name || step.title || 'مرحله'}`;
+
+      // A) Direct stage BOM items (defined on this specific stage / sub-stage)
+      if (step.bomItems && Array.isArray(step.bomItems) && step.bomItems.length > 0) {
+        foundStageBOMs = true;
+        step.bomItems.forEach(bIt => {
+          if (!bIt) return;
+          const targetItem = (items || []).find(i => i.id === bIt.itemId || i.code === bIt.itemId);
+          if (!targetItem) return;
+          const scrapRate = bIt.scrapAllowancePercent !== undefined ? bIt.scrapAllowancePercent : stepScrap;
+          const totalQty = Math.ceil((bIt.quantityNeeded || 0) * stepTargetQty * (1 + scrapRate / 100));
+          if (totalQty > 0) {
+            addOrMergeComponent(
+              targetItem, 
+              bIt.quantityNeeded || 0, 
+              totalQty, 
+              scrapRate, 
+              `${stepTitle} (${totalQty} ${targetItem.unit || 'عدد'})`
+            );
+          }
+        });
+      }
+
+      // B) Output item BOM (if step produces a semi-finished product with an active BOM recipe)
+      if ((!step.bomItems || step.bomItems.length === 0) && step.outputItemId) {
+        const stageBom = (boms || []).find(b => b.finishedItemId === step.outputItemId && b.isActive)
+          || (boms || []).find(b => b.finishedItemId === step.outputItemId);
+        if (stageBom && Array.isArray(stageBom.items) && stageBom.items.length > 0) {
+          foundStageBOMs = true;
+          stageBom.items.forEach(bIt => {
+            if (!bIt) return;
+            const targetItem = (items || []).find(i => i.id === bIt.itemId);
+            if (!targetItem) return;
+            const scrapRate = bIt.scrapAllowancePercent !== undefined ? bIt.scrapAllowancePercent : stepScrap;
+            const totalQty = Math.ceil((bIt.quantityNeeded || 0) * stepTargetQty * (1 + scrapRate / 100));
+            if (totalQty > 0) {
+              addOrMergeComponent(
+                targetItem,
+                bIt.quantityNeeded || 0,
+                totalQty,
+                scrapRate,
+                `${stepTitle} [فرمول ${stageBom.name}] (${totalQty} ${targetItem.unit || 'عدد'})`
+              );
+            }
+          });
+        }
+      }
+    });
+
+    // 2. Also inspect the Project's Root Finished Product BOM tree
+    // (If steps didn't define BOMs, or to capture any top-level assembly materials)
+    const explodeRootBom = (itemId: string, currentTargetQty: number, visited = new Set<string>(), pathName = '') => {
       if (!itemId || visited.has(itemId)) return;
       visited.add(itemId);
 
-      const activeBOM = (boms || []).find(b => b.finishedItemId === itemId && b.isActive);
+      const activeBOM = (boms || []).find(b => b.finishedItemId === itemId && b.isActive)
+        || (boms || []).find(b => b.finishedItemId === itemId);
       if (!activeBOM || !Array.isArray(activeBOM.items)) return;
 
       for (const bomItem of activeBOM.items) {
@@ -1861,52 +1985,59 @@ export const ProjectsView: React.FC = () => {
         const targetItem = (items || []).find(i => i.id === bomItem.itemId);
         if (!targetItem) continue;
 
-        const scrapRate = bomItem.scrapAllowancePercent || 0;
-        const exactNeeded = Math.ceil((bomItem.quantityNeeded || 0) * currentTargetQty * (1 + scrapRate / 100));
-
-        const centralStock = (inventory || [])
-          .filter(inv => inv.itemId === targetItem.id && (inv.warehouseId === 'wh-central' || inv.warehouseId === 'wh-raw'))
-          .reduce((sum, curr) => sum + (curr.quantity || 0), 0);
-
-        const projectRackStock = (inventory || [])
-          .filter(inv => inv.itemId === targetItem.id && (inv.warehouseId === 'wh-prod-p101' || inv.warehouseId === `wh-prod-${(proj.code || '').toLowerCase()}`))
-          .reduce((sum, curr) => sum + (curr.quantity || 0), 0);
-
+        // If step BOMs were already explicitly defined and this item is already covered, avoid double counting
         const existing = result.get(targetItem.id);
-        if (existing) {
-          existing.totalNeededWithScrap += exactNeeded;
-          existing.shortage = Math.max(0, existing.totalNeededWithScrap - existing.centralStock);
-        } else {
-          result.set(targetItem.id, {
-            itemId: targetItem.id,
-            itemCode: targetItem.code || '',
-            itemName: targetItem.name || '',
-            unit: targetItem.unit || '',
-            quantityPerUnit: bomItem.quantityNeeded || 0,
-            scrapPercent: scrapRate,
-            totalNeededWithScrap: exactNeeded,
-            centralStock,
-            projectRackStock,
-            shortage: Math.max(0, exactNeeded - centralStock),
-            isSemiFinished: targetItem.itemType === 'SemiFinished'
-          });
+        if (foundStageBOMs && existing) {
+          continue;
         }
 
-        // Recursive explosion for child BOMs
-        const childBOM = (boms || []).find(b => b.finishedItemId === targetItem.id && b.isActive);
+        const scrapRate = bomItem.scrapAllowancePercent !== undefined ? bomItem.scrapAllowancePercent : (proj.scrapAllowancePercent || 0);
+        const exactNeeded = Math.ceil((bomItem.quantityNeeded || 0) * currentTargetQty * (1 + scrapRate / 100));
+        const stageLabel = pathName ? `${pathName} > ${activeBOM.name}` : `فرمول ساخت محصول (${activeBOM.name})`;
+
+        addOrMergeComponent(
+          targetItem,
+          bomItem.quantityNeeded || 0,
+          exactNeeded,
+          scrapRate,
+          stageLabel
+        );
+
+        // Recursive explosion for semi-finished sub-components
+        const childBOM = (boms || []).find(b => b.finishedItemId === targetItem.id && b.isActive)
+          || (boms || []).find(b => b.finishedItemId === targetItem.id);
         if (childBOM) {
-          explode(targetItem.id, exactNeeded, new Set(visited));
+          explodeRootBom(targetItem.id, exactNeeded, new Set(visited), stageLabel);
         }
       }
     };
 
-    explode(proj.targetFinishedItemId, proj.targetQuantity || 1);
+    if (proj.targetFinishedItemId) {
+      explodeRootBom(proj.targetFinishedItemId, proj.targetQuantity || 1);
+    }
+
     return Array.from(result.values());
   };
 
-  const handleAutoIssueMaterialTransfer = (proj: Project, materials: RequiredMaterialItem[]) => {
+  const handleAutoIssueMaterialTransfer = (
+    proj: Project, 
+    materials: RequiredMaterialItem[],
+    sourceWhId: string,
+    targetWhId: string,
+    customNotes?: string
+  ) => {
     if (materials.length === 0) {
-      showProjectToast('هیچ فرمول ساخت (BOM) فعال برای این محصول ثبت نشده است.', 'error');
+      showProjectToast('هیچ قطعه یا فرمول ساختی برای این پروژه یافت نشد.', 'error');
+      return;
+    }
+
+    if (!sourceWhId || !targetWhId) {
+      showProjectToast('لطفاً انبار مبدا و انبار مقصد را مشخص کنید.', 'error');
+      return;
+    }
+
+    if (sourceWhId === targetWhId) {
+      showProjectToast('انبار مبدا و انبار مقصد نمی‌توانند یکسان باشند.', 'error');
       return;
     }
 
@@ -1922,29 +2053,39 @@ export const ProjectsView: React.FC = () => {
       return;
     }
 
-    const targetWHId = warehouses.find(w => w.linkedProjectId === proj.id || w.id === 'wh-prod-p101')?.id || 'wh-prod-p101';
+    const srcWh = warehouses.find(w => w.id === sourceWhId) || warehouses[0];
+    const tgtWh = warehouses.find(w => w.id === targetWhId) || warehouses[1] || warehouses[0];
+    const docNumber = `TRF-PRJ-${proj.code.replace('PRJ-', '')}-${Math.floor(100 + Math.random() * 900)}`;
 
     createTransfer({
-      docNumber: `TRF-PRJ-${proj.code.replace('PRJ-', '')}`,
-      date: new Date().toISOString().substring(0, 10),
-      sourceWarehouseId: 'wh-raw',
-      targetWarehouseId: targetWHId,
-      requestedBy: 'سیستم برنامه‌ریزی تولید',
-      registeredBy: 'سیستم برنامه‌ریزی تولید',
-      handlerName: 'انباردار انبار مرکزی',
-      status: 'Completed',
+      docNumber,
+      date: new Date().toLocaleDateString('fa-IR'),
+      sourceWarehouseId: srcWh.id,
+      targetWarehouseId: tgtWh.id,
+      projectName: `${proj.code} - ${proj.name}`,
+      projectId: proj.id,
+      requestedBy: currentUser?.fullName || 'سیستم برنامه‌ریزی تولید',
+      handlerName: 'مسئول توزیع و حمل داخلی',
+      status: 'InTransit', // Issued from source warehouse, remains in destination warehouse keeper's cartable awaiting confirmation
       items: itemsToTransfer,
-      notes: `انتقال و تحویل قطعات پروژه ${proj.code} از انبار مرکزی به قفسه اختصاصی پروژه در خط تولید (با احتساب ضایعات)`
+      notes: customNotes || `حواله انتقال و تخصیص قطعات پروژه ${proj.code} از "${srcWh.name}" به "${tgtWh.name}" بر مبنای آنالیز جامع تمام مراحل و فرمول‌ها - در انتظار تایید انباردار مقصد`
     });
 
-    // Mark Step 1 (Material Delivery) as Completed
+    // Mark Step 1 (Material Delivery) as InProgress if Pending
     const firstStep = proj.steps[0];
-    if (firstStep) {
-      updateProjectStep(proj.id, firstStep.id, 'Completed');
+    if (firstStep && firstStep.status === 'Pending') {
+      updateProjectStep(proj.id, firstStep.id, 'InProgress');
     }
 
-    showProjectToast(`حواله خروج انبار مرکزی و تخصیص به قفسه پروژه با موفقیت صادر گردید. مرحله ۱ پروژه (تامین مواد اولیه) نیز به وضعیت "تکمیل شد" ارتقا یافت.`, 'success');
-    setBomExplosionProject(null);
+    setExplosionIssuedTransferDoc({
+      docNumber,
+      targetWhName: tgtWh.name
+    });
+
+    showProjectToast(
+      `حواله انتقال ${docNumber} صادر شد و قطعات از "${srcWh.name}" کسر گردیدند. حواله اکنون در «کارتابل انباردار انبار مقصد (${tgtWh.name})» منتظر تایید است.`,
+      'success'
+    );
   };
 
   const statusBadges: Record<ProjectStatus, { label: string; style: string }> = {
@@ -3599,25 +3740,28 @@ export const ProjectsView: React.FC = () => {
       {/* Modal BOM Explosion & Auto Material Delivery */}
       {bomExplosionProject && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
             {/* Modal Header */}
-            <div className="p-4 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-white/20 rounded-xl">
+            <div className="p-4 bg-gradient-to-r from-amber-600 via-amber-500 to-indigo-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/20 rounded-xl shadow-xs">
                   <Boxes className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <h3 className="font-bold text-sm">
-                    آنالیز انفجار BOM و محاسبه تخصیص مواد اولیه پروژه {bomExplosionProject.code}
+                    آنالیز جامع قطعات و صدور حواله بین‌انبار به قفسه (BOM Explosion)
                   </h3>
                   <p className="text-[11px] text-amber-100 mt-0.5">
-                    محاسبه خودکار قطعات لازم برای تولید {bomExplosionProject.targetQuantity} عدد {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.name} با احتساب درصد ضایعات
+                    شناسایی دقیق قطعات کلیه مراحل، زیرمراحل و فرمول‌های ساخت برای پروژه {bomExplosionProject.code} ({bomExplosionProject.name})
                   </p>
                 </div>
               </div>
               <button 
-                onClick={() => setBomExplosionProject(null)} 
-                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10"
+                onClick={() => {
+                  setBomExplosionProject(null);
+                  setExplosionIssuedTransferDoc(null);
+                }} 
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3625,153 +3769,286 @@ export const ProjectsView: React.FC = () => {
 
             {/* Modal Body */}
             <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-xs">
-              {/* Project Target Info Box */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
-                <div>
-                  <span className="text-slate-500 block text-[10px]">کد و عنوان پروژه:</span>
-                  <strong className="text-slate-800 text-xs font-mono">{bomExplosionProject.code} - {bomExplosionProject.name}</strong>
+              {/* Success Notification if transfer was issued */}
+              {explosionIssuedTransferDoc ? (
+                <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-md">
+                    <CheckCircle2 className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-emerald-900">
+                      حواله بین‌انبار {explosionIssuedTransferDoc.docNumber} با موفقیت صادر شد!
+                    </h4>
+                    <p className="text-xs text-emerald-700 mt-1 max-w-lg mx-auto leading-relaxed">
+                      قطعات با موفقیت از انبار مبدا کسر گردیدند و حواله انتقال با وضعیت <strong>«در راه (InTransit)»</strong> صادر شد. 
+                      این حواله اکنون در <strong>«کارتابل انباردار انبار مقصد ({explosionIssuedTransferDoc.targetWhName})»</strong> منتظر کنترل سلامت و تایید نهایی دریافت قرار دارد.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBomExplosionProject(null);
+                        setExplosionIssuedTransferDoc(null);
+                        setActiveTab('transfers');
+                      }}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all text-xs"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>مشاهده در کارتابل حواله‌های بین‌انبار</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBomExplosionProject(null);
+                        setExplosionIssuedTransferDoc(null);
+                      }}
+                      className="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold rounded-xl cursor-pointer transition-all text-xs"
+                    >
+                      بستن
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px]">محصول نهایی و تیراژ هدف:</span>
-                  <strong className="text-amber-700 text-xs">
-                    {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.name} ({bomExplosionProject.targetQuantity} {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.unit})
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px]">قفسه اختصاصی انبار تولید:</span>
-                  <span className="inline-flex items-center gap-1 font-mono text-xs text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                    <Warehouse className="w-3 h-3" />
-                    قفسه PRJ-101 (انبار تولید)
-                  </span>
-                </div>
-              </div>
+              ) : (
+                <>
+                  {/* Project Target & Overview Card */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">کد و عنوان پروژه:</span>
+                      <strong className="text-slate-800 text-xs font-mono">{bomExplosionProject.code} - {bomExplosionProject.name}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">محصول نهایی و تیراژ هدف:</span>
+                      <strong className="text-amber-700 text-xs">
+                        {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.name} ({bomExplosionProject.targetQuantity} {items.find(i => i.id === bomExplosionProject.targetFinishedItemId)?.unit})
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">مراحل و زیرمراحل تحلیل‌شده:</span>
+                      <span className="inline-flex items-center gap-1 font-mono text-xs text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                        <FolderTree className="w-3.5 h-3.5" />
+                        {flattenProjectSteps(bomExplosionProject.steps || [], '', 0).length} مرحله و زیرمرحله فعال
+                      </span>
+                    </div>
+                  </div>
 
-              {/* Materials Table */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
-                    <Layers3 className="w-4 h-4 text-indigo-500" />
-                    جدول قطعات لازم با احتساب ضایعات (Multi-Level BOM Explosion):
-                  </h4>
-                  <span className="text-[10px] text-slate-500">فرمول: (تعداد در BOM × تیراژ پروژه) + % ضایعات</span>
-                </div>
+                  {/* Warehouse Selection Configuration */}
+                  <div className="bg-gradient-to-r from-blue-50/60 via-indigo-50/40 to-slate-50 border border-indigo-100 p-4 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-indigo-600" />
+                        تعیین انبارهای مبدا و مقصد جهت صدور حواله انتقال:
+                      </span>
+                      <span className="text-[10px] text-indigo-700 bg-indigo-100/60 px-2 py-0.5 rounded font-medium">
+                        امکان انتخاب دقیق هر یک از انبارها یا قفسه‌ها
+                      </span>
+                    </div>
 
-                {(() => {
-                  const requiredMaterials = getCalculatedProjectBOM(bomExplosionProject);
-                  const hasShortage = requiredMaterials.some(m => m.shortage > 0);
-
-                  if (requiredMaterials.length === 0) {
-                    return (
-                      <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-500 space-y-2">
-                        <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
-                        <p className="font-bold text-xs">هیچ فرمول ساخت (BOM) برای این محصول یا قطعات آن تعریف نشده است.</p>
-                        <p className="text-[11px]">جهت محاسبه و انفجار قطعات، ابتدا در بخش "فرمول‌های ساخت (BOM)" یک فرمول فعال برای محصول ثبت نمایید.</p>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <>
-                      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                        <table className="w-full text-right text-xs">
-                          <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                            <tr>
-                              <th className="whitespace-nowrap p-2.5">کد قطعه</th>
-                              <th className="whitespace-nowrap p-2.5">نام قطعه / ماده اولیه</th>
-                              <th className="whitespace-nowrap p-2.5">نوع</th>
-                              <th className="whitespace-nowrap p-2.5 text-center">مقدار در ۱ واحد</th>
-                              <th className="whitespace-nowrap p-2.5 text-center">% ضایعات</th>
-                              <th className="whitespace-nowrap p-2.5 text-center bg-amber-50 text-amber-900">کل لازم با ضایعات</th>
-                              <th className="whitespace-nowrap p-2.5 text-center">موجودی انبار مرکزی</th>
-                              <th className="whitespace-nowrap p-2.5 text-center">موجودی قفسه پروژه</th>
-                              <th className="whitespace-nowrap p-2.5 text-center">وضعیت تامین</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium">
-                            {requiredMaterials.map(mat => (
-                              <tr key={mat.itemId} className="hover:bg-slate-50">
-                                <td className="whitespace-nowrap p-2.5 font-mono text-[11px] text-slate-600">{mat.itemCode}</td>
-                                <td className="whitespace-nowrap p-2.5 font-bold text-slate-900">{mat.itemName}</td>
-                                <td className="whitespace-nowrap p-2.5">
-                                  {mat.isSemiFinished ? (
-                                    <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded text-[10px] font-bold border border-purple-200">
-                                      نیمه‌ساخته
-                                    </span>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]">
-                                      ماده اولیه
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="whitespace-nowrap p-2.5 text-center font-mono">{(mat.quantityPerUnit || 0)} {mat.unit}</td>
-                                <td className="whitespace-nowrap p-2.5 text-center font-mono text-rose-600 font-bold">%{(mat.scrapPercent || 0)}</td>
-                                <td className="whitespace-nowrap p-2.5 text-center font-mono font-bold text-amber-700 bg-amber-50/50">
-                                  {(mat.totalNeededWithScrap || 0).toLocaleString('fa-IR')} {mat.unit}
-                                </td>
-                                <td className="whitespace-nowrap p-2.5 text-center font-mono text-slate-700">
-                                  {(mat.centralStock || 0).toLocaleString('fa-IR')} {mat.unit}
-                                </td>
-                                <td className="whitespace-nowrap p-2.5 text-center font-mono text-indigo-700 font-bold">
-                                  {(mat.projectRackStock || 0).toLocaleString('fa-IR')} {mat.unit}
-                                </td>
-                                <td className="whitespace-nowrap p-2.5 text-center">
-                                  {(mat.shortage || 0) > 0 ? (
-                                    <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
-                                      <ShieldAlert className="w-3 h-3 text-rose-500" />
-                                      کسری: {(mat.shortage || 0).toLocaleString('fa-IR')}
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
-                                      <Check className="w-3 h-3 text-emerald-600" />
-                                      موجود و کافی
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Source Warehouse (خروجی) */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          انبار مبدا (خروجی قطعات / انبار مرکزی یا مواد اولیه):
+                        </label>
+                        <select
+                          value={explosionSourceWhId}
+                          onChange={(e) => setExplosionSourceWhId(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-2xs focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {warehouses.map(w => (
+                            <option key={w.id} value={w.id}>
+                              {w.name} ({w.code}) — نوع: {w.warehouseType || 'مرکزی'}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-[10px] text-slate-400 mt-1 block">
+                          موجودی این انبار به عنوان منبع تامین قطعات بررسی و کسر خواهد شد.
+                        </span>
                       </div>
 
-                      {hasShortage && (
-                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between text-rose-800 text-xs">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                            <span>توجه: برای برخی از قطعات، موجودی انبار مرکزی کمتر از مقدار کل محاسبه‌شده (با ضایعات) است. ابتدا خرید قطعات کسر شده انجام شود.</span>
+                      {/* Destination Warehouse (مقصد) */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          انبار مقصد (ورودی / قفسه اختصاصی خط تولید پروژه):
+                        </label>
+                        <select
+                          value={explosionTargetWhId}
+                          onChange={(e) => setExplosionTargetWhId(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-2xs focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {warehouses.map(w => (
+                            <option key={w.id} value={w.id}>
+                              {w.name} ({w.code}) — {w.linkedProjectId === bomExplosionProject.id ? '★ قفسه اختصاصی این پروژه' : `نوع: ${w.warehouseType || 'تولید'}`}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-[10px] text-slate-400 mt-1 block">
+                          حواله پس از صدور، در کارتابل انباردار این انبار مقصد منتظر تایید می‌ماند.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Workflow Process Notice */}
+                    <div className="p-2.5 bg-blue-50/80 border border-blue-200 rounded-lg text-blue-900 text-[11px] flex items-start gap-2">
+                      <Clock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>فرآیند گردش کارتابل انبار:</strong> با کلیک بر روی صدور حواله، قطعات از انبار مبدا خارج شده و سند انتقال با وضعیت <strong>«در راه (InTransit)»</strong> صادر می‌گردد. سند تا زمان بررسی فیزیکی و تایید قطعی توسط انباردار مقصد، در کارتابل انبار مقصد باقی می‌ماند.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Materials Table */}
+                  <div className="space-y-2">
+                    {(() => {
+                      const requiredMaterials = getCalculatedProjectBOM(bomExplosionProject, explosionSourceWhId, explosionTargetWhId);
+                      const hasShortage = requiredMaterials.some(m => m.shortage > 0);
+                      const totalPiecesNeeded = requiredMaterials.reduce((sum, m) => sum + m.totalNeededWithScrap, 0);
+                      const srcWhName = warehouses.find(w => w.id === explosionSourceWhId)?.name || 'انبار مبدا';
+                      const tgtWhName = warehouses.find(w => w.id === explosionTargetWhId)?.name || 'انبار مقصد';
+
+                      if (requiredMaterials.length === 0) {
+                        return (
+                          <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-500 space-y-2">
+                            <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+                            <p className="font-bold text-xs">هیچ فرمول ساخت (BOM) یا قطعه‌ای در مراحل و زیرمراحل این پروژه تعریف نشده است.</p>
+                            <p className="text-[11px]">جهت محاسبه و انفجار قطعات، در بخش "فرمول‌های ساخت (BOM)" یا در جزئیات مراحل پروژه، فرمول ساخت تعریف نمایید.</p>
                           </div>
-                        </div>
-                      )}
+                        );
+                      }
 
-                      {/* Action buttons */}
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                        <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                          <Warehouse className="w-4 h-4 text-indigo-600" />
-                          <span>با صدور حواله، قطعات فوق از انبار مرکزی کسر شده و به قفسه اختصاصی پروژه در انبار تولید تحویل داده می‌شوند.</span>
-                        </div>
+                      return (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                              <Layers3 className="w-4 h-4 text-indigo-500" />
+                              <span>جدول تفصیلی آنالیز قطعات طبق تمام مراحل، زیرمراحل و فرمول‌ها ({requiredMaterials.length} قلم قطعه):</span>
+                            </h4>
+                            <span className="text-[10px] text-slate-500">
+                              مجموع کل قطعات: <strong className="text-slate-800 font-mono">{totalPiecesNeeded.toLocaleString('fa-IR')}</strong> واحد
+                            </span>
+                          </div>
 
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                          <button
-                            type="button"
-                            onClick={() => setBomExplosionProject(null)}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl"
-                          >
-                            انصراف
-                          </button>
-                          
-                          <button
-                            type="button"
-                            onClick={() => handleAutoIssueMaterialTransfer(bomExplosionProject, requiredMaterials)}
-                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 text-xs transition-all"
-                          >
-                            <FileCheck className="w-4 h-4" />
-                            <span>صدور و تحویل قطعات به قفسه پروژه (تکمیل مرحله ۱)</span>
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
+                          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                            <table className="w-full text-right text-xs">
+                              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                                <tr>
+                                  <th className="whitespace-nowrap p-2.5">کد قطعه</th>
+                                  <th className="whitespace-nowrap p-2.5">نام قطعه / ماده اولیه</th>
+                                  <th className="whitespace-nowrap p-2.5">نوع</th>
+                                  <th className="whitespace-nowrap p-2.5">مراحل و زیرمراحل مصرف‌کننده</th>
+                                  <th className="whitespace-nowrap p-2.5 text-center bg-amber-50 text-amber-900">کل لازم با ضایعات</th>
+                                  <th className="whitespace-nowrap p-2.5 text-center">موجودی {srcWhName}</th>
+                                  <th className="whitespace-nowrap p-2.5 text-center">موجودی فعلی {tgtWhName}</th>
+                                  <th className="whitespace-nowrap p-2.5 text-center">وضعیت تامین</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 font-medium">
+                                {requiredMaterials.map(mat => (
+                                  <tr key={mat.itemId} className="hover:bg-slate-50 transition-colors">
+                                    <td className="whitespace-nowrap p-2.5 font-mono text-[11px] text-slate-600">{mat.itemCode}</td>
+                                    <td className="whitespace-nowrap p-2.5 font-bold text-slate-900">{mat.itemName}</td>
+                                    <td className="whitespace-nowrap p-2.5">
+                                      {mat.isSemiFinished ? (
+                                        <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded text-[10px] font-bold border border-purple-200">
+                                          نیمه‌ساخته
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]">
+                                          ماده اولیه
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 max-w-[260px]">
+                                      <div className="flex flex-wrap gap-1">
+                                        {mat.stageConsumers && mat.stageConsumers.length > 0 ? (
+                                          mat.stageConsumers.map((sc, i) => (
+                                            <span 
+                                              key={i} 
+                                              className="px-1.5 py-0.5 bg-indigo-50 text-indigo-800 rounded text-[10px] border border-indigo-100 font-sans"
+                                            >
+                                              {sc}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400">فرمول کل محصول</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="whitespace-nowrap p-2.5 text-center font-mono font-bold text-amber-700 bg-amber-50/50">
+                                      {(mat.totalNeededWithScrap || 0).toLocaleString('fa-IR')} {mat.unit}
+                                    </td>
+                                    <td className="whitespace-nowrap p-2.5 text-center font-mono text-slate-700">
+                                      {(mat.sourceStock || 0).toLocaleString('fa-IR')} {mat.unit}
+                                    </td>
+                                    <td className="whitespace-nowrap p-2.5 text-center font-mono text-indigo-700 font-bold">
+                                      {(mat.destStock || 0).toLocaleString('fa-IR')} {mat.unit}
+                                    </td>
+                                    <td className="whitespace-nowrap p-2.5 text-center">
+                                      {(mat.shortage || 0) > 0 ? (
+                                        <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                          <ShieldAlert className="w-3 h-3 text-rose-500" />
+                                          کسری: {(mat.shortage || 0).toLocaleString('fa-IR')}
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                          <Check className="w-3 h-3 text-emerald-600" />
+                                          موجود و کافی
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {hasShortage && (
+                            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between text-rose-800 text-xs">
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                                <span>توجه: موجودی انبار مبدا انتخابی ({srcWhName}) برای برخی قطعات کمتر از مقدار محاسبه‌شده است. حواله بر اساس کل نیاز صادر می‌شود اما پیگیری خرید کسری‌ها نیز ضروری است.</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Footer */}
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                            <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                              <Warehouse className="w-4 h-4 text-indigo-600" />
+                              <span>انتقال از <strong>{srcWhName}</strong> به <strong>{tgtWhName}</strong> با ثبت در کارتابل مقصد.</span>
+                            </div>
+
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                              <button
+                                type="button"
+                                onClick={() => setBomExplosionProject(null)}
+                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer transition-colors"
+                              >
+                                انصراف
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={() => handleAutoIssueMaterialTransfer(
+                                  bomExplosionProject, 
+                                  requiredMaterials,
+                                  explosionSourceWhId,
+                                  explosionTargetWhId,
+                                  explosionCustomNotes
+                                )}
+                                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 text-xs transition-all cursor-pointer active:scale-95"
+                              >
+                                <FileCheck className="w-4 h-4" />
+                                <span>صدور حواله بین‌انبار و ارسال به کارتابل انبار مقصد</span>
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -4529,6 +4806,10 @@ export const ProjectsView: React.FC = () => {
           project={smartScalingProject}
           isOpen={!!smartScalingProject}
           onClose={() => setSmartScalingProject(null)}
+          onOpenBomExplosion={(proj) => {
+            setSmartScalingProject(null);
+            setBomExplosionProject(proj);
+          }}
         />
       )}
 

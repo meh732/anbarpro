@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { parseItemsFromExcel, generateItemsExcelTemplate } from '../utils/excelUtils';
-import { FileSpreadsheet, Upload, Download, CheckCircle2, AlertTriangle, X, RefreshCw, Layers, ShieldCheck } from 'lucide-react';
+import { FileSpreadsheet, Upload, Download, CheckCircle2, AlertTriangle, X, RefreshCw, Layers, ShieldCheck, Sparkles } from 'lucide-react';
 import { Item } from '../types';
 
 interface Props {
@@ -115,23 +115,36 @@ export const ItemsExcelImportModal: React.FC<Props> = ({ isOpen, onClose }) => {
         {/* Modal Body */}
         <div className="p-5 flex-1 overflow-y-auto space-y-5">
           {/* Action Step 1: Download Template */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold flex items-center justify-center">۱</span>
-                <span>دانلود فرمت و قالب استاندارد اکسل کالاها</span>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold flex items-center justify-center">۱</span>
+                  <span>دانلود فرمت و قالب استاندارد اکسل کالاها</span>
+                </div>
+                <p className="text-[11px] text-slate-500 pr-6">
+                  فایل قالب اکسل شامل ستون‌های کد/نام کالا، نوع کالا، گروه، قیمت واحد و توضیحات می‌باشد.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-500 pr-6">
-                ابتدا فایل قالب اکسل را دریافت کنید، ستون‌های نام، کد، واحد، نوع کالا و گروه را تکمیل نمایید.
+              <button
+                onClick={() => generateItemsExcelTemplate()}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs shrink-0 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>دانلود فایل نمونه اکسل (Template)</span>
+              </button>
+            </div>
+
+            {/* Feature Banner for Batch Edit */}
+            <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl text-indigo-900 text-[11px] space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-indigo-800">
+                <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>امکان افزودن کالای جدید + ویرایش گروهی کالاها (تغییر کد و نام قدیمی):</span>
+              </div>
+              <p className="text-indigo-700 leading-relaxed pr-5">
+                جهت ویرایش و جایگزینی کد یا نام کالاهای موجود، کافی است <strong>«کد قدیمی»</strong> یا <strong>«نام قدیمی»</strong> را در ستون مربوطه وارد کرده و کد/نام جدید و مشخصات جدید (توضیحات، قیمت و...) را در ستون‌های اصلی بنویسید. سیستم به طور خودکار کالا را پیدا کرده و با داده‌های جدید به‌روزرسانی می‌کند.
               </p>
             </div>
-            <button
-              onClick={() => generateItemsExcelTemplate()}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs shrink-0 cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              <span>دانلود فایل نمونه اکسل (Template)</span>
-            </button>
           </div>
 
           {/* Action Step 2: Upload File Dropzone */}

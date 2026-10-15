@@ -24,13 +24,23 @@ export function parseSafeNumber(val: any, defaultValue = 0): number {
   if (typeof val === 'number') {
     return isNaN(val) || !isFinite(val) ? defaultValue : val;
   }
-  const str = String(val);
+  // Handle cell objects (e.g. from SheetJS or custom cell representations)
+  if (typeof val === 'object') {
+    if (val.v !== undefined && typeof val.v === 'number') return val.v;
+    if (val.v !== undefined) val = val.v;
+    else if (val.w !== undefined) val = val.w;
+    else return defaultValue;
+  }
+  const str = String(val)
+    .replace(/[\ufeff\u200e\u200f\u202a-\u202e\u200b-\u200d\u00a0]/g, '')
+    .trim();
   const norm = normalizeDigits(str).trim();
 
-  // 1. Try direct clean parse
+  // 1. Direct clean parse
+  // Remove thousand separators: commas, Persian momayyez, spaces, underscores and currency/quantity suffixes
   const cleanStr = norm
     .replace(/[,،٬\s_]/g, '')
-    .replace(/[ریال|تومان|تومن|ت|ر|USD|\$|IRR|TOMAN]/gi, '')
+    .replace(/(?:ریال|تومان|تومن|ت|ر|USD|\$|IRR|TOMAN|عدد|واحد|بسته|کیلو|کیلوگرم|متر|دستگاه|شاخه|رول|pcs|pieces|units)/gi, '')
     .replace(/(\d+)\/(\d+)/g, '$1.$2')
     .trim();
 
@@ -40,8 +50,11 @@ export function parseSafeNumber(val: any, defaultValue = 0): number {
   }
 
   // 2. Fallback regex extraction: extracts the first floating/integer number
-  // Handles values like "تعداد: 250 عدد", "12.5 کیلوگرم", "1,500 pcs", "100 pcs", "۶۵۰ عدد"
-  const regexMatch = norm.replace(/[,،٬]/g, '').replace(/(\d+)\/(\d+)/g, '$1.$2').match(/[-+]?\d+(?:\.\d+)?/);
+  // Handles values like "تعداد: 250 عدد", "12.5 کیلوگرم", "1,500 pcs", "100 pcs", "۶۵۰ عدد", "عدد 650"
+  const regexMatch = norm
+    .replace(/[,،٬]/g, '')
+    .replace(/(\d+)\/(\d+)/g, '$1.$2')
+    .match(/[-+]?\d+(?:\.\d+)?/);
   if (regexMatch) {
     const extracted = parseFloat(regexMatch[0]);
     if (!isNaN(extracted) && isFinite(extracted)) {
@@ -58,7 +71,7 @@ export function parseSafeNumber(val: any, defaultValue = 0): number {
 export function parseSafeString(val: any, defaultValue = ''): string {
   if (val === undefined || val === null) return defaultValue;
   return String(val)
-    .replace(/[\ufeff\u200e\u200f\r]/g, '')
+    .replace(/[\ufeff\u200e\u200f\u202a-\u202e\u200b-\u200d\u00a0\r]/g, '')
     .trim();
 }
 
@@ -105,13 +118,15 @@ export function getRowField(row: Record<string, any>, candidateKeys: string[]): 
   }
 
   // 3. Substring match in candidate priority order (cand length >= 3)
+  // Only match if the column header contains the candidate (e.g. "تعداد وارده" contains "تعداد")
+  // NEVER do normCand.includes(normKey) which matches generic words like "کالا" or "کد"
   for (const cand of candidateKeys) {
     const normCand = cleanHeaderKey(cand);
     if (normCand.length < 3) continue;
     for (const [rawKey, rawVal] of rowEntries) {
       if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') continue;
       const normKey = cleanHeaderKey(rawKey);
-      if (normKey === normCand || normKey.includes(normCand) || normCand.includes(normKey)) {
+      if (normKey === normCand || normKey.includes(normCand)) {
         return rawVal;
       }
     }
@@ -147,8 +162,8 @@ function extractRowsFromWorkbook(workbook: XLSX.WorkBook): { rawRows: Record<str
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
 
-    // Convert sheet to matrix of cells
-    const rawMatrix = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', blankrows: false, raw: false });
+    // Convert sheet to matrix of cells with raw values preserved (numbers stay numeric)
+    const rawMatrix = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', blankrows: false, raw: true });
     if (!rawMatrix || rawMatrix.length === 0) continue;
 
     // Scan top 25 rows to identify the best header row
@@ -162,10 +177,11 @@ function extractRowsFromWorkbook(workbook: XLSX.WorkBook): { rawRows: Record<str
 
       let score = 0;
       rowArr.forEach(cell => {
+        if (typeof cell === 'number') return; // Numbers are row data, not column titles
         const cleaned = cleanHeaderKey(String(cell || ''));
-        if (cleaned && HEADER_KEYWORDS.some(kw => cleaned.includes(cleanHeaderKey(kw)))) {
+        if (cleaned && HEADER_KEYWORDS.some(kw => cleaned === cleanHeaderKey(kw) || cleaned.includes(cleanHeaderKey(kw)))) {
           score += 2;
-        } else if (cleaned && cleaned.length >= 2) {
+        } else if (cleaned && cleaned.length >= 2 && cleaned.length <= 40) {
           score += 0.5;
         }
       });
@@ -343,13 +359,15 @@ export function exportItemsToExcel(items: Item[], _itemGroups: ItemGroup[] = [])
 }
 
 /**
- * Generate a ready-to-fill Sample Template for Items import
+ * Generate a ready-to-fill Sample Template for Items import and batch updating
  */
 export function generateItemsExcelTemplate(): void {
   const sampleRows = [
     {
-      'کد کالا': 'E-IC-STM32',
-      'نام کالا / قطعه': 'میکروکنترلر STM32F103C8T6',
+      'کد قبلی / قدیمی (جهت جایگزینی)': '',
+      'نام قبلی / قدیمی (جهت جایگزینی)': '',
+      'کد جدید (یا کد کالا)': 'E-IC-STM32',
+      'نام جدید (یا نام کالا)': 'میکروکنترلر STM32F103C8T6',
       'نوع کالا': 'قطعه الکترونیک',
       'گروه اصلی': 'قطعات الکترونیک',
       'زیرگروه': 'میکروکنترلر',
@@ -362,8 +380,10 @@ export function generateItemsExcelTemplate(): void {
       'توضیحات': 'تراشه میکروکنترلر ۳۲ بیتی پکیج LQFP-48'
     },
     {
-      'کد کالا': 'E-RES-0805-10K',
-      'نام کالا / قطعه': 'مقاومت ۱۰ کیلو اهم SMD سایز 0805',
+      'کد قبلی / قدیمی (جهت جایگزینی)': 'E-RES-10K',
+      'نام قبلی / قدیمی (جهت جایگزینی)': 'مقاومت ۱۰ کیلو',
+      'کد جدید (یا کد کالا)': 'E-RES-0805-10K',
+      'نام جدید (یا نام کالا)': 'مقاومت ۱۰ کیلو اهم SMD سایز 0805',
       'نوع کالا': 'قطعه الکترونیک',
       'گروه اصلی': 'قطعات الکترونیک',
       'زیرگروه': 'مقاومت',
@@ -373,11 +393,13 @@ export function generateItemsExcelTemplate(): void {
       'حداکثر موجودی': 10000,
       'قیمت واحد (تومان)': 450,
       'موقعیت قفسه': 'B-03-01',
-      'توضیحات': 'رول ۵۰۰۰ تایی مقاومت SMD دقت ۱ درصد'
+      'توضیحات': 'رول ۵۰۰۰ تایی مقاومت SMD دقت ۱ درصد - به‌روزرسانی کد و نام قدیمی'
     },
     {
-      'کد کالا': 'SF-PCB-CTRL-V1',
-      'نام کالا / قطعه': 'برد کنترلر مونتاژ شده (نیمه ساخته)',
+      'کد قبلی / قدیمی (جهت جایگزینی)': '',
+      'نام قبلی / قدیمی (جهت جایگزینی)': '',
+      'کد جدید (یا کد کالا)': 'SF-PCB-CTRL-V1',
+      'نام جدید (یا نام کالا)': 'برد کنترلر مونتاژ شده (نیمه ساخته)',
       'نوع کالا': 'نیمه ساخته',
       'گروه اصلی': 'بردهای مدار چاپی',
       'زیرگروه': 'نیمه ساخته',
@@ -390,8 +412,10 @@ export function generateItemsExcelTemplate(): void {
       'توضیحات': 'خروجی مرحله مونتاژ SMD برد اصلی'
     },
     {
-      'کد کالا': 'FP-DEV-SMART-01',
-      'نام کالا / قطعه': 'دستگاه کنترلر صنعتی هوشمند',
+      'کد قبلی / قدیمی (جهت جایگزینی)': '',
+      'نام قبلی / قدیمی (جهت جایگزینی)': '',
+      'کد جدید (یا کد کالا)': 'FP-DEV-SMART-01',
+      'نام جدید (یا نام کالا)': 'دستگاه کنترلر صنعتی هوشمند',
       'نوع کالا': 'محصول نهایی',
       'گروه اصلی': 'محصولات نهایی',
       'زیرگروه': 'کنترلر صنعتی',
@@ -407,29 +431,29 @@ export function generateItemsExcelTemplate(): void {
 
   const worksheet = XLSX.utils.json_to_sheet(sampleRows);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'نمونه ورود کالاها');
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'نمونه ورود و ویرایش کالاها');
   
   const guidelines = [
-    { 'راهنمای ستون‌ها': 'کد کالا', 'توضیحات': 'کد یکتا برای هر کالا الزامی است (مثلاً E-RES-10K)' },
-    { 'راهنمای ستون‌ها': 'نام کالا / قطعه', 'توضیحات': 'عنوان کامل قطعه یا کالا' },
+    { 'راهنمای ستون‌ها': 'کد قبلی / قدیمی و نام قبلی', 'توضیحات': 'در صورتی که قصد دارید کد یا نام یک کالای موجود را تغییر دهید، کد یا نام قبلی آن را در این ستون وارد کنید تا سیستم آن را پیدا کرده و کد/نام جدید را جایگزین نماید.' },
+    { 'راهنمای ستون‌ها': 'کد جدید (یا کد کالا)', 'توضیحات': 'کد جدید یا کد فعلی کالا (الزامی)' },
+    { 'راهنمای ستون‌ها': 'نام جدید (یا نام کالا)', 'توضیحات': 'عنوان کامل قطعه یا کالا' },
     { 'راهنمای ستون‌ها': 'نوع کالا', 'توضیحات': 'یکی از مقادیر: مواد اولیه، قطعه الکترونیک، نیمه ساخته، محصول نهایی، ابزار، مصرفی' },
     { 'راهنمای ستون‌ها': 'گروه اصلی و زیرگروه', 'توضیحات': 'در صورت عدم وجود در سیستم، به طور خودکار ایجاد می‌شوند' },
-    { 'راهنمای ستون‌ها': 'واحد سنجش', 'توضیحات': 'عدد، متر، کیلوگرم، رول، بسته، دستگاه' },
-    { 'راهنمای ستون‌ها': 'قیمت واحد', 'توضیحات': 'قیمت به عدد تومان' },
-    { 'راهنمای ستون‌ها': 'موقعیت قفسه', 'توضیحات': 'مثلاً A-01-02' }
+    { 'راهنمای ستون‌ها': 'توضیحات', 'توضیحات': 'شرح و مشخصات فنی کالا (قابلیت جستجو در سیستم)' },
+    { 'راهنمای ستون‌ها': 'قیمت واحد و قفسه', 'توضیحات': 'قیمت به عدد تومان و موقعیت فیزیکی قفسه' }
   ];
   const guideWs = XLSX.utils.json_to_sheet(guidelines);
   XLSX.utils.book_append_sheet(workbook, guideWs, 'راهنمای فیلدها');
 
-  XLSX.writeFile(workbook, 'Template_Items_Import.xlsx');
+  XLSX.writeFile(workbook, 'Template_Items_Import_Update.xlsx');
 }
 
 /**
- * Parse and Validate Excel file for Items
+ * Parse and Validate Excel file for Items (supports creating & batch editing with oldCode/oldName)
  */
 export async function parseItemsFromExcel(file: File | ArrayBuffer): Promise<{
   success: boolean;
-  items: Omit<Item, 'id' | 'createdAt'>[];
+  items: (Omit<Item, 'id' | 'createdAt'> & { oldCode?: string; oldName?: string })[];
   groupsToCreate: { name: string; subGroup: string }[];
   errors: string[];
   warnings: string[];
@@ -457,7 +481,7 @@ export async function parseItemsFromExcel(file: File | ArrayBuffer): Promise<{
       };
     }
 
-    const items: Omit<Item, 'id' | 'createdAt'>[] = [];
+    const items: (Omit<Item, 'id' | 'createdAt'> & { oldCode?: string; oldName?: string })[] = [];
     const groupsToCreate: { name: string; subGroup: string }[] = [];
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -466,14 +490,36 @@ export async function parseItemsFromExcel(file: File | ArrayBuffer): Promise<{
     rawRows.forEach((row, index) => {
       const rowNum = index + 2;
 
-      // Extract fields with multiple variations
-      const rawCode = getRowField(row, ['کد کالا', 'کدکالا', 'کد', 'کد قطعه', 'شناسه کالا', 'کد_کالا', 'itemcode', 'item code', 'code']);
-      const rawName = getRowField(row, ['نام کالا / قطعه', 'نام کالا', 'نام', 'نام قطعه', 'نام محصول', 'عنوان کالا', 'شرح کالا', 'itemname', 'item name', 'name', 'title']);
+      // Extract oldCode & oldName if batch editing/replacing existing items
+      const rawOldCode = getRowField(row, [
+        'کد قبلی / قدیمی (جهت جایگزینی)', 'کد قدیمی (جهت جایگزینی)', 'کد قبلی', 'کد قدیمی', 'کد قديم', 'کد_قدیمی', 'کد_قبلی',
+        'oldcode', 'old code', 'old_code', 'previouscode', 'previous_code'
+      ]);
+      const rawOldName = getRowField(row, [
+        'نام قبلی / قدیمی (جهت جایگزینی)', 'نام قدیمی (جهت جایگزینی)', 'نام قبلی', 'نام قدیمی', 'نام قديم', 'نام_قدیمی', 'نام_قبلی',
+        'oldname', 'old name', 'old_name', 'previousname', 'previous_name'
+      ]);
 
-      const code = parseSafeString(rawCode);
-      const name = parseSafeString(rawName);
+      const oldCode = parseSafeString(rawOldCode);
+      const oldName = parseSafeString(rawOldName);
 
-      if (!code && !name) {
+      // Extract current/new code & name
+      const rawCode = getRowField(row, [
+        'کد جدید (یا کد کالا)', 'کد کالا (یا کد جدید)', 'کد کالا', 'کد جدید', 'کدکالا', 'کد', 'کد قطعه', 'شناسه کالا', 'کد_کالا', 
+        'itemcode', 'item code', 'code', 'newcode', 'new_code'
+      ]);
+      const rawName = getRowField(row, [
+        'نام جدید (یا نام کالا)', 'نام کالا / قطعه', 'نام کالا', 'نام جدید', 'نام', 'نام قطعه', 'نام محصول', 'عنوان کالا', 'شرح کالا', 
+        'itemname', 'item name', 'name', 'title', 'newname', 'new_name'
+      ]);
+
+      let code = parseSafeString(rawCode);
+      let name = parseSafeString(rawName);
+
+      if (!code && oldCode) code = oldCode;
+      if (!name && oldName) name = oldName;
+
+      if (!code && !name && !oldCode && !oldName) {
         // Skip entirely empty row
         return;
       }
@@ -522,7 +568,9 @@ export async function parseItemsFromExcel(file: File | ArrayBuffer): Promise<{
         itemType,
         unitPrice,
         locationInRack,
-        description
+        description,
+        ...(oldCode ? { oldCode } : {}),
+        ...(oldName ? { oldName } : {})
       });
 
       if (group) {
@@ -1388,16 +1436,17 @@ export async function parseStockMovementItemsFromExcel(
 
     // Specific quantity candidates prioritized by document type (Specific quantity phrases only, no generic document terms)
     const inQtyCandidates = [
-      'تعداد / مقدار', 'تعداد/مقدار', 'تعداد ورود', 'مقدار ورود', 'تعداد وارده', 'مقدار وارده', 
-      'تعداد رسید', 'مقدار رسید', 'تعداد کل', 'تعداد اقلام', 'مقدار اقلام', 'تعداد کالا', 'تعداد', 'مقدار',
-      'میزان', 'تیراژ', 'حجم', 'وزن', 'متراژ',
-      'qty_in', 'quantity_in', 'in_qty', 'incoming', 'received', 'quantity', 'qty', 'count', 'amount'
+      'تعداد / مقدار', 'تعداد/مقدار', 'تعداد (عدد)', 'تعداد(عدد)', 'تعداد (واحد)', 'تعداد(واحد)', 'تعداد واحد', 'واحد/تعداد',
+      'تعداد', 'مقدار', 'تعداد ورود', 'مقدار ورود', 'تعداد رسید', 'مقدار رسید', 'تعداد کل', 'تعداد ورودی', 'تعداد وارده', 'مقدار وارده', 
+      'تعداد سرسید', 'وارده', 'میزان', 'تیراژ', 'حجم', 'وزن', 'متراژ',
+      'qty_in', 'quantity_in', 'in_qty', 'incoming', 'received', 'quantity', 'qty', 'count', 'amount', 'pcs', 'pieces'
     ];
     const outQtyCandidates = [
-      'تعداد / مقدار', 'تعداد/مقدار', 'تعداد خروج', 'مقدار خروج', 'تعداد صادره', 'مقدار صادره',
-      'تعداد حواله', 'مقدار حواله', 'تعداد مصرف', 'مقدار مصرف', 'تعداد کل', 'تعداد اقلام', 'مقدار اقلام', 'تعداد کالا', 'تعداد', 'مقدار',
-      'میزان', 'تیراژ', 'حجم', 'وزن', 'متراژ',
-      'qty_out', 'quantity_out', 'out_qty', 'outgoing', 'issued', 'quantity', 'qty', 'count', 'amount'
+      'تعداد / مقدار', 'تعداد/مقدار', 'تعداد (عدد)', 'تعداد(عدد)', 'تعداد (واحد)', 'تعداد(واحد)', 'تعداد واحد', 'واحد/تعداد',
+      'تعداد', 'مقدار', 'تعداد خروج', 'مقدار خروج', 'تعداد صادره', 'مقدار صادره',
+      'تعداد حواله', 'مقدار حواله', 'تعداد مصرف', 'مقدار مصرف', 'تعداد کل', 'تعداد خروجی',
+      'صادره', 'میزان', 'تیراژ', 'حجم', 'وزن', 'متراژ',
+      'qty_out', 'quantity_out', 'out_qty', 'outgoing', 'issued', 'quantity', 'qty', 'count', 'amount', 'pcs', 'pieces'
     ];
     const preferredQtyCandidates = docType === 'OUT' ? outQtyCandidates : inQtyCandidates;
 
@@ -1453,38 +1502,44 @@ export async function parseStockMovementItemsFromExcel(
       let rawQty: any = undefined;
       let qty = 0;
 
-      // Strategy A: Check candidate quantity columns in priority order
-      const candQty = getRowField(row, preferredQtyCandidates);
-      if (candQty !== undefined && candQty !== null && String(candQty).trim() !== '') {
-        const parsed = parseSafeNumber(candQty, 0);
-        if (parsed > 0) {
-          rawQty = candQty;
-          qty = parsed;
+      // Strategy A: Iterate candidate quantity columns in priority order, accepting the first positive number
+      for (const cand of preferredQtyCandidates) {
+        const val = getRowField(row, [cand]);
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          const parsed = parseSafeNumber(val, 0);
+          if (parsed > 0) {
+            rawQty = val;
+            qty = parsed;
+            break;
+          }
         }
       }
 
-      // Strategy B: Scan columns for quantity keywords, strictly excluding non-quantity metadata
+      // Strategy B: Scan all columns containing quantity keywords, strictly excluding pure codes/prices/dates
       if (qty <= 0) {
         for (const [colKey, colVal] of Object.entries(row)) {
           if (colVal === undefined || colVal === null || String(colVal).trim() === '') continue;
           const kClean = cleanHeaderKey(colKey);
 
-          // Exclude columns that represent other non-quantity fields
-          if (
-            kClean.includes('قیمت') || kClean.includes('فی') || kClean.includes('مبلغ') || kClean.includes('ارزش') ||
-            kClean.includes('کد') || kClean.includes('نام') || kClean.includes('عنوان') || kClean.includes('بارکد') ||
-            kClean.includes('شماره') || kClean.includes('تاریخ') || kClean.includes('ساعت') ||
-            kClean.includes('شرح') || kClean.includes('توضیح') || kClean.includes('یادداشت') || kClean.includes('علت') ||
-            kClean.includes('واحد') || kClean.includes('سنجش') || kClean.includes('ردیف')
-          ) {
-            continue;
+          const isExplicitQty = kClean.includes('تعداد') || kClean.includes('مقدار') || 
+                               kClean.includes('تیراژ') || kClean.includes('میزان') || 
+                               kClean.includes('qty') || kClean.includes('quantity') || 
+                               kClean.includes('count') || kClean.includes('amount') || 
+                               kClean.includes('pcs');
+
+          // Exclude columns that represent other non-quantity fields unless they explicitly mention quantity
+          if (!isExplicitQty) {
+            if (
+              kClean.includes('قیمت') || kClean.includes('فی') || kClean.includes('مبلغ') || kClean.includes('ارزش') ||
+              kClean.includes('کد') || kClean.includes('نام') || kClean.includes('عنوان') || kClean.includes('بارکد') ||
+              kClean.includes('شماره') || kClean.includes('تاریخ') || kClean.includes('ساعت') ||
+              kClean.includes('ردیف')
+            ) {
+              continue;
+            }
           }
 
-          if (
-            kClean.includes('تعداد') || kClean.includes('مقدار') || 
-            kClean.includes('تیراژ') || kClean.includes('میزان') || 
-            kClean.includes('qty') || kClean.includes('quantity') || kClean.includes('count') || kClean.includes('amount')
-          ) {
+          if (isExplicitQty) {
             const parsed = parseSafeNumber(colVal, 0);
             if (parsed > 0) {
               rawQty = colVal;
@@ -1503,13 +1558,12 @@ export async function parseStockMovementItemsFromExcel(
           if (
             kClean.includes('کد') || kClean.includes('نام') || kClean.includes('بارکد') ||
             kClean.includes('قیمت') || kClean.includes('فی') || kClean.includes('مبلغ') ||
-            kClean.includes('ردیف') || kClean.includes('شماره') || kClean.includes('تاریخ') ||
-            kClean.includes('واحد')
+            kClean.includes('ردیف') || kClean.includes('شماره') || kClean.includes('تاریخ')
           ) {
             continue;
           }
           const parsed = parseSafeNumber(colVal, 0);
-          if (parsed > 0 && parsed !== matchedItem.unitPrice) {
+          if (parsed > 0 && parsed !== rowNum && parsed !== (rowNum - 1) && parsed !== matchedItem.unitPrice) {
             rawQty = colVal;
             qty = parsed;
             break;
@@ -1517,10 +1571,11 @@ export async function parseStockMovementItemsFromExcel(
         }
       }
 
+      // If still <= 0, do not drop or crash the whole import! Set a default of 1 and show an editable warning
       if (qty <= 0) {
         const attemptVal = rawQty ?? getRowField(row, preferredQtyCandidates) ?? 'خالی';
-        errors.push(`ردیف ${rowNum}: مقدار وارد شده برای کالای "${matchedItem.name}" نامعتبر است (مقدار دریافتی از اکسل: ${attemptVal}). لطفا عددی بزرگتر از صفر در ستون تعداد وارد کنید.`);
-        return;
+        warnings.push(`ردیف ${rowNum} (${matchedItem.name}): مقدار تعداد از ستون اکسل (${attemptVal}) نامعتبر بود؛ مقدار پیش‌فرض ۱ قرار داده شد (امکان ویرایش مستقیم تعداد در جدول زیر فراهم است).`);
+        qty = 1;
       }
 
       // 3. Unit Price

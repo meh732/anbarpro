@@ -838,6 +838,11 @@ export const ItemsView: React.FC = () => {
                           <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">{isFa ? 'بارکد:' : 'Barcode:'} {item.barcode || item.code}</div>
+                        {item.description && (
+                          <div className="text-[10px] text-slate-500 line-clamp-1 max-w-[220px] font-medium mt-0.5" title={item.description}>
+                            📝 {item.description}
+                          </div>
+                        )}
                       </td>
                       <td className="whitespace-nowrap p-3.5">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${typeBadges[item.itemType] || 'bg-slate-100 text-slate-700'}`}>

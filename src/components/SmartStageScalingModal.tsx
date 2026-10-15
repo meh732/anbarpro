@@ -4,16 +4,17 @@ import { Project } from '../types';
 import { calculateAllProjectStageTargets } from '../utils/smartBOMCalculator';
 import { 
   Sparkles, CheckCircle2, ArrowLeft, X, 
-  Layers, RefreshCw, Cpu, Calculator, Percent, Sliders, Info
+  Layers, RefreshCw, Cpu, Calculator, Percent, Sliders, Info, Boxes
 } from 'lucide-react';
 
 interface Props {
   project: Project;
   isOpen: boolean;
   onClose: () => void;
+  onOpenBomExplosion?: (proj: Project) => void;
 }
 
-export const SmartStageScalingModal: React.FC<Props> = ({ project, isOpen, onClose }) => {
+export const SmartStageScalingModal: React.FC<Props> = ({ project, isOpen, onClose, onOpenBomExplosion }) => {
   const { items, boms, applySmartStageTargetsToProject, updateProject } = useApp();
 
   const [projectScrapPercent, setProjectScrapPercent] = useState<number>(project.scrapAllowancePercent || 0);
@@ -91,7 +92,25 @@ export const SmartStageScalingModal: React.FC<Props> = ({ project, isOpen, onClo
 
       setIsApplying(false);
       setAppliedSuccess(true);
-    }, 250);
+    }, 200);
+  };
+
+  const handleApplyAndOpenExplosion = () => {
+    // 1. Update project base scrap
+    updateProject(project.id, {
+      scrapAllowancePercent: projectScrapPercent
+    });
+
+    // 2. Apply smart targets and step-level scraps
+    applySmartStageTargetsToProject(project.id, {
+      projectScrap: projectScrapPercent,
+      stepScraps: stepScraps
+    });
+
+    onClose();
+    if (onOpenBomExplosion) {
+      onOpenBomExplosion(project);
+    }
   };
 
   return (
@@ -341,13 +360,29 @@ export const SmartStageScalingModal: React.FC<Props> = ({ project, isOpen, onClo
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors"
+              className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
             >
               بستن
             </button>
+
+            {onOpenBomExplosion && (
+              <button
+                type="button"
+                onClick={handleApplyAndOpenExplosion}
+                className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer ${
+                  appliedSuccess 
+                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white ring-2 ring-emerald-400 animate-pulse' 
+                    : 'bg-slate-800 hover:bg-slate-900 text-white hover:ring-2 hover:ring-amber-400'
+                }`}
+                title="اعمال اهداف و باز کردن آنالیز تفصیلی قطعات و صدور حواله انتقال به قفسه"
+              >
+                <Boxes className="w-4 h-4 text-amber-400" />
+                <span>آنالیز قطعات و حواله به قفسه (BOM Explosion)</span>
+              </button>
+            )}
 
             <button
               onClick={handleApply}
@@ -362,7 +397,7 @@ export const SmartStageScalingModal: React.FC<Props> = ({ project, isOpen, onClo
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>اعمال محاسبات اهداف و ضریب ضایعات به پروژه</span>
+                  <span>{appliedSuccess ? 'اعمال مجدد محاسبات اهداف' : 'اعمال محاسبات اهداف و ضریب ضایعات به پروژه'}</span>
                 </>
               )}
             </button>

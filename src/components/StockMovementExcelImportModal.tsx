@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   X, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle, 
-  ArrowDownLeft, ArrowUpRight, Check, AlertTriangle, Building2, UserCheck, Eye
+  ArrowDownLeft, ArrowUpRight, Check, AlertTriangle, Building2, UserCheck, Eye, Trash2
 } from 'lucide-react';
 import { 
   generateStockMovementItemsTemplate, 
@@ -93,6 +93,34 @@ export const StockMovementExcelImportModal: React.FC<Props> = ({
     } finally {
       setIsParsing(false);
     }
+  };
+
+  const handleUpdateItemQuantity = (index: number, newQty: number) => {
+    if (!parsedResult) return;
+    const updated = [...parsedResult.parsedItems];
+    const val = isNaN(newQty) ? 1 : Math.max(1, newQty);
+    updated[index] = { ...updated[index], quantity: val };
+    const newTotalQty = updated.reduce((sum, it) => sum + it.quantity, 0);
+    const newTotalVal = updated.reduce((sum, it) => sum + (it.quantity * (it.unitPrice || 0)), 0);
+    setParsedResult({
+      ...parsedResult,
+      parsedItems: updated,
+      totalQuantity: newTotalQty,
+      totalCalculatedValue: newTotalVal
+    });
+  };
+
+  const handleRemoveParsedItem = (index: number) => {
+    if (!parsedResult) return;
+    const updated = parsedResult.parsedItems.filter((_, i) => i !== index);
+    const newTotalQty = updated.reduce((sum, it) => sum + it.quantity, 0);
+    const newTotalVal = updated.reduce((sum, it) => sum + (it.quantity * (it.unitPrice || 0)), 0);
+    setParsedResult({
+      ...parsedResult,
+      parsedItems: updated,
+      totalQuantity: newTotalQty,
+      totalCalculatedValue: newTotalVal
+    });
   };
 
   const handleApplyToForm = () => {
@@ -209,7 +237,7 @@ export const StockMovementExcelImportModal: React.FC<Props> = ({
               </div>
             </div>
             <button
-              onClick={() => generateStockMovementItemsTemplate(docType, items, warehouses)}
+              onClick={() => generateStockMovementItemsTemplate(effectiveDocType, items, warehouses)}
               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl text-xs flex items-center gap-1.5 shrink-0 shadow-2xs transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
@@ -326,31 +354,52 @@ export const StockMovementExcelImportModal: React.FC<Props> = ({
 
                   {/* Table of Parsed Items */}
                   {parsedResult.parsedItems.length > 0 && (
-                    <div className="border border-slate-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+                    <div className="border border-slate-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto shadow-2xs">
                       <table className={`w-full text-[11px] ${isFa ? 'text-right' : 'text-left'}`}>
                         <thead className="bg-slate-100 font-bold text-slate-700 sticky top-0 border-b border-slate-200">
                           <tr>
-                            <th className="p-2">#</th>
+                            <th className="p-2 text-center w-8">#</th>
                             <th className="p-2">{isFa ? 'کد کالا' : 'Item Code'}</th>
                             <th className="p-2">{isFa ? 'نام کالا' : 'Item Name'}</th>
-                            <th className="p-2">{isFa ? 'تعداد' : 'Qty'}</th>
-                            <th className="p-2">{isFa ? 'قیمت واحد' : 'Unit Price'}</th>
+                            <th className="p-2 text-center w-32">{isFa ? 'تعداد استخراج‌شده' : 'Quantity'}</th>
+                            <th className="p-2 text-center">{isFa ? 'قیمت واحد' : 'Unit Price'}</th>
                             <th className="p-2">{isFa ? 'توضیحات' : 'Notes'}</th>
+                            <th className="p-2 text-center w-10"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {parsedResult.parsedItems.map((pItem, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50">
-                              <td className="p-2 text-slate-400 font-mono">{idx + 1}</td>
+                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-2 text-slate-400 font-mono text-center">{idx + 1}</td>
                               <td className="p-2 font-mono font-bold text-indigo-600">{pItem.itemCode}</td>
                               <td className="p-2 font-semibold text-slate-800">{pItem.itemName}</td>
-                              <td className="p-2 font-mono font-bold text-emerald-600">
-                                {pItem.quantity.toLocaleString('fa-IR')} {pItem.unit}
+                              <td className="p-2 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={pItem.quantity}
+                                    onChange={(e) => handleUpdateItemQuantity(idx, Number(e.target.value))}
+                                    className="w-20 px-2 py-0.5 text-center font-mono font-bold text-xs bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500"
+                                    title="امکان ویرایش مستقیم تعداد"
+                                  />
+                                  <span className="text-[10px] text-slate-500 font-medium">{pItem.unit}</span>
+                                </div>
                               </td>
-                              <td className="p-2 font-mono text-slate-600">
+                              <td className="p-2 font-mono text-slate-600 text-center">
                                 {pItem.unitPrice ? `${pItem.unitPrice.toLocaleString('fa-IR')} تومان` : '-'}
                               </td>
                               <td className="p-2 text-slate-500 truncate max-w-[150px]">{pItem.notes || '-'}</td>
+                              <td className="p-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveParsedItem(idx)}
+                                  className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors"
+                                  title="حذف این ردیف"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
