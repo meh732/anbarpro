@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { evaluatePasswordStrength } from '../utils/security';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
+import { ServerClientSetupModal } from './ServerClientSetupModal';
 
 interface NavbarProps {
   onToggleMobileSidebar: () => void;
@@ -32,6 +33,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
   const [showNotifs, setShowNotifs] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showServerModal, setShowServerModal] = useState(false);
+  const [showRoleSetupModal, setShowRoleSetupModal] = useState(false);
   const [isSyncingManually, setIsSyncingManually] = useState(false);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
 
@@ -566,20 +568,35 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                 <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-2xl">
                   <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold mb-1">
                     <Wifi className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>شبکه و پورت:</span>
+                    <span>آدرس اتصال شبکه و پورت:</span>
                   </div>
-                  <div className="font-bold text-xs text-slate-800">
-                    Port: 3000 (پورت سراسری)
+                  <div className="font-mono font-bold text-xs text-indigo-700 truncate" dir="ltr">
+                    {serverInfo?.shareUrls?.[0] || `Port: ${serverInfo?.port || 3000}`}
                   </div>
                 </div>
               </div>
 
               {/* Multi-PC Sync Explanation */}
-              <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl text-xs text-slate-700 leading-relaxed flex items-start gap-2.5">
-                <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <p>
-                  <strong>عملکرد شبکه چندکاربره:</strong> تمام تراکنش‌ها، کالاها، انبارها، ورود/خروج و فرمول‌های ساخت بلافاصله روی فایل مرکزی سرور لینوکس ذخیره شده و به طور خودکار در تمامی سیستم‌ها و رایانه‌های متصل به‌روزرسانی می‌شوند.
-                </p>
+              <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl text-xs text-slate-700 leading-relaxed space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                  <p>
+                    <strong>عملکرد شبکه چندکاربره (سرور و کلاینت):</strong> تمام تراکنش‌ها، کالاها، انبارها، ورود/خروج و فرمول‌های ساخت بلافاصله روی دیتابیس مرکزی ذخیره شده و به طور خودکار در تمامی سیستم‌ها و رایانه‌های متصل به‌روزرسانی می‌شوند.
+                  </p>
+                </div>
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowServerModal(false);
+                      setShowRoleSetupModal(true);
+                    }}
+                    className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all"
+                  >
+                    <Server className="w-4 h-4" />
+                    <span>پیکربندی حالت سرور/کلاینت، پورت شبکه، قفل سخت‌افزاری و پنل فروشنده</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -604,6 +621,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           </div>
         </div>
       )}
+
+      {/* Server / Client Role, Hardware Lock & Seller Keygen Modal */}
+      <ServerClientSetupModal
+        isOpen={showRoleSetupModal}
+        onClose={() => setShowRoleSetupModal(false)}
+      />
 
       {/* SECURE USER CHANGE PASSWORD MODAL */}
       {showChangePassModal && (

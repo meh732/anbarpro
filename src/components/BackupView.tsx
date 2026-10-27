@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { UserManagementView } from './UserManagementView';
 import { MessengerBackupSettings } from './MessengerBackupSettings';
+import { ServerClientSetupModal } from './ServerClientSetupModal';
 
 export const BackupView: React.FC = () => {
   const { 
@@ -609,7 +610,7 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
           }`}
         >
           <Server className="w-4 h-4" />
-          {isFa ? 'سرور لینوکس و همگام‌سازی شبکه' : 'Linux Server & Network Sync'}
+          {isFa ? 'تنظیمات شبکه (سرور مرکزی / کلاینت) و قفل سخت‌افزاری' : 'Server / Client & Hardware Lock'}
         </button>
       </div>
 
@@ -748,6 +749,11 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
         </div>
       ) : activeTab === 'server' ? (
         <div className="space-y-6 animate-fadeIn">
+          {/* Windows Tauri Server / Client Role, Hardware Lock, Port & Seller Keygen Panel */}
+          <div className="rounded-3xl overflow-hidden shadow-lg border border-slate-800 bg-slate-900">
+            <ServerClientSetupModal embedded={true} />
+          </div>
+
           {/* Server Status Header Card */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -933,261 +939,6 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Windows Tauri Desktop (.EXE & Setup) Card */}
-          <div className="bg-gradient-to-b from-indigo-50/40 via-white to-white border-2 border-indigo-200 rounded-2xl p-6 shadow-sm space-y-5">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-200">
-                  <Laptop className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-base font-black text-slate-900">خروجی ستاپ اگزه ویندوز (Tauri Desktop App)</h4>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-300">
-                      Tauri v2 + Rust
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    تبدیل و بسته‌بندی نرم‌افزار انبار به فایل ستاپ ویندوز (<span className="font-mono font-bold text-indigo-700">.exe / .msi</span>) با کمترین مصرف رم و حداکثر سرعت
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={downloadWindowsBat}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-all active:scale-95"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>دانلود اسکریپت ساخت ویندوز (BAT)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={downloadWindowsPs1}
-                  className="px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer transition-all"
-                >
-                  <FileText className="w-4 h-4 text-cyan-600" />
-                  <span>اسکریپت PowerShell</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Step-by-Step Tauri Windows Build Instructions */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
-              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-900">
-                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]">1</span>
-                  <span>پیش‌نیازها در ویندوز</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  نصب بودن <strong>Node.js 18+</strong> و ابزار کامپایلر <strong>Rust</strong> (از سایت <span className="font-mono text-indigo-600">rustup.rs</span>).
-                </p>
-              </div>
-
-              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-900">
-                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]">2</span>
-                  <span>اجرای اسکریپت بیلد ۱-کلیک</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  فایل <code className="font-mono text-indigo-700 bg-white px-1 rounded">build-windows-exe.bat</code> را در پوشه پروژه اجرا کنید یا دستور زیر را در ترمینال بزنید:
-                </p>
-                <div className="relative">
-                  <div className="p-2 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-lg dir-ltr text-left">
-                    npm run tauri:build
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy('npm run tauri:build', 'tauri_build')}
-                    className="absolute right-1.5 top-1.5 p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedKey === 'tauri_build' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-900">
-                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]">3</span>
-                  <span>دریافت فایل نصبی Setup.exe</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  فایل نهایی ستاپ و اگزه در مسیر زیر تولید می‌شود و آماده نصب روی کامپیوترهای کارخانه و انبار است:
-                </p>
-                <div className="p-2 bg-slate-100 text-slate-800 font-mono text-[10px] rounded-lg dir-ltr text-left truncate">
-                  src-tauri/target/release/bundle/nsis/
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 502 Bad Gateway Fixer Card (Specific for anbar.templatetesti.shop and Ubuntu Nginx) */}
-          <div className="bg-rose-50/70 border-2 border-rose-200 rounded-2xl p-6 shadow-sm space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold shadow-md shadow-rose-200">
-                  <ShieldAlert className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-base font-black text-rose-950">حل قطعی و فوری خطای 502 Bad Gateway سرور (پشتیبانی کامل از پورت دلخواه)</h4>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-200 text-rose-800 border border-rose-300 animate-pulse">
-                      رفع قطعی ۵۰۲ با هر پورتی
-                    </span>
-                  </div>
-                  <p className="text-xs text-rose-800/90 mt-0.5">
-                    خطای ۵۰۲ زمانی رخ می‌دهد که Nginx فعال است اما پروسه بک‌اند روی پورت مورد نظر (پیش‌فرض یا پورت اختصاصی شما مثل 3001, 8080, 5000) خاموش شده است.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={downloadFix502Script}
-                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-all active:scale-95"
-              >
-                <Download className="w-4 h-4" />
-                <span>دانلود اسکریپت رفع ۵۰۲ (SH)</span>
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-rose-950">
-                ⚡ دستور اجرا در سرور با پورت دلخواه شما (مثال: پورت دلخواه را بعد از دستور بنویسید یا خالی بگذارید تا خودکار تشخیص دهد):
-              </label>
-              <div className="relative">
-                <div className="p-3.5 bg-slate-950 text-emerald-400 rounded-xl font-mono dir-ltr text-left text-xs overflow-x-auto selection:bg-rose-500 selection:text-white">
-                  sudo bash scripts/fix-502-bad-gateway.sh [PORT_دلخواه]
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleCopy('sudo bash scripts/fix-502-bad-gateway.sh', 'cmd_502')}
-                  className="absolute right-2 top-2 p-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  {copiedKey === 'cmd_502' ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedKey === 'cmd_502' ? 'کپی شد!' : 'کپی دستور'}</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] text-slate-700">
-              <div className="p-3 bg-white/80 rounded-xl border border-rose-200/70">
-                <strong className="text-rose-900 block mb-1">۱. ری‌استارت سرویس پشتیبان:</strong>
-                اجرای دائمی پروسه با <code className="font-mono text-slate-800 bg-slate-100 px-1 rounded">systemd</code> تا با ریبوت سرور هم قطع نشود.
-              </div>
-              <div className="p-3 bg-white/80 rounded-xl border border-rose-200/70">
-                <strong className="text-rose-900 block mb-1">۲. اتصال Nginx به 127.0.0.1:3000:</strong>
-                پیکربندی خودکار <code className="font-mono text-slate-800 bg-slate-100 px-1 rounded">proxy_pass</code> همراه با وب‌سوکت و پورت دامنه.
-              </div>
-              <div className="p-3 bg-white/80 rounded-xl border border-rose-200/70">
-                <strong className="text-rose-900 block mb-1">۳. باز کردن پورت‌ها در UFW:</strong>
-                اطمینان از عبور ترافیک پورت‌های ۸۰، ۴۴۳ و ۳۰۰۰ بدون تداخل فایروال.
-              </div>
-            </div>
-          </div>
-
-          {/* Linux Server Installation Card */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-                  <Terminal className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-base font-black text-slate-900">اسکریپت نصب و مدیریت سرور لینوکس (Linux Auto-Installer)</h4>
-                  <p className="text-xs text-slate-500">راه‌اندازی سرویس دائم Systemd روی سرور (Ubuntu, Debian, CentOS, AlmaLinux) با باز کردن فایروال پورت 3000</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={downloadLinuxInstaller}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-all active:scale-95"
-              >
-                <Download className="w-4 h-4" />
-                <span>دانلود اسکریپت نصب لینوکس (SH)</span>
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-700">
-                دستور اجرای مستقیم اسکریپت نصب روی سرور لینوکس:
-              </label>
-              <div className="relative">
-                <div className="p-3 bg-slate-900 text-emerald-400 rounded-xl font-mono dir-ltr text-left text-xs">
-                  sudo bash scripts/install-linux-server.sh --install
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleCopy('sudo bash scripts/install-linux-server.sh --install', 'linux_cmd')}
-                  className="absolute right-2 top-2 p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  {copiedKey === 'linux_cmd' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>کپی دستور</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
-                <span className="text-slate-500 block mb-1 font-bold">بررسی وضعیت سرویس:</span>
-                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">systemctl status anbarmeh</code>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
-                <span className="text-slate-500 block mb-1 font-bold">ری‌استارت سرویس سرور:</span>
-                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">systemctl restart anbarmeh</code>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
-                <span className="text-slate-500 block mb-1 font-bold">مشاهده لاگ‌های زنده:</span>
-                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">journalctl -u anbarmeh -f</code>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
-                <span className="text-slate-500 block mb-1 font-bold">تنظیم فایروال UFW:</span>
-                <code className="font-mono text-slate-800 text-[11px] dir-ltr block">sudo ufw allow 3000/tcp</code>
-              </div>
-            </div>
-          </div>
-
-          {/* Network instructions card */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xs space-y-4">
-            <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Globe className="w-4 h-4 text-indigo-600" />
-              راهنمای اتصال همزمان تمام کاربران شبکه (وب + نرم‌افزار دسکتاپ ویندوز)
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600 leading-relaxed">
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
-                <h5 className="font-black text-slate-900 flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-emerald-600" />
-                  روش اول: اتصال از طریق مرورگر وب (Web Browser)
-                </h5>
-                <p>
-                  پرسنل و مدیران می‌توانند بدون نصب هیچ برنامه‌ای، در هر کامپیوتر یا تبلت در شبکه محلی، مرورگر (Chrome / Edge / Firefox) را باز کرده و آدرس زیر را وارد کنند:
-                </p>
-                <div className="p-2.5 bg-slate-900 text-emerald-400 rounded-xl font-mono dir-ltr text-left text-xs">
-                  http://[IP_سرور_لینوکس]:3000
-                </div>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
-                <h5 className="font-black text-slate-900 flex items-center gap-2">
-                  <Laptop className="w-4 h-4 text-indigo-600" />
-                  روش دوم: اتصال از طریق فایل ستاپ اگزه ویندوز (Tauri Desktop App)
-                </h5>
-                <p>
-                  فایل نصبی <span className="font-mono font-bold text-slate-800">Setup.exe</span> را روی سیستم‌های انبار و کارخانه نصب کنید. پس از باز شدن، در صورت نیاز آدرس سرور را در بخش تنظیمات سرور وارد نمایید تا کلیه داده‌ها در لحظه همگام‌سازی شوند.
-                </p>
-                <div className="p-2.5 bg-slate-900 text-indigo-300 rounded-xl font-mono dir-ltr text-left text-xs">
-                  http://[IP_سرور_لینوکس]:3000
-                </div>
-              </div>
-            </div>
-            <p className="text-[11px] text-slate-500 pt-1">
-              * تمام تغییرات، درخواست‌های تحویل انبار، اسناد ورود و خروج، تاییدیه‌های دو مرحله‌ای و چت‌های سازمانی بلافاصله و بدون نیاز به رفرش صفحه بین کلاینت‌های وب و کلاینت‌های دسکتاپ ویندوز رد و بدل می‌شوند.
-            </p>
           </div>
         </div>
       ) : (

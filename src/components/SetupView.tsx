@@ -2,12 +2,16 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Cpu, Building2, Lock, User as UserIcon, ShieldCheck, 
-  ArrowLeft, ArrowRight, Check, Play, AlertCircle, Database, HelpCircle
+  ArrowLeft, ArrowRight, Check, Play, AlertCircle, Database, Network
 } from 'lucide-react';
+import { ServerClientSetupModal } from './ServerClientSetupModal';
 
 export const SetupView: React.FC = () => {
   const { completeInstallation, language, setLanguage } = useApp();
-  const [step, setStep] = useState(1);
+  // Step 0: Choose Server vs Client Role (+ Hardware Lock & Port if Server, or IP:Port if Client)
+  // Step 1: Company Name (for Server setup)
+  // Step 2: Admin Account (for Server setup)
+  const [step, setStep] = useState<0 | 1 | 2>(0);
   const [companyName, setCompanyName] = useState('');
   const [adminUsername, setAdminUsername] = useState('admin');
   const [adminPassword, setAdminPassword] = useState('');
@@ -57,7 +61,8 @@ export const SetupView: React.FC = () => {
   };
 
   const handleBackStep = () => {
-    setStep(1);
+    if (step === 2) setStep(1);
+    else if (step === 1) setStep(0);
     setErrorMessage('');
   };
 
@@ -86,7 +91,7 @@ export const SetupView: React.FC = () => {
               سامانه انبار‌مه <span className="text-indigo-400 text-xs font-mono font-normal">AnbarMeh ERP v2.5</span>
             </h1>
             <p className="text-[11px] text-slate-400">
-              {isFa ? 'دستیار هوشمند راه‌اندازی و فعال‌سازی اولیه سیستم' : 'Smart System Setup & Activation Assistant'}
+              {isFa ? 'دستیار هوشمند راه‌اندازی نسخه ویندوز (سرور مرکزی / کلاینت شبکه)' : 'Smart System Setup & Activation Assistant'}
             </p>
           </div>
         </div>
@@ -100,8 +105,8 @@ export const SetupView: React.FC = () => {
       </header>
 
       {/* Main Container */}
-      <main className="relative z-10 max-w-lg w-full mx-auto my-auto py-8">
-        <div className="bg-slate-800 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+      <main className={`relative z-10 ${step === 0 ? 'max-w-4xl' : 'max-w-lg'} w-full mx-auto my-auto py-6 transition-all`}>
+        <div className="bg-slate-800 border border-white/10 rounded-3xl p-5 sm:p-8 shadow-2xl relative overflow-hidden">
           {/* Top colored line indicator */}
           <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
 
@@ -117,15 +122,50 @@ export const SetupView: React.FC = () => {
                 </p>
               </div>
             </div>
+          ) : step === 0 ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-center gap-3 mb-2">
+                <div className="flex items-center gap-2 px-4 py-2 rounded-2xl border text-xs font-bold bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                  <Network className="w-4 h-4" />
+                  <span>گام اول: انتخاب نقش سیستم (سرور مرکزی یا کلاینت)</span>
+                </div>
+                <div className="h-px w-6 bg-slate-700 hidden sm:block" />
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border text-xs font-bold bg-slate-900/50 text-slate-500 border-slate-800">
+                  <span>۲. اطلاعات شرکت</span>
+                </div>
+                <div className="h-px w-6 bg-slate-700 hidden sm:block" />
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border text-xs font-bold bg-slate-900/50 text-slate-500 border-slate-800">
+                  <span>۳. حساب ادمین</span>
+                </div>
+              </div>
+
+              <ServerClientSetupModal
+                embedded={true}
+                onRoleConfigured={(mode) => {
+                  if (mode === 'server') {
+                    setStep(1);
+                  }
+                }}
+              />
+            </div>
           ) : (
             <>
               {/* Step indicator bubbles */}
-              <div className="flex items-center justify-center gap-4 mb-8">
+              <div className="flex items-center justify-center gap-3 mb-8 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setStep(0)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-bold bg-emerald-500/15 text-emerald-300 border-emerald-500/30 cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>نقش: سرور مرکزی</span>
+                </button>
+                <div className="h-px w-5 bg-slate-700" />
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border text-xs font-bold transition-all ${step === 1 ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-900/50 text-slate-500 border-slate-800'}`}>
                   <span className="w-5 h-5 rounded-lg bg-slate-800 border border-white/10 flex items-center justify-center text-[10px]">۱</span>
                   <span>{isFa ? 'اطلاعات شرکت' : 'Company Details'}</span>
                 </div>
-                <div className="h-px w-8 bg-slate-700" />
+                <div className="h-px w-5 bg-slate-700" />
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border text-xs font-bold transition-all ${step === 2 ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-900/50 text-slate-500 border-slate-800'}`}>
                   <span className="w-5 h-5 rounded-lg bg-slate-800 border border-white/10 flex items-center justify-center text-[10px]">۲</span>
                   <span>{isFa ? 'حساب ادمین ارشد' : 'Admin Account'}</span>
@@ -270,7 +310,7 @@ export const SetupView: React.FC = () => {
 
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4">
-                  {step === 2 && (
+                  {(step === 1 || step === 2) && (
                     <button
                       type="button"
                       onClick={handleBackStep}

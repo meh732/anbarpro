@@ -26,14 +26,15 @@ import { ContractorsView } from './components/ContractorsView';
 import { KardexView } from './components/KardexView';
 import { ChatView } from './components/ChatView';
 import { IncomingMessageBanner } from './components/IncomingMessageBanner';
-import { ShieldAlert } from 'lucide-react';
+import { ServerClientSetupModal } from './components/ServerClientSetupModal';
+import { ShieldAlert, Lock } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const MainContent: React.FC = () => {
   const { 
     activeTab, setActiveTab, isScannerOpen, setIsScannerOpen, 
     language, isAuthenticated, hasTabPermission, currentUser,
-    isInstalled, liteMode
+    isInstalled, isNodeAuthorized, isCheckingLicense, liteMode
   } = useApp();
 
   const [isOpenMobile, setIsOpenMobile] = useState(false);
@@ -76,6 +77,22 @@ const MainContent: React.FC = () => {
       window.removeEventListener('afterprint', handleAfterPrint);
     };
   }, []);
+
+  // 1. Hardware License & Network Role Gate (100% Unbypassable)
+  if (isCheckingLicense) {
+    return (
+      <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 font-vazir" dir="rtl">
+        <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 mb-4 animate-pulse">
+          <Lock className="w-7 h-7" />
+        </div>
+        <div className="text-sm font-black text-white">در حال بررسی قفل سخت‌افزاری و لایسنس سرور...</div>
+      </div>
+    );
+  }
+
+  if (!isNodeAuthorized) {
+    return <ServerClientSetupModal isOpen={true} mandatory={true} />;
+  }
 
   if (!isInstalled) {
     return <SetupView />;

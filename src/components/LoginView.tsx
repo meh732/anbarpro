@@ -3,19 +3,21 @@ import { useApp } from '../context/AppContext';
 import { 
   Cpu, Lock, User as UserIcon, LogIn, Key, Eye, EyeOff, 
   ShieldCheck, AlertCircle, Globe, CheckCircle2, Shield,
-  Smartphone, Database, LockKeyhole
+  Smartphone, Database, LockKeyhole, Network, Server
 } from 'lucide-react';
 import { getAccountLockoutStatus, normalizeUsername } from '../utils/security';
 import { PWAInstallPrompt } from './PWAInstallPrompt';
+import { ServerClientSetupModal } from './ServerClientSetupModal';
 
 export const LoginView: React.FC = () => {
-  const { login, companyName, language, setLanguage } = useApp();
+  const { login, companyName, language, setLanguage, serverUrl } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [lockoutTimer, setLockoutTimer] = useState<number>(0);
+  const [showNetworkModal, setShowNetworkModal] = useState(false);
 
   const isFa = language === 'fa';
 
@@ -108,6 +110,14 @@ export const LoginView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowNetworkModal(true)}
+            className="glass-btn-dark !rounded-xl text-[11px] px-3 py-1.5 flex items-center gap-1.5 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/20 cursor-pointer"
+          >
+            <Network className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{isFa ? 'تنظیمات سرور / کلاینت' : 'Server / Client Setup'}</span>
+          </button>
           <PWAInstallPrompt variant="button" className="hidden sm:flex" />
           <button
             onClick={() => setLanguage(language === 'fa' ? 'en' : 'fa')}
@@ -138,7 +148,7 @@ export const LoginView: React.FC = () => {
           </div>
 
           {/* Security & Database Status Badges */}
-          <div className="mb-5 p-2.5 bg-slate-950/80 border border-slate-800 rounded-2xl flex items-center justify-around text-[10px] text-slate-300 font-mono">
+          <div className="mb-4 p-2.5 bg-slate-950/80 border border-slate-800 rounded-2xl flex items-center justify-around text-[10px] text-slate-300 font-mono">
             <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
               <ShieldCheck className="w-3.5 h-3.5" />
@@ -146,8 +156,8 @@ export const LoginView: React.FC = () => {
             </div>
             <div className="text-slate-700">|</div>
             <div className="flex items-center gap-1.5 text-indigo-300 font-semibold">
-              <Shield className="w-3.5 h-3.5 text-indigo-400" />
-              <span>{isFa ? 'ضد بروت‌فورس فعال' : 'Anti-Brute Force'}</span>
+              <Server className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{serverUrl ? `کلاینت (${serverUrl})` : 'سرور مرکزی دیتابیس'}</span>
             </div>
           </div>
 
@@ -234,12 +244,30 @@ export const LoginView: React.FC = () => {
             </button>
           </form>
 
+          {/* Server / Client Network Role Configuration Button */}
+          <div className="mt-4 pt-4 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={() => setShowNetworkModal(true)}
+              className="w-full py-2.5 px-3 bg-slate-950/90 hover:bg-slate-800 border border-indigo-500/30 text-indigo-300 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Network className="w-4 h-4 text-indigo-400" />
+              <span>تنظیمات اتصال شبکه (انتخاب سرور مرکزی / کلاینت و قفل سخت‌افزاری)</span>
+            </button>
+          </div>
+
           {/* PWA Mobile App Callout Widget */}
-          <div className="mt-6 pt-5 border-t border-slate-800/80">
+          <div className="mt-4 pt-4 border-t border-slate-800/80">
             <PWAInstallPrompt variant="login-widget" />
           </div>
         </div>
       </main>
+
+      {/* Server / Client Setup Modal */}
+      <ServerClientSetupModal
+        isOpen={showNetworkModal}
+        onClose={() => setShowNetworkModal(false)}
+      />
 
       {/* Footer Info */}
       <footer className="relative z-10 text-center text-[11px] text-slate-500 max-w-md mx-auto space-y-1">

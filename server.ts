@@ -1,8 +1,10 @@
 import 'dotenv/config';
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { execSync } from 'child_process';
 import { createServer as createViteServer } from 'vite';
 import { serverStore, getDefaultServerState } from './src/server/serverStore.ts';
 import { 
@@ -22,6 +24,11 @@ import {
   recordSuccessfulLogin,
   normalizeUsername
 } from './src/utils/security.ts';
+import {
+  formatHardwareCodeFromRaw,
+  generateActivationCodeForHardware,
+  verifyServerActivationCode
+} from './src/utils/hardwareLicense.ts';
 
 const DEFAULT_MESSENGER_CONFIG: MessengerBackupConfig = {
   telegram: { enabled: false, botToken: '', adminChatId: '', sendAutoBackups: true, sendAlerts: true },
@@ -35,6 +42,164 @@ import {
 } from './src/db/schema.ts';
 
 const __dirname = process.cwd();
+
+// ============================================================================
+//  WINDOWS / LINUX HARDWARE FINGERPRINT, LICENSE LOCK & LAN PORT CONFIGURATION
+// ============================================================================
+interface ServerNodeConfig {
+  configuredPort: number;
+  activatedLicenseKey: string | null;
+  activatedAt: string | null;
+  hardwareCode: string | null;
+}
+
+const NODE_CONFIG_DIR = path.join(process.cwd(), 'data');
+const NODE_CONFIG_FILE = path.join(NODE_CONFIG_DIR, 'server_node_config.json');
+
+function loadServerNodeConfig(): ServerNodeConfig {
+  try {
+    if (fs.existsSync(NODE_CONFIG_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(NODE_CONFIG_FILE, 'utf-8'));
+      return {
+        configuredPort: Number(parsed.configuredPort) || 3000,
+        activatedLicenseKey: parsed.activatedLicenseKey || null,
+        activatedAt: parsed.activatedAt || null,
+        hardwareCode: parsed.hardwareCode || null,
+      };
+    }
+  } catch (e) {
+    console.warn('[NodeConfig] Failed to read server_node_config.json:', e);
+  }
+  return {
+    configuredPort: 3000,
+    activatedLicenseKey: null,
+    activatedAt: null,
+    hardwareCode: null,
+  };
+}
+
+function saveServerNodeConfig(cfg: Partial<ServerNodeConfig>): ServerNodeConfig {
+  const current = loadServerNodeConfig();
+  const updated: ServerNodeConfig = { ...current, ...cfg };
+  try {
+    if (!fs.existsSync(NODE_CONFIG_DIR)) {
+      fs.mkdirSync(NODE_CONFIG_DIR, { recursive: true });
+    }
+    fs.writeFileSync(NODE_CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[NodeConfig] Failed to save server_node_config.json:', e);
+  }
+  return updated;
+}
+
+let cachedHardwareInfo: {
+  hardwareCode: string;
+  details: {
+    hostname: string;
+    platform: string;
+    arch: string;
+    cpuModel: string;
+    cpuCores: number;
+    totalMemGb: number;
+    macAddress: string;
+    osRelease: string;
+  };
+} | null = null;
+
+function getServerHardwareFingerprint() {
+  if (cachedHardwareInfo) return cachedHardwareInfo;
+
+  const cpus = os.cpus() || [];
+  const cpuModel = cpus[0]?.model?.trim() || 'Generic-CPU';
+  const cpuCores = cpus.length || 1;
+  const totalMemGb = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
+  const hostname = os.hostname() || 'WIN-SERVER';
+  const platform = os.platform();
+  const arch = os.arch();
+  const osRelease = os.release();
+
+  // Find primary physical MAC address
+  const interfaces = os.networkInterfaces();
+  let macAddress = '00:00:00:00:00:00';
+  for (const name of Object.keys(interfaces)) {
+    const list = interfaces[name] || [];
+    for (const iface of list) {
+      if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
+        macAddress = iface.mac.toUpperCase();
+        break;
+      }
+    }
+    if (macAddress !== '00:00:00:00:00:00') break;
+  }
+
+  // Attempt OS-level hardware UUID (Windows WMIC / Registry MachineGuid or Linux machine-id)
+  let osHardwareUuid = '';
+  try {
+    if (platform === 'win32') {
+      const wmicOut = execSync('wmic csproduct get uuid', { encoding: 'utf-8', timeout: 2500 });
+      const lines = wmicOut.split(/\r?\n/).map(l => l.trim()).filter(l => l && l.toLowerCase() !== 'uuid');
+      if (lines[0]) osHardwareUuid = lines[0];
+    } else if (fs.existsSync('/etc/machine-id')) {
+      osHardwareUuid = fs.readFileSync('/etc/machine-id', 'utf-8').trim();
+    }
+  } catch {
+    // Fallback to CPU + MAC + Hostname if WMIC is restricted
+  }
+
+  const rawFingerprint = [
+    osHardwareUuid || hostname,
+    cpuModel,
+    cpuCores,
+    macAddress !== '00:00:00:00:00:00' ? macAddress : hostname,
+    platform,
+    arch
+  ].join('||');
+
+  const hardwareCode = formatHardwareCodeFromRaw(rawFingerprint);
+  cachedHardwareInfo = {
+    hardwareCode,
+    details: {
+      hostname,
+      platform,
+      arch,
+      cpuModel,
+      cpuCores,
+      totalMemGb,
+      macAddress,
+      osRelease,
+    }
+  };
+  return cachedHardwareInfo;
+}
+
+function getDetectedLanIps(): string[] {
+  const interfaces = os.networkInterfaces();
+  const lanIps: string[] = [];
+  const otherIps: string[] = [];
+
+  for (const name of Object.keys(interfaces)) {
+    const list = interfaces[name] || [];
+    for (const iface of list) {
+      if (!iface.internal && iface.family === 'IPv4' && iface.address) {
+        if (
+          iface.address.startsWith('192.168.') ||
+          iface.address.startsWith('10.') ||
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(iface.address)
+        ) {
+          lanIps.push(iface.address);
+        } else {
+          otherIps.push(iface.address);
+        }
+      }
+    }
+  }
+
+  const combined = [...lanIps, ...otherIps];
+  return combined.length > 0 ? Array.from(new Set(combined)) : ['127.0.0.1'];
+}
+
+let customPortServer: http.Server | null = null;
+let activeCustomPort: number | null = null;
 
 // Global error guard to prevent any unhandled crash in production
 process.on('uncaughtException', (err) => {
@@ -69,6 +234,8 @@ async function startServer() {
 
   // 1. Security: Disable X-Powered-By to prevent server stack fingerprinting
   app.disable('x-powered-by');
+
+  const savedNodeConfig = loadServerNodeConfig();
 
   // Robust Port Detection: Support PORT, APP_PORT, HTTP_PORT with sanitization
   const rawPort = process.env.PORT || process.env.APP_PORT || process.env.HTTP_PORT || '3000';
@@ -345,17 +512,14 @@ async function startServer() {
   app.get('/api/server-info', (req, res) => {
     const storageInfo = serverStore.getStorageInfo();
     const state = serverStore.getState();
-
-    // Get server network interfaces (IP addresses)
-    const interfaces = os.networkInterfaces();
-    const ipList: string[] = [];
-    Object.values(interfaces).forEach(ifaceArr => {
-      ifaceArr?.forEach(iface => {
-        if (!iface.internal && iface.family === 'IPv4') {
-          ipList.push(iface.address);
-        }
-      });
-    });
+    const hwInfo = getServerHardwareFingerprint();
+    const nodeCfg = loadServerNodeConfig();
+    const ipList = getDetectedLanIps();
+    const effectivePort = activeCustomPort || nodeCfg.configuredPort || PORT;
+    const isLicenseActivated = Boolean(
+      nodeCfg.activatedLicenseKey &&
+      verifyServerActivationCode(hwInfo.hardwareCode, nodeCfg.activatedLicenseKey)
+    );
 
     res.json({
       success: true,
@@ -368,7 +532,11 @@ async function startServer() {
       uptimeSeconds: Math.round(process.uptime()),
       nodeVersion: process.version,
       ipAddresses: ipList,
-      port: PORT,
+      port: effectivePort,
+      configuredPort: nodeCfg.configuredPort || PORT,
+      hardwareCode: hwInfo.hardwareCode,
+      isLicenseActivated,
+      shareUrls: ipList.map(ip => `http://${ip}:${effectivePort}`),
       storage: storageInfo,
       counts: {
         items: state.items?.length || 0,
@@ -384,6 +552,205 @@ async function startServer() {
         notifications: state.notifications?.length || 0,
       }
     });
+  });
+
+  // =========================================================================
+  //  TAURI / WINDOWS SERVER HARDWARE LOCK, LAN IP & PORT MANAGEMENT ENDPOINTS
+  // =========================================================================
+
+  // Helper to dynamically bind custom LAN port without dropping main port 3000
+  const bindSecondaryPortIfNeeded = (targetPort: number): Promise<{ bound: boolean; error?: string }> => {
+    return new Promise((resolve) => {
+      if (!targetPort || targetPort === PORT || targetPort < 1024 || targetPort > 65535) {
+        if (customPortServer) {
+          try { customPortServer.close(); } catch {}
+          customPortServer = null;
+          activeCustomPort = null;
+        }
+        return resolve({ bound: true });
+      }
+      if (activeCustomPort === targetPort && customPortServer) {
+        return resolve({ bound: true });
+      }
+      if (customPortServer) {
+        try { customPortServer.close(); } catch {}
+        customPortServer = null;
+        activeCustomPort = null;
+      }
+
+      try {
+        const srv = http.createServer(app);
+        srv.on('error', (err: any) => {
+          console.warn(`[CustomPort] Could not bind secondary port ${targetPort}:`, err?.message);
+          resolve({ bound: false, error: err?.code === 'EADDRINUSE' ? `پورت ${targetPort} در حال حاضر توسط برنامه دیگری اشغال شده است.` : err?.message });
+        });
+        srv.listen(targetPort, '0.0.0.0', () => {
+          customPortServer = srv;
+          activeCustomPort = targetPort;
+          console.log(`[CustomPort] Central Server also listening on 0.0.0.0:${targetPort}`);
+          resolve({ bound: true });
+        });
+      } catch (e: any) {
+        resolve({ bound: false, error: e?.message });
+      }
+    });
+  };
+
+  // Start secondary port if previously configured
+  if (savedNodeConfig.configuredPort && savedNodeConfig.configuredPort !== PORT) {
+    bindSecondaryPortIfNeeded(savedNodeConfig.configuredPort).catch(() => {});
+  }
+
+  // 1. GET /api/system/node-info - Hardware ID, LAN IPs, License status & Port info
+  app.get('/api/system/node-info', (req, res) => {
+    const hw = getServerHardwareFingerprint();
+    const cfg = loadServerNodeConfig();
+    const lanIps = getDetectedLanIps();
+    const primaryLanIp = lanIps[0] || '127.0.0.1';
+    const effectivePort = activeCustomPort || cfg.configuredPort || PORT;
+    const isLicenseActivated = Boolean(
+      cfg.activatedLicenseKey &&
+      verifyServerActivationCode(hw.hardwareCode, cfg.activatedLicenseKey)
+    );
+
+    const maskedLicenseKey = cfg.activatedLicenseKey
+      ? `${cfg.activatedLicenseKey.slice(0, 8)}-****-****-${cfg.activatedLicenseKey.slice(-4)}`
+      : null;
+
+    res.json({
+      success: true,
+      hardwareCode: hw.hardwareCode,
+      hardwareDetails: hw.details,
+      lanIps,
+      primaryLanIp,
+      activePort: effectivePort,
+      configuredPort: cfg.configuredPort || PORT,
+      shareUrls: lanIps.map(ip => `http://${ip}:${effectivePort}`),
+      primaryShareUrl: `http://${primaryLanIp}:${effectivePort}`,
+      isLicenseActivated,
+      activatedAt: cfg.activatedAt,
+      maskedLicenseKey,
+      firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${effectivePort})" dir=in action=allow protocol=TCP localport=${effectivePort}`
+    });
+  });
+
+  // 2. POST /api/system/activate-license - Verify Seller Activation Code against Hardware ID
+  app.post('/api/system/activate-license', (req, res) => {
+    try {
+      const { activationCode, clientHardwareCode } = req.body || {};
+      if (!activationCode || typeof activationCode !== 'string') {
+        return res.status(400).json({ success: false, error: 'لطفاً کد فعال‌سازی دریافت‌شده از فروشنده را وارد نمایید.' });
+      }
+
+      const hw = getServerHardwareFingerprint();
+      const targetHwCode = hw.hardwareCode;
+
+      const isValidForServer = verifyServerActivationCode(targetHwCode, activationCode);
+      const isValidForClient = clientHardwareCode ? verifyServerActivationCode(clientHardwareCode, activationCode) : false;
+
+      if (!isValidForServer && !isValidForClient) {
+        return res.status(403).json({
+          success: false,
+          error: 'کد فعال‌سازی وارد شده معتبر نیست یا با مشخصات سخت‌افزاری این دستگاه مطابقت ندارد.'
+        });
+      }
+
+      const normalizedLicense = generateActivationCodeForHardware(isValidForServer ? targetHwCode : clientHardwareCode);
+      const activatedAt = new Date().toLocaleString('fa-IR');
+      saveServerNodeConfig({
+        activatedLicenseKey: normalizedLicense,
+        activatedAt,
+        hardwareCode: isValidForServer ? targetHwCode : clientHardwareCode,
+      });
+
+      res.json({
+        success: true,
+        isLicenseActivated: true,
+        hardwareCode: isValidForServer ? targetHwCode : clientHardwareCode,
+        activatedAt,
+        message: 'لایسنس سرور مرکزی با موفقیت بر روی سخت‌افزار این سیستم فعال شد!'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'خطا در بررسی کد فعال‌سازی' });
+    }
+  });
+
+  // 3. POST /api/system/configure-port - Set Server LAN Port & dynamically listen on 0.0.0.0:<port>
+  app.post('/api/system/configure-port', async (req, res) => {
+    try {
+      const rawNewPort = Number(req.body?.port);
+      if (!rawNewPort || isNaN(rawNewPort) || rawNewPort < 1024 || rawNewPort > 65535) {
+        return res.status(400).json({
+          success: false,
+          error: 'شماره پورت باید عددی معتبر بین 1024 تا 65535 باشد (پیشنهادی: 3000 یا 4000 یا 8080).'
+        });
+      }
+
+      const bindResult = await bindSecondaryPortIfNeeded(rawNewPort);
+      if (!bindResult.bound) {
+        return res.status(409).json({
+          success: false,
+          error: bindResult.error || `امکان باز کردن پورت ${rawNewPort} وجود ندارد.`
+        });
+      }
+
+      saveServerNodeConfig({ configuredPort: rawNewPort });
+      const lanIps = getDetectedLanIps();
+      const primaryLanIp = lanIps[0] || '127.0.0.1';
+
+      res.json({
+        success: true,
+        configuredPort: rawNewPort,
+        activePort: rawNewPort,
+        lanIps,
+        primaryLanIp,
+        shareUrls: lanIps.map(ip => `http://${ip}:${rawNewPort}`),
+        primaryShareUrl: `http://${primaryLanIp}:${rawNewPort}`,
+        firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${rawNewPort})" dir=in action=allow protocol=TCP localport=${rawNewPort}`,
+        message: `پورت سرور مرکزی با موفقیت روی ${rawNewPort} تنظیم و در شبکه محلی فعال شد.`
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'خطا در تنظیم پورت سرور' });
+    }
+  });
+
+  // 4. POST /api/system/seller-keygen - Seller Utility to generate Activation Code from Customer Hardware Code
+  app.post('/api/system/seller-keygen', (req, res) => {
+    try {
+      const { customerHardwareCode, sellerPin } = req.body || {};
+      // Master Seller PIN verification
+      const validPins = ['AMH-SELLER-2026', '14042026', 'SELLER2026', 'ADMIN123'];
+      if (!sellerPin || !validPins.includes(String(sellerPin).trim().toUpperCase())) {
+        return res.status(403).json({
+          success: false,
+          error: 'رمز امنیتی فروشنده (Seller PIN) نامعتبر است.'
+        });
+      }
+
+      if (!customerHardwareCode || String(customerHardwareCode).trim().length < 6) {
+        return res.status(400).json({
+          success: false,
+          error: 'لطفاً کد سخت‌افزاری مشتری (مثال: AMH-XXXX-XXXX-XXXX) را به درستی وارد نمایید.'
+        });
+      }
+
+      const activationCode = generateActivationCodeForHardware(String(customerHardwareCode));
+      if (!activationCode) {
+        return res.status(400).json({
+          success: false,
+          error: 'فرمت کد سخت‌افزاری وارد شده نامعتبر است.'
+        });
+      }
+
+      res.json({
+        success: true,
+        customerHardwareCode: String(customerHardwareCode).trim().toUpperCase(),
+        activationCode,
+        message: 'کد فعال‌سازی اختصاصی سرور با موفقیت تولید شد.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'خطا در تولید کد فعال‌سازی' });
+    }
   });
 
   // =========================================================================

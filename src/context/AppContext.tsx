@@ -305,9 +305,12 @@ interface AppContextType {
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (open: boolean) => void;
 
-  // Installation Setup Wizard state
+  // Installation Setup Wizard & Hardware License Authorization state
   isInstalled: boolean;
   setIsInstalled: (installed: boolean) => void;
+  isNodeAuthorized: boolean;
+  isCheckingLicense: boolean;
+  refreshLicenseAuthorization: () => Promise<boolean>;
   companyName: string;
   setCompanyName: (name: string) => void;
   completeInstallation: (companyName: string, adminUser: string, adminPass: string) => void;
@@ -357,6 +360,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
   });
+
+  const [isNodeAuthorized, setIsNodeAuthorized] = useState<boolean>(false);
+  const [isCheckingLicense, setIsCheckingLicense] = useState<boolean>(true);
 
   const [companyName, setCompanyNameState] = useState<string>(() => {
     try {
@@ -623,6 +629,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'عدم امکان برقراری ارتباط با آدرس سرور مشخص‌شده.' };
     }
   };
+
+  // Strict Server / Client Hardware License Gate Verification
+  const refreshLicenseAuthorization = useCallback(async (): Promise<boolean> => {
+    try {
+      const savedMode = localStorage.getItem(`${STORAGE_KEY}_node_mode`);
+      const activeUrl = (localStorage.getItem(`${STORAGE_KEY}_serverUrl`) || serverUrl || '').trim().replace(/\/+$/, '');
+      const mode = savedMode === 'client' || activeUrl ? 'client' : 'server';
+
+      if (mode === 'client' && activeUrl) {
+        const res = await fetch(`${activeUrl}/api/health`);
+        if (res.ok) {
+          const data = await res.json();
+          const authorized = Boolean(data && data.status === 'ok' && data.isLicenseActivated === true);
+          setIsNodeAuthorized(authorized);
+          setIsCheckingLicense(false);
+          return authorized;
+        }
+        setIsNodeAuthorized(false);
+        setIsCheckingLicense(false);
+        return false;
+      }
+
+      // Server Mode: verify against backend /api/system/node-info
+      const res = await fetch('/api/system/node-info');
+      if (res.ok) {
+        const data = await res.json();
+        const authorized = Boolean(data && data.success && data.isLicenseActivated === true);
+        setIsNodeAuthorized(authorized);
+        setIsCheckingLicense(false);
+        return authorized;
+      }
+    } catch {
+      // Backend unreachable or unlicensed
+    }
+    setIsNodeAuthorized(false);
+    setIsCheckingLicense(false);
+    return false;
+  }, [serverUrl]);
+
+  useEffect(() => {
+    refreshLicenseAuthorization();
+  }, [refreshLicenseAuthorization]);
 
   // Sync document direction when language changes
   useEffect(() => {
@@ -4552,7 +4600,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastBackupTimestamp, backupHistory,
       searchQuery, setSearchQuery, isScannerOpen, setIsScannerOpen,
       isMobileMenuOpen, setIsMobileMenuOpen,
-      isInstalled, setIsInstalled, companyName, setCompanyName,
+      isInstalled, setIsInstalled,
+      isNodeAuthorized, isCheckingLicense, refreshLicenseAuthorization,
+      companyName, setCompanyName,
       completeInstallation,
       serverSyncStatus, isRealtimeLive, lastSyncTime, serverVersion, serverInfo,
       serverUrl, setServerUrl, getApiUrl, testServerConnection,
