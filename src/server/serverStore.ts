@@ -15,6 +15,8 @@ import {
   MaterialHandover, TraceabilityEvent, SystemNotification, AuditLog, Contractor,
   StockCountingSession, ChatMessage, ChatChannel, MessengerBackupConfig
 } from '../types';
+import { resolveCentralDataDir } from './dataDirResolver.ts';
+import { sqliteEngine } from './sqliteEngine.ts';
 
 export interface ServerDatabaseState {
   version: number;
@@ -136,9 +138,7 @@ class ServerStoreManager {
   private emitter = new EventEmitter();
 
   constructor() {
-    this.dataDir = process.env.DATA_DIR 
-      ? path.resolve(process.env.DATA_DIR) 
-      : path.resolve(process.cwd(), 'data');
+    this.dataDir = resolveCentralDataDir();
     this.backupsDir = path.join(this.dataDir, 'backups');
     this.filePath = path.join(this.dataDir, 'server_database.json');
     this.state = this.loadFromDisk();
@@ -207,48 +207,68 @@ class ServerStoreManager {
 
   private loadFromDisk(): ServerDatabaseState {
     this.ensureDir();
+    const sqliteState = sqliteEngine.loadStateFromSqlite();
+
     if (fs.existsSync(this.filePath)) {
       try {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
           const defaultState = getDefaultServerState();
+          // If SQLite has a strictly newer state snapshot, prefer SQLite
+          const activeSource =
+            sqliteState && (sqliteState.version || 0) > (parsed.version || 0)
+              ? sqliteState
+              : parsed;
+
+          console.log(`[ServerStore] Successfully loaded central database from ${this.filePath} (Version: ${activeSource.version || 'initial'}, Items: ${activeSource.items?.length ?? 0}, Warehouses: ${activeSource.warehouses?.length ?? 0})`);
           
-          // Valid state loaded directly from disk
-          console.log(`[ServerStore] Successfully loaded central database from ${this.filePath} (Version: ${parsed.version || 'initial'}, Items: ${parsed.items?.length ?? 0}, Warehouses: ${parsed.warehouses?.length ?? 0})`);
-          
-          return {
+          const loadedState: ServerDatabaseState = {
             ...defaultState,
-            ...parsed,
-            // Ensure empty arrays remain empty (do not overwrite user's raw empty state with defaults)
-            items: parsed.items !== undefined ? parsed.items : defaultState.items,
-            itemGroups: parsed.itemGroups !== undefined ? parsed.itemGroups : defaultState.itemGroups,
-            warehouses: parsed.warehouses !== undefined ? parsed.warehouses : defaultState.warehouses,
-            contractors: parsed.contractors !== undefined ? parsed.contractors : defaultState.contractors,
-            inventory: parsed.inventory !== undefined ? parsed.inventory : defaultState.inventory,
-            boms: parsed.boms !== undefined ? parsed.boms : defaultState.boms,
-            projects: parsed.projects !== undefined ? parsed.projects : defaultState.projects,
-            operators: parsed.operators !== undefined ? parsed.operators : defaultState.operators,
-            stockCountings: parsed.stockCountings !== undefined ? parsed.stockCountings : defaultState.stockCountings,
-            stockInDocs: parsed.stockInDocs !== undefined ? parsed.stockInDocs : defaultState.stockInDocs,
-            stockOutDocs: parsed.stockOutDocs !== undefined ? parsed.stockOutDocs : defaultState.stockOutDocs,
-            transfers: parsed.transfers !== undefined ? parsed.transfers : defaultState.transfers,
-            purchaseRequests: parsed.purchaseRequests !== undefined ? parsed.purchaseRequests : defaultState.purchaseRequests,
-            productionLogs: parsed.productionLogs !== undefined ? parsed.productionLogs : defaultState.productionLogs,
-            materialHandovers: parsed.materialHandovers !== undefined ? parsed.materialHandovers : defaultState.materialHandovers,
-            notifications: parsed.notifications !== undefined ? parsed.notifications : defaultState.notifications,
-            messages: parsed.messages !== undefined ? parsed.messages : defaultState.messages,
-            channels: parsed.channels !== undefined ? parsed.channels : defaultState.channels,
-            traceabilityEvents: parsed.traceabilityEvents !== undefined ? parsed.traceabilityEvents : defaultState.traceabilityEvents,
-            auditLogs: parsed.auditLogs !== undefined ? parsed.auditLogs : defaultState.auditLogs,
+            ...activeSource,
+            items: activeSource.items !== undefined ? activeSource.items : defaultState.items,
+            itemGroups: activeSource.itemGroups !== undefined ? activeSource.itemGroups : defaultState.itemGroups,
+            warehouses: activeSource.warehouses !== undefined ? activeSource.warehouses : defaultState.warehouses,
+            contractors: activeSource.contractors !== undefined ? activeSource.contractors : defaultState.contractors,
+            inventory: activeSource.inventory !== undefined ? activeSource.inventory : defaultState.inventory,
+            boms: activeSource.boms !== undefined ? activeSource.boms : defaultState.boms,
+            projects: activeSource.projects !== undefined ? activeSource.projects : defaultState.projects,
+            operators: activeSource.operators !== undefined ? activeSource.operators : defaultState.operators,
+            stockCountings: activeSource.stockCountings !== undefined ? activeSource.stockCountings : defaultState.stockCountings,
+            stockInDocs: activeSource.stockInDocs !== undefined ? activeSource.stockInDocs : defaultState.stockInDocs,
+            stockOutDocs: activeSource.stockOutDocs !== undefined ? activeSource.stockOutDocs : defaultState.stockOutDocs,
+            transfers: activeSource.transfers !== undefined ? activeSource.transfers : defaultState.transfers,
+            purchaseRequests: activeSource.purchaseRequests !== undefined ? activeSource.purchaseRequests : defaultState.purchaseRequests,
+            productionLogs: activeSource.productionLogs !== undefined ? activeSource.productionLogs : defaultState.productionLogs,
+            materialHandovers: activeSource.materialHandovers !== undefined ? activeSource.materialHandovers : defaultState.materialHandovers,
+            notifications: activeSource.notifications !== undefined ? activeSource.notifications : defaultState.notifications,
+            messages: activeSource.messages !== undefined ? activeSource.messages : defaultState.messages,
+            channels: activeSource.channels !== undefined ? activeSource.channels : defaultState.channels,
+            traceabilityEvents: activeSource.traceabilityEvents !== undefined ? activeSource.traceabilityEvents : defaultState.traceabilityEvents,
+            auditLogs: activeSource.auditLogs !== undefined ? activeSource.auditLogs : defaultState.auditLogs,
             isInstalled: true,
-            version: parsed.version || Date.now(),
-            lastUpdated: parsed.lastUpdated || new Date().toISOString(),
+            version: activeSource.version || Date.now(),
+            lastUpdated: activeSource.lastUpdated || new Date().toISOString(),
           };
+          sqliteEngine.syncStateToSqlite(loadedState);
+          return loadedState;
         }
       } catch (err) {
-        console.error('[ServerStore] Error reading existing server database file, falling back to default seed:', err);
+        console.error('[ServerStore] Error reading existing server database file, falling back to SQLite/default seed:', err);
       }
+    }
+
+    if (sqliteState && typeof sqliteState === 'object') {
+      const defaultState = getDefaultServerState();
+      const mergedSqlite: ServerDatabaseState = {
+        ...defaultState,
+        ...sqliteState,
+        isInstalled: true,
+        version: sqliteState.version || Date.now(),
+        lastUpdated: sqliteState.lastUpdated || new Date().toISOString(),
+      };
+      this.saveToDiskSync(mergedSqlite, true);
+      return mergedSqlite;
     }
 
     // If file doesn't exist, also try recovering from backups first
@@ -299,37 +319,19 @@ class ServerStoreManager {
     return null;
   }
 
-  private saveToDiskSync(stateToSave: ServerDatabaseState, allowEmptyWipe = false) {
+  private saveToDiskSync(stateToSave: ServerDatabaseState, _allowEmptyWipe = false) {
     this.ensureDir();
 
-    // CRITICAL SHIELD: Prevent silent data wipes if stateToSave has 0 items while current state had items
-    if (!allowEmptyWipe && this.state && (this.state.items?.length || 0) > 0) {
-      if (!stateToSave.items || stateToSave.items.length === 0) {
-        console.warn('[ServerStore - ANTI-WIPE SHIELD] Intercepted attempt to wipe items array! Preserving existing database records.');
-        stateToSave.items = this.state.items;
-        if ((!stateToSave.warehouses || stateToSave.warehouses.length === 0) && this.state.warehouses?.length) {
-          stateToSave.warehouses = this.state.warehouses;
-        }
-        if ((!stateToSave.projects || stateToSave.projects.length === 0) && this.state.projects?.length) {
-          stateToSave.projects = this.state.projects;
-        }
-        if ((!stateToSave.boms || stateToSave.boms.length === 0) && this.state.boms?.length) {
-          stateToSave.boms = this.state.boms;
-        }
-        if ((!stateToSave.inventory || stateToSave.inventory.length === 0) && this.state.inventory?.length) {
-          stateToSave.inventory = this.state.inventory;
-        }
-        if ((!stateToSave.contractors || stateToSave.contractors.length === 0) && this.state.contractors?.length) {
-          stateToSave.contractors = this.state.contractors;
-        }
-      }
+    if (!Array.isArray(stateToSave.items)) {
+      stateToSave.items = this.state?.items || [];
     }
 
     const tempPath = `${this.filePath}.tmp`;
     try {
       fs.writeFileSync(tempPath, JSON.stringify(stateToSave), 'utf-8');
       fs.renameSync(tempPath, this.filePath);
-      console.log(`[ServerStore] Central database saved to disk. Version: ${stateToSave.version} (Items: ${stateToSave.items?.length || 0})`);
+      sqliteEngine.syncStateToSqlite(stateToSave);
+      console.log(`[ServerStore] Central database saved to disk & SQLite. Version: ${stateToSave.version} (Items: ${stateToSave.items?.length || 0})`);
 
       // Automatically create a disk backup snapshot every 10 minutes or when items exist
       const now = Date.now();

@@ -10,7 +10,7 @@ import { PWAInstallPrompt } from './PWAInstallPrompt';
 import { ServerClientSetupModal } from './ServerClientSetupModal';
 
 export const LoginView: React.FC = () => {
-  const { login, companyName, language, setLanguage, serverUrl } = useApp();
+  const { login, companyName, language, setLanguage, serverUrl, forceSyncWithServer } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -50,7 +50,7 @@ export const LoginView: React.FC = () => {
     return () => clearInterval(interval);
   }, [lockoutTimer]);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
       setErrorMessage(isFa ? 'لطفاً نام کاربری خود را وارد کنید.' : 'Please enter your username.');
@@ -73,17 +73,24 @@ export const LoginView: React.FC = () => {
     setLoading(true);
     setErrorMessage('');
 
-    setTimeout(() => {
-      const res = login(username, password);
-      setLoading(false);
-      if (!res.success) {
-        setErrorMessage(res.message);
-        const status = getAccountLockoutStatus(normalizeUsername(username));
-        if (status.isLocked) {
-          setLockoutTimer(status.remainingSeconds);
-        }
+    await new Promise((r) => setTimeout(r, 200));
+    let res = login(username, password);
+    if (!res.success) {
+      // Pull latest users from Central Server in case accounts were just updated on the Server
+      const synced = await forceSyncWithServer();
+      if (synced) {
+        await new Promise((r) => setTimeout(r, 100));
+        res = login(username, password);
       }
-    }, 300);
+    }
+    setLoading(false);
+    if (!res.success) {
+      setErrorMessage(res.message);
+      const status = getAccountLockoutStatus(normalizeUsername(username));
+      if (status.isLocked) {
+        setLockoutTimer(status.remainingSeconds);
+      }
+    }
   };
 
   return (

@@ -763,7 +763,7 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">وضعیت سرور مرکزی و همگام‌سازی کلاینت‌ها</h3>
-                  <p className="text-xs text-slate-500">پایگاه داده یکپارچه روی سرور لینوکس جهت دسترسی همزمان چند کامپیوتر در شبکه</p>
+                  <p className="text-xs text-slate-500">پایگاه داده یکپارچه SQLite سرور مرکزی جهت دسترسی همزمان تمام کامپیوترها و موبایل‌های شبکه محلی (LAN)</p>
                 </div>
               </div>
 
@@ -778,7 +778,7 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                       setServerMsg('همگام‌سازی با موفقیت انجام شد و آخرین اطلاعات از سرور دریافت گردید.');
                       setTimeout(() => setServerMsg(null), 4000);
                     } else {
-                      setServerMsg('خطا در همگام‌سازی با سرور لینوکس.');
+                      setServerMsg('خطا در همگام‌سازی با سرور مرکزی.');
                       setTimeout(() => setServerMsg(null), 4000);
                     }
                   }}
@@ -800,18 +800,27 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
 
             {/* Diagnostics Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
-                <div className="text-xs text-slate-500 font-bold mb-1 flex items-center gap-1.5">
-                  <span className={`w-2.5 h-2.5 rounded-full ${serverSyncStatus === 'connected' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                  وضعیت اتصال به سرور:
-                </div>
-                <div className="text-sm font-black text-slate-900">
-                  {serverSyncStatus === 'connected' ? 'آنلاین و فعال' : 'قطع ارتباط'}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  آخرین سینک: {lastSyncTime || 'هم‌اکنون'}
-                </div>
-              </div>
+              {(() => {
+                let isServerNode = true;
+                try {
+                  isServerNode = localStorage.getItem('electro_stock_db_v1_node_mode') !== 'client';
+                } catch {}
+
+                return (
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
+                    <div className="text-xs text-slate-500 font-bold mb-1 flex items-center gap-1.5">
+                      <span className={`w-2.5 h-2.5 rounded-full ${isServerNode || serverSyncStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                      {isServerNode ? 'نقش این کامپیوتر:' : 'وضعیت اتصال به سرور:'}
+                    </div>
+                    <div className="text-sm font-black text-slate-900">
+                      {isServerNode ? 'سرور مرکزی فعال (SQL Host)' : (serverSyncStatus === 'connected' ? 'آنلاین و فعال' : 'قطع ارتباط')}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {isServerNode ? 'دیتابیس در شبکه محلی به اشتراک گذاشته شده' : `آخرین سینک: ${lastSyncTime || 'هم‌اکنون'}`}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
                 <div className="text-xs text-slate-500 font-bold mb-1 flex items-center gap-1.5">
@@ -819,7 +828,7 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                   نسخه پایگاه داده سرور:
                 </div>
                 <div className="text-sm font-black text-slate-900">
-                  نسخه {serverVersion || 1}
+                  نسخه {serverVersion || serverInfo?.version || 1}
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5">
                   تغییرات به طور خودکار به بقیه اعمال می‌شود
@@ -832,10 +841,10 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                   مسیر فایل پایگاه داده:
                 </div>
                 <div className="text-xs font-mono font-bold text-slate-900 dir-ltr text-right truncate">
-                  {serverInfo?.dataFile || '/data/server_database.json'}
+                  {serverInfo?.storage?.filePath || serverInfo?.dataFile || 'data/anbarmeh_central.sqlite'}
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5">
-                  حجم دیتابیس: {serverInfo?.dataSizeKb || 12} KB
+                  حجم دیتابیس: {serverInfo?.storage?.sizeKb || serverInfo?.dataSizeKb || 24} KB (Embedded SQLite)
                 </div>
               </div>
 
@@ -845,10 +854,10 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
                   پورت شبکه سرویس:
                 </div>
                 <div className="text-sm font-black text-slate-900">
-                  Port 3000 (0.0.0.0)
+                  Port {serverInfo?.port || serverInfo?.configuredPort || 3000} (0.0.0.0)
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5">
-                  قابل دسترسی از تمام رایانه‌ها
+                  قابل دسترسی از تمام رایانه‌ها و موبایل‌های شبکه
                 </div>
               </div>
             </div>

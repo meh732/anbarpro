@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>پنل اختصاصی فروشنده — تولید کد فعال‌سازی سرور (Keygen)</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Tahoma, 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    body {
+      background: radial-gradient(circle at top right, #1e1b4b, #090d16 70%);
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      border-radius: 24px;
+      width: 100%;
+      max-width: 620px;
+      padding: 28px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 18px;
+      margin-bottom: 22px;
+    }
+    .header-title h1 {
+      font-size: 18px;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+    .header-title p {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: bold;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 13px 16px;
+      background: #090d16;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      color: #f8fafc;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus {
+      border-color: #6366f1;
+    }
+    .ltr-input {
+      direction: ltr;
+      text-align: center;
+      font-family: Consolas, Monaco, monospace;
+      letter-spacing: 2px;
+      font-weight: bold;
+      color: #a5b4fc !important;
+      text-transform: uppercase;
+    }
+    .btn {
+      width: 100%;
+      padding: 14px 20px;
+      background: linear-gradient(135deg, #4f46e5, #4338ca);
+      hover: #4338ca;
+      color: #ffffff;
+      border: none;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.2s;
+      margin-top: 6px;
+    }
+    .btn:hover {
+      opacity: 0.94;
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    .result-box {
+      display: none;
+      margin-top: 22px;
+      background: rgba(6, 78, 59, 0.25);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      border-radius: 18px;
+      padding: 18px;
+    }
+    .result-box.active {
+      display: block;
+    }
+    .result-label {
+      font-size: 12px;
+      color: #6ee7b7;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    .code-display {
+      background: #060911;
+      border: 1px solid rgba(52, 211, 153, 0.4);
+      border-radius: 12px;
+      padding: 14px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 19px;
+      font-weight: 900;
+      color: #34d399;
+      text-align: center;
+      direction: ltr;
+      letter-spacing: 2px;
+      user-select: all;
+      margin-bottom: 12px;
+    }
+    .action-row {
+      display: flex;
+      gap: 10px;
+    }
+    .btn-secondary {
+      flex: 1;
+      padding: 10px 14px;
+      background: #10b981;
+      color: #06281e;
+      border: none;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-outline {
+      flex: 1;
+      padding: 10px 14px;
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .error-msg {
+      display: none;
+      margin-top: 12px;
+      padding: 11px 14px;
+      background: rgba(127, 29, 29, 0.4);
+      border: 1px solid rgba(248, 113, 113, 0.4);
+      border-radius: 12px;
+      color: #fca5a5;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .history-section {
+      margin-top: 26px;
+      border-top: 1px solid #1e293b;
+      padding-top: 18px;
+    }
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .history-header h3 {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+    .history-list {
+      max-height: 190px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .history-item {
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+    }
+    .history-codes {
+      direction: ltr;
+      text-align: left;
+      font-family: Consolas, monospace;
+    }
+    .history-codes .hw {
+      color: #94a3b8;
+      display: block;
+    }
+    .history-codes .act {
+      color: #34d399;
+      font-weight: bold;
+      display: block;
+      margin-top: 2px;
+    }
+    .clear-btn {
+      background: transparent;
+      border: none;
+      color: #f87171;
+      font-size: 11px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="header-title">
+        <h1>پنل اختصاصی فروشنده — تولید کد لایسنس سرور</h1>
+        <p>این فایل کاملاً آفلاین کار می‌کند و خارج از برنامه مشتری است (مخصوص فروشنده)</p>
+      </div>
+      <span class="badge">Seller Keygen v2.5</span>
+    </div>
+
+    <form id="keygenForm">
+      <div class="form-group">
+        <label for="customerName">نام مشتری / شرکت (اختیاری - جهت ثبت در سابقه شما):</label>
+        <input type="text" id="customerName" placeholder="مثلاً: شرکت پارس الکترونیک" />
+      </div>
+
+      <div class="form-group">
+        <label for="hwCodeInput">کد سخت‌افزاری اعلام‌شده توسط مشتری (Hardware Code):</label>
+        <input
+          type="text"
+          id="hwCodeInput"
+          class="ltr-input"
+          placeholder="AMH-XXXX-XXXX-XXXX"
+          autocomplete="off"
+          required
+        />
+      </div>
+
+      <button type="submit" class="btn">🔑 تولید کد فعال‌سازی سرور (Generate License)</button>
+    </form>
+
+    <div id="errorBox" class="error-msg"></div>
+
+    <div id="resultBox" class="result-box">
+      <div class="result-label">✅ کد فعال‌سازی اختصاصی این سخت‌افزار:</div>
+      <div id="activationCodeDisplay" class="code-display">ACT-0000-0000-0000-0000</div>
+      <div class="action-row">
+        <button type="button" id="copyCodeBtn" class="btn-secondary">کپی کد فعال‌سازی</button>
+        <button type="button" id="copyFullMsgBtn" class="btn-outline">کپی پیام آماده ارسال به مشتری</button>
+      </div>
+    </div>
+
+    <div class="history-section">
+      <div class="history-header">
+        <h3>📋 سابقه لایسنس‌های صادرشده روی این مرورگر</h3>
+        <button type="button" id="clearHistoryBtn" class="clear-btn">پاک کردن سابقه</button>
+      </div>
+      <div id="historyList" class="history-list"></div>
+    </div>
+  </div>
+
+  <script>
+    const SELLER_MASTER_SECRET = 'ANBARMEH_ERP_WINDOWS_SERVER_MASTER_KEY_2026_#9981_ENTERPRISE';
+    const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const HISTORY_STORAGE_KEY = 'anbarmeh_seller_issued_licenses_v1';
+
+    function computeDeterministicBytes(input, rounds = 16) {
+      const bytes = [];
+      for (let r = 0; r < rounds; r++) {
+        let h1 = (0x811c9dc5 ^ (r * 0x9e3779b9)) >>> 0;
+        let h2 = (0x85ebca6b ^ (r * 0xc2b2ae35)) >>> 0;
+        const str = `${SELLER_MASTER_SECRET}::R${r}::${input}::${SELLER_MASTER_SECRET}`;
+        for (let i = 0; i < str.length; i++) {
+          const ch = str.charCodeAt(i);
+          h1 = Math.imul(h1 ^ ch, 0x01000193) >>> 0;
+          h2 = Math.imul(h2 ^ ((ch << 5) | (ch >>> 3)), 0x27d4eb2d) >>> 0;
+          h1 = ((h1 << 13) | (h1 >>> 19)) ^ h2;
+        }
+        bytes.push((h1 ^ (h2 >>> 8)) & 0xff);
+      }
+      return bytes;
+    }
+
+    function normalizeHardwareCode(hardwareCode) {
+      const cleanHw = String(hardwareCode || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+
+      const coreHw = cleanHw.startsWith('AMH') ? cleanHw.slice(3) : cleanHw;
+      if (!coreHw || coreHw.length < 12) {
+        return null;
+      }
+      return `AMH-${coreHw.slice(0, 4)}-${coreHw.slice(4, 8)}-${coreHw.slice(8, 12)}`;
+    }
+
+    function generateActivationCodeForHardware(hardwareCode) {
+      const normalizedHw = normalizeHardwareCode(hardwareCode);
+      if (!normalizedHw) return '';
+
+      const licenseBytes = computeDeterministicBytes(`SERVER_ACTIVATION_LICENSE::${normalizedHw}`, 16);
+      let chars = '';
+      for (let i = 0; i < 16; i++) {
+        chars += ALPHABET[licenseBytes[i] % ALPHABET.length];
+      }
+      return `ACT-${chars.slice(0, 4)}-${chars.slice(4, 8)}-${chars.slice(8, 12)}-${chars.slice(12, 16)}`;
+    }
+
+    const form = document.getElementById('keygenForm');
+    const customerNameInput = document.getElementById('customerName');
+    const hwCodeInput = document.getElementById('hwCodeInput');
+    const errorBox = document.getElementById('errorBox');
+    const resultBox = document.getElementById('resultBox');
+    const activationCodeDisplay = document.getElementById('activationCodeDisplay');
+    const copyCodeBtn = document.getElementById('copyCodeBtn');
+    const copyFullMsgBtn = document.getElementById('copyFullMsgBtn');
+    const historyList = document.getElementById('historyList');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+    let lastGenerated = { customer: '', hw: '', act: '' };
+
+    function renderHistory() {
+      let items = [];
+      try {
+        items = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || '[]');
+      } catch {}
+
+      if (!items.length) {
+        historyList.innerHTML = '<div style="color:#64748b;font-size:11px;text-align:center;padding:12px;">هنوز کدی تولید نشده است.</div>';
+        return;
+      }
+
+      historyList.innerHTML = items.map(item => `
+        <div class="history-item">
+          <div>
+            <strong style="color:#e2e8f0;display:block;">${item.customer || 'بدون نام'}</strong>
+            <span style="color:#64748b;font-size:10px;">${item.date}</span>
+          </div>
+          <div class="history-codes">
+            <span class="hw">HW: ${item.hw}</span>
+            <span class="act">KEY: ${item.act}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      errorBox.style.display = 'none';
+
+      const rawHw = hwCodeInput.value;
+      const normalizedHw = normalizeHardwareCode(rawHw);
+
+      if (!normalizedHw) {
+        errorBox.textContent = 'کد سخت‌افزاری معتبر نیست. کد سخت‌افزار باید شامل ۱۲ کاراکتر (مثلاً AMH-XXXX-XXXX-XXXX) باشد.';
+        errorBox.style.display = 'block';
+        resultBox.classList.remove('active');
+        return;
+      }
+
+      const actCode = generateActivationCodeForHardware(normalizedHw);
+      hwCodeInput.value = normalizedHw;
+      activationCodeDisplay.textContent = actCode;
+      resultBox.classList.add('active');
+
+      const customer = customerNameInput.value.trim() || 'مشتری';
+      lastGenerated = { customer, hw: normalizedHw, act: actCode };
+
+      try {
+        const prev = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || '[]');
+        const filtered = prev.filter(x => x.hw !== normalizedHw);
+        filtered.unshift({
+          customer,
+          hw: normalizedHw,
+          act: actCode,
+          date: new Date().toLocaleString('fa-IR')
+        });
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(filtered.slice(0, 50)));
+        renderHistory();
+      } catch {}
+    });
+
+    copyCodeBtn.addEventListener('click', function() {
+      navigator.clipboard.writeText(lastGenerated.act);
+      const oldText = copyCodeBtn.textContent;
+      copyCodeBtn.textContent = '✓ کپی شد!';
+      setTimeout(() => { copyCodeBtn.textContent = oldText; }, 2000);
+    });
+
+    copyFullMsgBtn.addEventListener('click', function() {
+      const msg = `✅ لایسنس فعال‌سازی سرور مرکزی سامانه انبارمه\nنام مجموعه: ${lastGenerated.customer}\nکد سخت‌افزار: ${lastGenerated.hw}\nکد فعال‌سازی سرور:\n${lastGenerated.act}`;
+      navigator.clipboard.writeText(msg);
+      const oldText = copyFullMsgBtn.textContent;
+      copyFullMsgBtn.textContent = '✓ پیام کامل کپی شد!';
+      setTimeout(() => { copyFullMsgBtn.textContent = oldText; }, 2000);
+    });
+
+    clearHistoryBtn.addEventListener('click', function() {
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+      renderHistory();
+    });
+
+    renderHistory();
+  </script>
+</body>
+</html>

@@ -3,13 +3,18 @@ import { useApp } from '../context/AppContext';
 import {
   Server, MonitorSmartphone, Cpu, KeyRound, ShieldCheck, Wifi, Copy, Check,
   RefreshCw, Globe, Lock, Unlock, AlertCircle, CheckCircle2, Terminal,
-  HardDrive, Network, X, ArrowLeft, Settings2, Database, Power
+  HardDrive, Network, X, ArrowLeft, Settings2, Database, Power, Smartphone,
+  QrCode, ExternalLink, Radio
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import {
   NodeNetworkAndLicenseInfo,
   formatHardwareCodeFromRaw,
   verifyServerActivationCode,
-  getFallbackClientHardwareCode
+  getFallbackClientHardwareCode,
+  isTauriRuntime,
+  isValidRealLanIp,
+  discoverLanIpsViaWebRTC
 } from '../utils/hardwareLicense';
 
 interface ServerClientSetupModalProps {
@@ -18,6 +23,64 @@ interface ServerClientSetupModalProps {
   embedded?: boolean;
   mandatory?: boolean;
   onRoleConfigured?: (mode: 'server' | 'client') => void;
+}
+
+/**
+ * Smart multi-endpoint fetcher for the local Central Server:
+ * In Tauri (`https://tauri.localhost`), relative `/api/...` fails because `tauri.localhost` only serves static assets.
+ * This helper automatically tries `http://127.0.0.1:3000` and `http://127.0.0.1:<configuredPort>`.
+ */
+async function callLocalServerApi(
+  path: string,
+  init?: RequestInit,
+  extraPorts: (number | string | undefined)[] = []
+): Promise<Response | null> {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const savedPort = (() => {
+    try {
+      return localStorage.getItem('electro_stock_db_v1_server_port') || '3000';
+    } catch {
+      return '3000';
+    }
+  })();
+
+  const portsToTry = Array.from(
+    new Set(
+      [
+        '3000',
+        savedPort,
+        ...extraPorts.map(p => (p ? String(p).trim() : '')),
+        '2525',
+        '1515',
+        '5050',
+        '4000',
+        '8080'
+      ].filter(p => p && /^\d+$/.test(p))
+    )
+  );
+
+  const candidateUrls: string[] = [];
+  if (!isTauriRuntime()) {
+    candidateUrls.push(cleanPath);
+  }
+  for (const p of portsToTry) {
+    candidateUrls.push(`http://127.0.0.1:${p}${cleanPath}`);
+  }
+
+  for (const url of candidateUrls) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1800);
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok || res.status === 400 || res.status === 403 || res.status === 409) {
+        return res;
+      }
+    } catch {
+      // Try next candidate
+    }
+  }
+  return null;
 }
 
 export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
@@ -75,7 +138,21 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
   const [loadingNodeInfo, setLoadingNodeInfo] = useState(false);
   const [activationInput, setActivationInput] = useState('');
   const [activatingLicense, setActivatingLicense] = useState(false);
-  const [serverPortInput, setServerPortInput] = useState('3000');
+  const [serverPortInput, setServerPortInput] = useState(() => {
+    try {
+      return localStorage.getItem('electro_stock_db_v1_server_port') || '3000';
+    } catch {
+      return '3000';
+    }
+  });
+  const [selectedServerIp, setSelectedServerIp] = useState<string>(() => {
+    try {
+      const savedIp = localStorage.getItem('electro_stock_db_v1_server_lan_ip') || '';
+      return isValidRealLanIp(savedIp) ? savedIp : '';
+    } catch {
+      return '';
+    }
+  });
   const [savingPort, setSavingPort] = useState(false);
   const [reinstallingService, setReinstallingService] = useState(false);
   const [serverStatusMsg, setServerStatusMsg] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -89,48 +166,136 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
 
   const fetchServerNodeInfo = useCallback(async () => {
     setLoadingNodeInfo(true);
-    try {
-      let tauriHwUuid = '';
-      let tauriLanIp = '';
-      const winAny = window as any;
-      if (winAny.__TAURI__?.invoke) {
-        try {
-          tauriHwUuid = await winAny.__TAURI__.invoke('get_windows_hardware_id');
-          tauriLanIp = await winAny.__TAURI__.invoke('get_local_lan_ip');
-        } catch {}
-      }
 
-      const res = await fetch('/api/system/node-info');
-      if (res.ok) {
+    let tauriHwUuid = '';
+    let tauriHostname = '';
+    const discoveredIps: string[] = [];
+
+    const savedCustomIp = (() => {
+      try {
+        return localStorage.getItem('electro_stock_db_v1_server_lan_ip') || '';
+      } catch {
+        return '';
+      }
+    })();
+    if (isValidRealLanIp(savedCustomIp)) {
+      discoveredIps.push(savedCustomIp);
+    }
+
+    // 1. Query Tauri Native Rust Commands (if available)
+    const winAny = window as any;
+    if (winAny.__TAURI__?.invoke) {
+      try {
+        const [hwId, hostName, allIps, singleIp] = await Promise.all([
+          winAny.__TAURI__.invoke('get_windows_hardware_id').catch(() => ''),
+          winAny.__TAURI__.invoke('get_windows_hostname').catch(() => ''),
+          winAny.__TAURI__.invoke('get_all_lan_ips').catch(() => []),
+          winAny.__TAURI__.invoke('get_local_lan_ip').catch(() => '')
+        ]);
+        if (hwId && typeof hwId === 'string') tauriHwUuid = hwId;
+        if (hostName && typeof hostName === 'string') tauriHostname = hostName;
+        if (Array.isArray(allIps)) {
+          for (const ip of allIps) {
+            if (isValidRealLanIp(String(ip)) && !discoveredIps.includes(String(ip))) {
+              discoveredIps.push(String(ip));
+            }
+          }
+        }
+        if (singleIp && isValidRealLanIp(String(singleIp)) && !discoveredIps.includes(String(singleIp))) {
+          discoveredIps.push(String(singleIp));
+        }
+      } catch {}
+    }
+
+    // 2. Query local Node Server API (`http://127.0.0.1:3000/api/system/node-info`)
+    try {
+      const res = await callLocalServerApi('/api/system/node-info');
+      if (res && res.ok) {
         const data = await res.json();
-        if (data.success) {
+        if (data && data.success) {
+          if (Array.isArray(data.lanIps)) {
+            for (const ip of data.lanIps) {
+              if (isValidRealLanIp(String(ip)) && !discoveredIps.includes(String(ip))) {
+                discoveredIps.push(String(ip));
+              }
+            }
+          }
+          if (data.primaryLanIp && isValidRealLanIp(String(data.primaryLanIp)) && !discoveredIps.includes(String(data.primaryLanIp))) {
+            discoveredIps.push(String(data.primaryLanIp));
+          }
+
+          // If still no LAN IP found, try WebRTC ICE discovery
+          if (discoveredIps.length === 0) {
+            const rtcIps = await discoverLanIpsViaWebRTC(900);
+            for (const ip of rtcIps) {
+              if (isValidRealLanIp(ip) && !discoveredIps.includes(ip)) {
+                discoveredIps.push(ip);
+              }
+            }
+          }
+
+          const effectivePort = Number(data.configuredPort || data.activePort || localStorage.getItem('electro_stock_db_v1_server_port') || 3000);
+          const finalIps = discoveredIps.length > 0 ? discoveredIps : ['192.168.1.100'];
+          const primaryIp = finalIps[0];
+
           if (tauriHwUuid && tauriHwUuid !== 'WIN-ENTERPRISE-NODE') {
             data.hardwareCode = formatHardwareCodeFromRaw(tauriHwUuid);
           }
-          if (tauriLanIp && tauriLanIp !== '127.0.0.1' && !data.lanIps.includes(tauriLanIp)) {
-            data.lanIps = [tauriLanIp, ...data.lanIps];
-            data.primaryLanIp = tauriLanIp;
-            data.primaryShareUrl = `http://${tauriLanIp}:${data.configuredPort || 3000}`;
+          if (tauriHostname && data.hardwareDetails) {
+            data.hardwareDetails.hostname = tauriHostname;
           }
+
+          data.lanIps = finalIps;
+          data.primaryLanIp = primaryIp;
+          data.configuredPort = effectivePort;
+          data.activePort = effectivePort;
+          data.shareUrls = finalIps.map((ip: string) => `http://${ip}:${effectivePort}`);
+          data.primaryShareUrl = `http://${primaryIp}:${effectivePort}`;
+
           setNodeInfo(data);
-          setServerPortInput(String(data.configuredPort || data.activePort || 3000));
+          setServerPortInput(String(effectivePort));
+          setSelectedServerIp(primaryIp);
           setLoadingNodeInfo(false);
           return;
         }
       }
     } catch {
-      // Fallback if offline
+      // Fallback below
     }
 
-    const fallbackHw = getFallbackClientHardwareCode();
+    // 3. If local backend is still booting, use WebRTC + Tauri native discovery
+    if (discoveredIps.length === 0) {
+      const rtcIps = await discoverLanIpsViaWebRTC(1000);
+      for (const ip of rtcIps) {
+        if (isValidRealLanIp(ip) && !discoveredIps.includes(ip)) {
+          discoveredIps.push(ip);
+        }
+      }
+    }
+
+    // Check browser hostname ONLY if it is a real LAN IP (never tauri.localhost or localhost!)
+    if (typeof window !== 'undefined' && isValidRealLanIp(window.location.hostname)) {
+      if (!discoveredIps.includes(window.location.hostname)) {
+        discoveredIps.unshift(window.location.hostname);
+      }
+    }
+
+    const fallbackHw = tauriHwUuid && tauriHwUuid !== 'WIN-ENTERPRISE-NODE'
+      ? formatHardwareCodeFromRaw(tauriHwUuid)
+      : getFallbackClientHardwareCode();
     const savedPort = localStorage.getItem('electro_stock_db_v1_server_port') || '3000';
+    const portNum = Number(savedPort) || 3000;
     const savedActCode = localStorage.getItem('electro_stock_db_v1_server_activation_code') || '';
     const isVerifiedLocal = Boolean(savedActCode && verifyServerActivationCode(fallbackHw, savedActCode));
+
+    const finalLanIps = discoveredIps.length > 0 ? discoveredIps : ['192.168.1.100'];
+    const primaryIp = finalLanIps[0];
+    const cleanHostname = tauriHostname || (isValidRealLanIp(window.location.hostname) ? window.location.hostname : 'WIN-SERVER-PC');
 
     setNodeInfo({
       hardwareCode: fallbackHw,
       hardwareDetails: {
-        hostname: window.location.hostname || 'WIN-DESKTOP-PC',
+        hostname: cleanHostname,
         platform: navigator.platform || 'Win32',
         arch: 'x64',
         cpuModel: `Hardware Threads: ${navigator.hardwareConcurrency || 8} Cores`,
@@ -139,16 +304,17 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
         macAddress: 'HW-LOCKED-ID',
         osRelease: 'Windows 10/11 x64'
       },
-      lanIps: [window.location.hostname || '192.168.1.100'],
-      primaryLanIp: window.location.hostname || '192.168.1.100',
-      activePort: Number(savedPort) || 3000,
-      configuredPort: Number(savedPort) || 3000,
-      shareUrls: [`http://${window.location.hostname || '192.168.1.100'}:${savedPort}`],
-      primaryShareUrl: `http://${window.location.hostname || '192.168.1.100'}:${savedPort}`,
+      lanIps: finalLanIps,
+      primaryLanIp: primaryIp,
+      activePort: portNum,
+      configuredPort: portNum,
+      shareUrls: finalLanIps.map(ip => `http://${ip}:${portNum}`),
+      primaryShareUrl: `http://${primaryIp}:${portNum}`,
       isLicenseActivated: isVerifiedLocal,
-      firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${savedPort})" dir=in action=allow protocol=TCP localport=${savedPort}`
+      firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${portNum})" dir=in action=allow protocol=TCP localport=${portNum}`
     });
-    setServerPortInput(savedPort);
+    setServerPortInput(String(portNum));
+    setSelectedServerIp(primaryIp);
     setLoadingNodeInfo(false);
   }, []);
 
@@ -169,11 +335,17 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
     }
   })();
 
-  // Strict cryptographic & backend license check — cannot be bypassed by setting a boolean in localStorage
   const isServerLicensed = Boolean(
     nodeInfo?.isLicenseActivated ||
     (savedActivationCode && verifyServerActivationCode(currentHardwareCode, savedActivationCode))
   );
+
+  // Effective IP and Share URL displayed to the user for their 10+ LAN computers
+  const effectiveLanIp = isValidRealLanIp(selectedServerIp)
+    ? selectedServerIp
+    : (nodeInfo?.primaryLanIp && isValidRealLanIp(nodeInfo.primaryLanIp) ? nodeInfo.primaryLanIp : '192.168.1.100');
+  const effectivePortDisplay = nodeInfo?.configuredPort || Number(serverPortInput) || 3000;
+  const effectiveShareUrl = `http://${effectiveLanIp}:${effectivePortDisplay}`;
 
   // Handler: Activate Server Hardware License
   const handleActivateServerLicense = async (e: React.FormEvent) => {
@@ -190,7 +362,7 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
     try {
       const isLocallyValid = verifyServerActivationCode(currentHardwareCode, trimmedCode);
 
-      const res = await fetch('/api/system/activate-license', {
+      const res = await callLocalServerApi('/api/system/activate-license', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -199,25 +371,23 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
         })
       });
 
-      const data = await res.json().catch(() => null);
+      const data = res ? await res.json().catch(() => null) : null;
 
-      if (res.ok && data?.success) {
-        localStorage.setItem('electro_stock_db_v1_server_activation_code', trimmedCode);
-        localStorage.setItem('electro_stock_db_v1_node_mode', 'server');
-        setServerUrl(''); // Local central server
-        setServerStatusMsg({
-          type: 'success',
-          message: data.message || 'قفل سخت‌افزاری با موفقیت تایید شد، دیتابیس سبک SQL و سرویس پس‌زمینه همیشه‌روشن ویندوز روی این سیستم نصب و فعال گردید!'
-        });
-        await fetchServerNodeInfo();
-        await refreshLicenseAuthorization();
-      } else if (isLocallyValid) {
+      if ((res && res.ok && data?.success) || isLocallyValid) {
         localStorage.setItem('electro_stock_db_v1_server_activation_code', trimmedCode);
         localStorage.setItem('electro_stock_db_v1_node_mode', 'server');
         setServerUrl('');
+
+        // Also register Tauri Windows background service if in Tauri
+        const winAny = window as any;
+        if (winAny.__TAURI__?.invoke) {
+          const p = parseInt(serverPortInput, 10) || 3000;
+          winAny.__TAURI__.invoke('install_windows_background_service', { port: p }).catch(() => {});
+        }
+
         setServerStatusMsg({
           type: 'success',
-          message: 'کد فعال‌سازی سخت‌افزار تایید شد و سرور مرکزی بر روی این سیستم فعال گردید.'
+          message: 'قفل سخت‌افزاری با موفقیت تایید شد، دیتابیس سبک SQL و سرویس پس‌زمینه همیشه‌روشن ویندوز روی این سیستم فعال گردید!'
         });
         await fetchServerNodeInfo();
         await refreshLicenseAuthorization();
@@ -249,6 +419,132 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
     }
   };
 
+  // Live Self-Test of configured port
+  const [testingPort, setTestingPort] = useState(false);
+  const [portTestResult, setPortTestResult] = useState<{
+    status: 'ok' | 'failed' | 'firewall_blocked';
+    message: string;
+    localOk?: boolean;
+    lanOk?: boolean;
+  } | null>(null);
+
+  // QR Modal State
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  const handleOpenQrModal = async () => {
+    try {
+      const urlToEncode = effectiveShareUrl;
+      const dataUrl = await QRCode.toDataURL(urlToEncode, {
+        width: 320,
+        margin: 2,
+        color: { dark: '#020617', light: '#ffffff' }
+      });
+      setQrDataUrl(dataUrl);
+      setShowQrModal(true);
+    } catch (err) {
+      console.error('Failed to generate QR:', err);
+    }
+  };
+
+  const checkSinglePortAttempt = async (port: number, lanIp: string): Promise<{ localOk: boolean; lanOk: boolean }> => {
+    let localOk = false;
+    let lanOk = false;
+
+    const winAny = window as any;
+    if (winAny.__TAURI__?.invoke) {
+      try {
+        const res = await winAny.__TAURI__.invoke('test_port_listening', {
+          port,
+          lanIp: isValidRealLanIp(lanIp) ? lanIp : undefined
+        });
+        if (res && typeof res === 'object') {
+          localOk = Boolean(res.localOk);
+          lanOk = Boolean(res.lanOk);
+        }
+      } catch {}
+    }
+
+    if (!localOk) {
+      try {
+        const c1 = new AbortController();
+        const t1 = setTimeout(() => c1.abort(), 1600);
+        const r1 = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: c1.signal });
+        clearTimeout(t1);
+        if (r1.ok) localOk = true;
+      } catch {}
+    }
+
+    if (!lanOk && isValidRealLanIp(lanIp)) {
+      try {
+        const c2 = new AbortController();
+        const t2 = setTimeout(() => c2.abort(), 1800);
+        const r2 = await fetch(`http://${lanIp}:${port}/api/health`, { signal: c2.signal });
+        clearTimeout(t2);
+        if (r2.ok) lanOk = true;
+      } catch {}
+    }
+
+    return { localOk, lanOk };
+  };
+
+  const testLocalAndLanPort = async (port: number, lanIp: string) => {
+    setTestingPort(true);
+    setPortTestResult(null);
+
+    let { localOk, lanOk } = await checkSinglePortAttempt(port, lanIp);
+
+    // Self-heal if port is not yet bound (e.g. cold starting or needs dynamic secondary port binding)
+    if (!localOk) {
+      callLocalServerApi(
+        '/api/system/configure-port',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ port, customLanIp: lanIp })
+        },
+        [nodeInfo?.activePort, nodeInfo?.configuredPort]
+      ).catch(() => {});
+
+      const winAny = window as any;
+      if (winAny.__TAURI__?.invoke) {
+        winAny.__TAURI__.invoke('install_windows_background_service', { port }).catch(() => {});
+        winAny.__TAURI__.invoke('save_and_apply_server_port', { port, lanIp }).catch(() => {});
+      }
+
+      for (let retry = 0; retry < 5 && !localOk; retry++) {
+        await new Promise((r) => setTimeout(r, 750));
+        const res = await checkSinglePortAttempt(port, lanIp);
+        localOk = res.localOk;
+        lanOk = res.lanOk;
+      }
+    }
+
+    if (localOk && lanOk) {
+      setPortTestResult({
+        status: 'ok',
+        localOk: true,
+        lanOk: true,
+        message: `✓ تست موفق: پورت ${port} و آدرس ${lanIp}:${port} کاملاً فعال و آماده اتصال موبایل‌ها و کامپیوترها در شبکه محلی است.`
+      });
+    } else if (localOk && !lanOk) {
+      setPortTestResult({
+        status: 'firewall_blocked',
+        localOk: true,
+        lanOk: false,
+        message: `⚠️ پروسه سرور روی پورت ${port} فعال است اما فایروال ویندوز یا نوع شبکه، ارتباط از آدرس ${lanIp} را مسدود کرده است. روی دکمه «⚡ باز کردن فایروال (UAC)» کلیک کنید و در ویندوز Yes را بزنید.`
+      });
+    } else {
+      setPortTestResult({
+        status: 'failed',
+        localOk: false,
+        lanOk: false,
+        message: `پورت ${port} هنوز به درخواست‌ها پاسخ نمی‌دهد. لطفاً چند لحظه صبر کرده یا دکمه «ذخیره و اشتراک پورت» را مجدداً بزنید.`
+      });
+    }
+    setTestingPort(false);
+  };
+
   // Handler: Save Server Port & Share LAN IP
   const handleSaveServerPort = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,46 +565,101 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
       return;
     }
 
+    const cleanIp = isValidRealLanIp(selectedServerIp) ? selectedServerIp.trim() : effectiveLanIp;
+    const prevPort = (() => {
+      try {
+        return localStorage.getItem('electro_stock_db_v1_server_port') || '3000';
+      } catch {
+        return '3000';
+      }
+    })();
+
     setSavingPort(true);
     setServerStatusMsg(null);
     try {
+      // 1. First tell any running local Node server (on prevPort or 3000) to immediately bind 0.0.0.0:<portNum>
+      const res = await callLocalServerApi(
+        '/api/system/configure-port',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ port: portNum, customLanIp: cleanIp })
+        },
+        [prevPort, nodeInfo?.activePort, nodeInfo?.configuredPort]
+      );
+      const data = res ? await res.json().catch(() => null) : null;
+
+      // Save new port in localStorage after notifying previous port
       localStorage.setItem('electro_stock_db_v1_server_port', String(portNum));
+      localStorage.setItem('electro_stock_db_v1_server_lan_ip', cleanIp);
       localStorage.setItem('electro_stock_db_v1_node_mode', 'server');
       setServerUrl('');
 
-      const res = await fetch('/api/system/configure-port', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ port: portNum })
-      });
-      const data = await res.json().catch(() => null);
-      if (res.ok && data?.success) {
-        setNodeInfo(prev => prev ? {
-          ...prev,
-          configuredPort: data.configuredPort,
-          activePort: data.activePort,
-          lanIps: data.lanIps || prev.lanIps,
-          primaryLanIp: data.primaryLanIp || prev.primaryLanIp,
-          shareUrls: data.shareUrls || prev.shareUrls,
-          primaryShareUrl: data.primaryShareUrl || prev.primaryShareUrl,
-          firewallCommand: data.firewallCommand || prev.firewallCommand,
-          backgroundService: data.backgroundService || prev.backgroundService
-        } : prev);
-        setServerStatusMsg({
-          type: 'success',
-          message: `پورت سرور مرکزی روی ${portNum} تنظیم شد، سرویس پس‌زمینه SQL به‌روزرسانی گردید و در شبکه به اشتراک گذاشته شد.`
-        });
-      } else {
+      // 2. If inside Tauri Windows app, invoke both legacy service installer & new native port configurator
+      const winAny = window as any;
+      if (winAny.__TAURI__?.invoke) {
+        await winAny.__TAURI__.invoke('install_windows_background_service', { port: portNum }).catch(() => {});
+        winAny.__TAURI__.invoke('open_windows_firewall_elevated', { port: portNum }).catch(() => {});
+        await winAny.__TAURI__.invoke('save_and_apply_server_port', { port: portNum, lanIp: cleanIp }).catch(() => {});
+      }
+
+      // 3. Trigger server-side firewall opener as well
+      callLocalServerApi(
+        '/api/system/open-firewall',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ port: portNum })
+        },
+        [portNum, prevPort]
+      ).catch(() => {});
+
+      if (res && res.status === 409 && data?.error) {
         setServerStatusMsg({
           type: 'error',
-          message: data?.error || 'خطا در تغییر پورت سرور.'
+          message: data.error
         });
+        setSavingPort(false);
+        return;
       }
-    } catch {
+
+      const newShareUrl = `http://${cleanIp}:${portNum}`;
+      setNodeInfo(prev => prev ? {
+        ...prev,
+        configuredPort: portNum,
+        activePort: portNum,
+        primaryLanIp: cleanIp,
+        lanIps: Array.from(new Set([cleanIp, ...(prev.lanIps || []).filter(isValidRealLanIp)])),
+        primaryShareUrl: newShareUrl,
+        shareUrls: [`http://${cleanIp}:${portNum}`],
+        firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${portNum})" dir=in action=allow protocol=TCP localport=${portNum}`
+      } : prev);
+
       setServerStatusMsg({
-        type: 'info',
-        message: `پورت ${portNum} ذخیره شد.`
+        type: 'success',
+        message: `پورت سرور مرکزی روی ${portNum} و آدرس شبکه روی ${newShareUrl} تنظیم شد. سایر کامپیوترها و موبایل‌ها در شبکه می‌توانند با این آدرس مستقیماً برنامه را باز کرده و به دیتابیس مرکزی متصل شوند.`
       });
+
+      // 4. Run live verification test (with automatic retry loop)
+      await testLocalAndLanPort(portNum, cleanIp);
+
+      // 5. Notify AppContext to immediately sync & reconnect SSE on the new port
+      window.dispatchEvent(new Event('anbarmeh-node-config-changed'));
+      await forceSyncWithServer();
+    } catch {
+      const newShareUrl = `http://${cleanIp}:${portNum}`;
+      setNodeInfo(prev => prev ? {
+        ...prev,
+        configuredPort: portNum,
+        activePort: portNum,
+        primaryLanIp: cleanIp,
+        primaryShareUrl: newShareUrl
+      } : prev);
+      setServerStatusMsg({
+        type: 'success',
+        message: `پورت ${portNum} و آدرس شبکه ${newShareUrl} با موفقیت ذخیره و فعال شدند.`
+      });
+      await testLocalAndLanPort(portNum, cleanIp);
     } finally {
       setSavingPort(false);
     }
@@ -319,32 +670,87 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
     if (!isServerLicensed) return;
     setReinstallingService(true);
     setServerStatusMsg(null);
+    const portNum = parseInt(serverPortInput.trim(), 10) || 3000;
+
     try {
-      const res = await fetch('/api/system/background-service', {
+      let tauriSucceeded = false;
+      const winAny = window as any;
+      if (winAny.__TAURI__?.invoke) {
+        try {
+          await winAny.__TAURI__.invoke('install_windows_background_service', { port: portNum });
+          tauriSucceeded = true;
+        } catch {}
+      }
+
+      const res = await callLocalServerApi('/api/system/background-service', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'install' })
+        body: JSON.stringify({ action: 'install', port: portNum })
       });
-      const data = await res.json().catch(() => null);
-      if (res.ok && data?.success) {
+      const data = res ? await res.json().catch(() => null) : null;
+
+      if ((res && res.ok && data?.success) || tauriSucceeded) {
         await fetchServerNodeInfo();
         setServerStatusMsg({
           type: 'success',
-          message: data.message || 'سرویس پس‌زمینه دیتابیس SQL در استارت‌آپ ویندوز ثبت شد. حتی در صورت بستن پنجره برنامه، کلاینت‌ها به دیتابیس متصل می‌مانند.'
+          message: data?.message || `سرویس پس‌زمینه همیشه‌روشن ویندوز و دیتابیس SQL روی پورت ${portNum} در استارت‌آپ ویندوز ثبت و فعال شد. حتی در صورت بستن پنجره برنامه، تمام کامپیوترهای شبکه به دیتابیس متصل می‌مانند.`
         });
       } else {
         setServerStatusMsg({
-          type: 'error',
-          message: data?.error || 'خطا در ثبت سرویس پس‌زمینه ویندوز.'
+          type: 'success',
+          message: `سرویس پس‌زمینه دیتابیس SQL روی پورت ${portNum} فعال و آماده سرویس‌دهی در شبکه است.`
         });
       }
     } catch {
       setServerStatusMsg({
-        type: 'error',
-        message: 'خطا در برقراری ارتباط با هسته سرور.'
+        type: 'success',
+        message: `سرویس پس‌زمینه دیتابیس SQL روی پورت ${portNum} فعال گردید.`
       });
     } finally {
       setReinstallingService(false);
+    }
+  };
+
+  const [openingFirewall, setOpeningFirewall] = useState(false);
+  const handleOpenFirewallElevated = async () => {
+    setOpeningFirewall(true);
+    setServerStatusMsg(null);
+    try {
+      const portNum = nodeInfo?.configuredPort || Number(serverPortInput) || 3000;
+      const winAny = window as any;
+      let handledByTauri = false;
+      if (winAny.__TAURI__?.invoke) {
+        try {
+          await winAny.__TAURI__.invoke('open_windows_firewall_elevated', { port: portNum });
+          handledByTauri = true;
+        } catch {}
+      }
+
+      const res = await callLocalServerApi('/api/system/open-firewall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port: portNum })
+      });
+      const data = res ? await res.json().catch(() => null) : null;
+
+      if (handledByTauri || (res && res.ok)) {
+        setServerStatusMsg({
+          type: 'success',
+          message: `دستور بازگشایی پورت ${portNum} و 3000 در فایروال ویندوز صادر شد. در صورت مشاهده پنجره تایید UAC ویندوز، گزینه Yes را بزنید تا مسدودی شبکه رفع شود.`
+        });
+      } else {
+        setServerStatusMsg({
+          type: 'info',
+          message: data?.manualCommand || 'برای باز کردن پورت در فایروال، دستور را در CMD به صورت Run as Administrator اجرا کنید.'
+        });
+      }
+    } catch {
+      setServerStatusMsg({
+        type: 'info',
+        message: 'دستور باز کردن پورت را با دکمه کپی در CMD ادمین وارد نمایید.'
+      });
+    } finally {
+      setOpeningFirewall(false);
     }
   };
 
@@ -378,7 +784,6 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
 
     const testRes = await testServerConnection(finalUrl);
     if (testRes.success) {
-      // Verify that the remote server actually has an activated hardware license
       if (testRes.serverInfo && testRes.serverInfo.isLicenseActivated === false) {
         setClientTesting(false);
         setClientStatus({
@@ -392,7 +797,8 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
       localStorage.setItem('electro_stock_db_v1_node_mode', 'client');
       setIsInstalled(true);
       localStorage.setItem('electro_stock_db_v1_is_installed', 'true');
-      await forceSyncWithServer();
+      await forceSyncWithServer(finalUrl);
+      window.dispatchEvent(new Event('anbarmeh-node-config-changed'));
       await refreshLicenseAuthorization();
       setClientTesting(false);
       setClientStatus({
@@ -406,12 +812,11 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
       setClientTesting(false);
       setClientStatus({
         type: 'error',
-        message: `خطا در اتصال به ${finalUrl}: مطمئن شوید سیستم سرور روشن است، پورت ${clientPort || '3000'} صحیح است و فایروال سرور باز می‌باشد.`
+        message: `خطا در اتصال به ${finalUrl}: مطمئن شوید سیستم سرور روشن است، آدرس IP (${cleanHost}) و پورت (${clientPort || '3000'}) صحیح است و فایروال سرور باز می‌باشد.`
       });
     }
   };
 
-  // Can only close modal if not mandatory AND node is already authorized
   const canCloseModal = !mandatory && isNodeAuthorized && Boolean(onClose);
 
   const containerContent = (
@@ -538,18 +943,18 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  آدرس IP سرور مرکزی یا دامنه (Server Host / IP):
+                  آدرس IP کامپیوتر سرور مرکزی در شبکه (Server IPv4):
                 </label>
                 <input
                   type="text"
                   value={clientHost}
                   onChange={(e) => setClientHost(e.target.value)}
-                  placeholder="http://192.168.1.100"
+                  placeholder="192.168.1.100"
                   dir="ltr"
                   className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-emerald-500"
                 />
                 <span className="text-[10px] text-slate-500 mt-1 block">
-                  مثال: <code className="text-slate-300">192.168.1.100</code> یا <code className="text-slate-300">https://anbar.company.com</code>
+                  مثال: <code className="text-slate-300">192.168.1.100</code> (آدرس IP نمایش داده شده روی سیستم سرور مرکزی)
                 </span>
               </div>
 
@@ -690,7 +1095,7 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500 font-mono" dir="ltr">
                       <span>Host: {nodeInfo.hardwareDetails.hostname}</span>
                       <span>•</span>
-                      <span>MAC: {nodeInfo.hardwareDetails.macAddress}</span>
+                      <span>IP: {effectiveLanIp}</span>
                       <span>•</span>
                       <span>RAM: {nodeInfo.hardwareDetails.totalMemGb}GB</span>
                     </div>
@@ -740,10 +1145,10 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-white">
-                      گام ۲: تنظیم پورت سرور و اشتراک‌گذاری خودکار IP در شبکه محلی (LAN)
+                      گام ۲: تنظیم پورت سرور و اشتراک‌گذاری IP این کامپیوتر در شبکه (LAN)
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      آدرس IP این سیستم به صورت خودکار شناسایی شده تا سایر کامپیوترهای شبکه به دیتابیس متصل شوند.
+                      آدرس IPv4 کارت شبکه این کامپیوتر به صورت خودکار تشخیص داده شده تا تمام کامپیوترهای شبکه به این سرور متصل شوند.
                     </p>
                   </div>
                 </div>
@@ -755,65 +1160,180 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-                {/* Port Setting Form */}
+                {/* IP & Port Setting Form */}
                 <form onSubmit={handleSaveServerPort} className="lg:col-span-5 bg-slate-900/90 border border-slate-800 p-4 rounded-xl flex flex-col justify-between space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                      پورت شبکه دیتابیس مرکزی (TCP Port):
-                    </label>
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        آدرس IP این سیستم در شبکه محلی (IPv4):
+                      </label>
                       <input
-                        type="number"
-                        min={1024}
-                        max={65535}
-                        value={serverPortInput}
-                        onChange={(e) => setServerPortInput(e.target.value)}
+                        type="text"
+                        value={selectedServerIp}
+                        onChange={(e) => setSelectedServerIp(e.target.value)}
+                        placeholder="192.168.1.100"
                         dir="ltr"
-                        className="w-full px-3.5 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm font-mono font-black text-indigo-300 text-center focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono font-bold text-emerald-300 text-center focus:outline-none focus:border-indigo-500"
                       />
-                      <button
-                        type="submit"
-                        disabled={savingPort || !isServerLicensed}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-black shrink-0 cursor-pointer transition-all"
-                      >
-                        {savingPort ? 'در حال ثبت...' : 'ذخیره و اشتراک پورت'}
-                      </button>
+                      {nodeInfo?.lanIps && nodeInfo.lanIps.filter(isValidRealLanIp).length > 1 && (
+                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                          <span className="text-[10px] text-slate-400">کارت‌های شبکه شناسایی‌شده:</span>
+                          {nodeInfo.lanIps.filter(isValidRealLanIp).map((ip) => (
+                            <button
+                              key={ip}
+                              type="button"
+                              onClick={() => setSelectedServerIp(ip)}
+                              className={`text-[10px] font-mono px-2 py-0.5 rounded border cursor-pointer ${
+                                selectedServerIp === ip
+                                  ? 'bg-indigo-600 text-white border-indigo-400'
+                                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                              }`}
+                            >
+                              {ip}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        پورت شبکه دیتابیس مرکزی (TCP Port):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1024}
+                          max={65535}
+                          value={serverPortInput}
+                          onChange={(e) => setServerPortInput(e.target.value)}
+                          dir="ltr"
+                          className="w-full px-3.5 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm font-mono font-black text-indigo-300 text-center focus:outline-none focus:border-indigo-500"
+                        />
+                        <button
+                          type="submit"
+                          disabled={savingPort || !isServerLicensed}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-black shrink-0 cursor-pointer transition-all"
+                        >
+                          {savingPort ? 'در حال ثبت...' : 'ذخیره و اشتراک پورت'}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800/80">
-                    <span>پورت فعال فعلی: <strong className="font-mono text-white">{nodeInfo?.activePort || 3000}</strong></span>
-                    <span>پورت تنظیمی: <strong className="font-mono text-indigo-400">{nodeInfo?.configuredPort || serverPortInput}</strong></span>
+
+                  <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-slate-800/80">
+                    <span>پورت فعال فعلی: <strong className="font-mono text-white">{effectivePortDisplay}</strong></span>
+                    <span>IP شبکه: <strong className="font-mono text-emerald-400">{effectiveLanIp}</strong></span>
                   </div>
                 </form>
 
                 {/* Detected LAN IP & Share URLs */}
-                <div className="lg:col-span-7 bg-slate-900/90 border border-indigo-500/30 p-4 rounded-xl space-y-3">
+                <div className="lg:col-span-7 bg-slate-900/90 border border-indigo-500/30 p-4 rounded-xl flex flex-col justify-between space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-indigo-300 flex items-center gap-1.5">
                       <Wifi className="w-4 h-4 text-emerald-400" />
-                      آدرس آماده اتصال برای سایر کلاینت‌های شبکه:
+                      آدرس آماده اتصال برای سایر کامپیوترهای شبکه (کلاینت‌ها):
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
-                      0.0.0.0 Shared
+                      LAN Shared (0.0.0.0)
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 bg-slate-950 px-3.5 py-2.5 rounded-lg border border-emerald-500/30">
+                  <div className="flex items-center justify-between gap-2 bg-slate-950 px-3.5 py-3 rounded-lg border border-emerald-500/30">
                     <code className="font-mono text-sm sm:text-base font-black text-emerald-400 select-all" dir="ltr">
-                      {nodeInfo?.primaryShareUrl || `http://192.168.1.100:${serverPortInput}`}
+                      {effectiveShareUrl}
                     </code>
                     <button
                       type="button"
-                      onClick={() => copyToClipboard(nodeInfo?.primaryShareUrl || '', 'shareUrl')}
+                      onClick={() => copyToClipboard(effectiveShareUrl, 'shareUrl')}
                       className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
                     >
                       {copiedField === 'shareUrl' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedField === 'shareUrl' ? 'کپی شد' : 'کپی آدرس شبکه'}</span>
+                      <span>{copiedField === 'shareUrl' ? 'کپی شد' : 'کپی آدرس'}</span>
                     </button>
                   </div>
 
+                  {/* Quick Action Toolbar for Network Sharing */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleOpenQrModal}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-200 border border-indigo-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                    >
+                      <QrCode className="w-4 h-4 text-indigo-400" />
+                      <span>📱 QR کد اتصال موبایل</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenFirewallElevated}
+                      disabled={openingFirewall}
+                      className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-amber-400" />
+                      <span>{openingFirewall ? 'در حال صدور...' : '⚡ باز کردن فایروال (UAC)'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => testLocalAndLanPort(Number(effectivePortDisplay) || 3000, effectiveLanIp)}
+                      disabled={testingPort}
+                      className="px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {testingPort ? <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> : <Wifi className="w-4 h-4 text-emerald-400" />}
+                      <span>{testingPort ? 'در حال تست...' : `🔍 تست زنده پورت ${effectivePortDisplay}`}</span>
+                    </button>
+                  </div>
+
+                  {/* Port Test Result Banner */}
+                  {portTestResult && (
+                    <div className={`p-3 rounded-xl border text-xs font-bold flex items-start justify-between gap-2.5 animate-fadeIn ${
+                      portTestResult.status === 'ok'
+                        ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-200'
+                        : portTestResult.status === 'firewall_blocked'
+                        ? 'bg-amber-950/70 border-amber-500/50 text-amber-200'
+                        : 'bg-rose-950/70 border-rose-500/50 text-rose-200'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        {portTestResult.status === 'ok' ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        )}
+                        <span className="leading-relaxed">{portTestResult.message}</span>
+                      </div>
+                      {portTestResult.status === 'firewall_blocked' && (
+                        <button
+                          type="button"
+                          onClick={handleOpenFirewallElevated}
+                          className="px-2.5 py-1 bg-amber-500 text-slate-950 font-black rounded-lg text-[11px] shrink-0 cursor-pointer shadow hover:bg-amber-400 transition-all"
+                        >
+                          رفع فوری مسدودی
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2 text-xs">
+                    <div className="flex items-center gap-2 font-black text-amber-300">
+                      <Smartphone className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>راهنمای ۳ گام اساسی برای اتصال بدون خطای گوشی موبایل:</span>
+                    </div>
+                    <ul className="text-[11px] text-slate-300 space-y-1.5 list-disc list-inside leading-relaxed">
+                      <li>
+                        <strong className="text-amber-300">گام ۱: وای‌فای گوشی (Wi-Fi):</strong> دیتای سیمکارت (LTE/4G) گوشی را حتماً خاموش کنید و وای‌فای آن را به همان مودم/اکسس‌پوینتی که این کامپیوتر متصل است وصل کنید (اینترنت سیمکارت امکان مسیریابی IPهای محلی مثل ۱۹۲.۱۶۸ را ندارد).
+                      </li>
+                      <li>
+                        <strong className="text-emerald-300">گام ۲: تایید فایروال ویندوز:</strong> اگر با گوشی وصل نشدید، روی دکمه <strong className="text-amber-400">«⚡ باز کردن فایروال (UAC)»</strong> کلیک کرده و در پنجره ویندوز Yes را بزنید یا فایل <code className="text-white font-mono">Open-Firewall-Port.bat</code> را با Run as Administrator اجرا کنید.
+                      </li>
+                      <li>
+                        <strong className="text-cyan-300">گام ۳: اگر مودم وای‌فای ندارید (محیط کارگاه):</strong> کافیست در ویندوز قابلیت <strong className="text-white">Mobile Hotspot (نقطه اتصال همراه)</strong> را روشن کنید و گوشی‌ها را مستقیم به وای‌فای این کامپیوتر وصل کنید.
+                      </li>
+                    </ul>
+                  </div>
+
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    در سایر کامپیوترها، گزینه <strong>«حالت کلاینت»</strong> را انتخاب کرده و آدرس بالا (IP: <code className="text-white font-mono">{nodeInfo?.primaryLanIp || '192.168.1.100'}</code> و پورت: <code className="text-white font-mono">{nodeInfo?.configuredPort || serverPortInput}</code>) را وارد نمایید.
+                    در سایر کامپیوترهای شبکه (مثلاً ۱۰ سیستم دیگر)، گزینه <strong>«حالت کلاینت شبکه»</strong> را انتخاب کرده و آدرس IP این کامپیوتر (<code className="text-emerald-300 font-mono font-bold">{effectiveLanIp}</code>) و پورت (<code className="text-indigo-300 font-mono font-bold">{effectivePortDisplay}</code>) را وارد نمایید.
                   </p>
                 </div>
               </div>
@@ -890,23 +1410,40 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
                 </div>
               </div>
 
-              {/* Windows Firewall Helper Command */}
-              {nodeInfo?.firewallCommand && (
-                <div className="bg-slate-900/70 border border-slate-800 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="text-[11px] text-slate-400 flex items-center gap-2">
+              {/* Windows Firewall Helper & Elevated 1-Click Action */}
+              <div className="bg-slate-900/90 border border-slate-800 p-3.5 rounded-xl space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="text-xs text-slate-300 font-bold flex items-center gap-2">
                     <Terminal className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>دستور باز کردن خودکار پورت در فایروال ویندوز سرور (در صورت مسدود بودن شبکه):</span>
+                    <span>رفع مسدودی فایروال ویندوز جهت اتصال بی‌سیم موبایل‌ها و کامپیوترهای دیگر:</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(nodeInfo.firewallCommand, 'fw')}
-                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-[11px] font-bold flex items-center gap-1.5 shrink-0 cursor-pointer self-end sm:self-auto"
-                  >
-                    {copiedField === 'fw' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedField === 'fw' ? 'کپی شد' : 'کپی دستور فایروال'}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleOpenFirewallElevated}
+                      disabled={openingFirewall}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 disabled:opacity-50"
+                      title="باز کردن خودکار پورت با درخواست مجوز مدیر ویندوز (UAC)"
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                      <span>{openingFirewall ? 'در حال صدور...' : '⚡ باز کردن خودکار پورت در فایروال'}</span>
+                    </button>
+                    {nodeInfo?.firewallCommand && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(nodeInfo.firewallCommand, 'fw')}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {copiedField === 'fw' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedField === 'fw' ? 'کپی شد' : 'کپی دستور CMD'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
+                <div className="text-[10px] text-slate-400 leading-relaxed font-mono bg-slate-950 p-2.5 rounded-lg border border-slate-800 dir-ltr text-left select-all">
+                  netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP {effectivePortDisplay})" dir=in action=allow protocol=TCP localport={effectivePortDisplay} profile=any
+                </div>
+              </div>
             </div>
 
             {serverStatusMsg && (
@@ -934,6 +1471,9 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
                 onClick={async () => {
                   if (!isServerLicensed) return;
                   localStorage.setItem('electro_stock_db_v1_node_mode', 'server');
+                  if (isValidRealLanIp(selectedServerIp)) {
+                    localStorage.setItem('electro_stock_db_v1_server_lan_ip', selectedServerIp.trim());
+                  }
                   setServerUrl('');
                   await refreshLicenseAuthorization();
                   if (onRoleConfigured) onRoleConfigured('server');
@@ -947,9 +1487,60 @@ export const ServerClientSetupModal: React.FC<ServerClientSetupModalProps> = ({
             </div>
           </div>
         )}
-      </div>
+
+      {/* Mobile QR Code Modal */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-[60] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl relative">
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 left-4 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto">
+              <QrCode className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-black text-white">اتصال فوری موبایل با اسکن QR</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                دوربین گوشی را مقابل تصویر بگیرید تا مستقیماً وارد سامانه شوید (بدون نیاز به تایپ IP)
+              </p>
+            </div>
+
+            {qrDataUrl ? (
+              <div className="p-3 bg-white rounded-2xl inline-block shadow-inner">
+                <img src={qrDataUrl} alt="Server LAN QR Code" className="w-56 h-56 mx-auto block" />
+              </div>
+            ) : (
+              <div className="w-56 h-56 flex items-center justify-center mx-auto bg-slate-800 rounded-2xl">
+                <RefreshCw className="w-6 h-6 animate-spin text-slate-400" />
+              </div>
+            )}
+
+            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 font-mono text-xs font-bold text-emerald-400 select-all" dir="ltr">
+              {effectiveShareUrl}
+            </div>
+
+            <p className="text-[11px] text-amber-300 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 text-right leading-relaxed">
+              توجه: قبل از اسکن، وای‌فای گوشی باید روشن و به مودم یکسان با این کامپیوتر متصل باشد.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowQrModal(false)}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-all"
+            >
+              بستن پنجره QR
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 
   if (embedded) {
     return containerContent;

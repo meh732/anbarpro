@@ -39,8 +39,16 @@ if exist "scripts\generate-tauri-icons.cjs" (
 )
 
 echo.
-echo [4/5] در حال کامپایل فرانت‌اند و باندل کردن سرور مرکزی (npm run build)...
+echo [4/5] در حال کامپایل فرانت‌اند و باندل کردن سرور مرکزی مستقل (npm run build)...
 call npm run build
+
+:: Pre-sync standalone dist (index.html + assets + self-contained server.cjs) to existing release folders
+if exist "AnbarMeh-Windows-Setup" (
+    xcopy /E /I /Y "dist" "AnbarMeh-Windows-Setup\dist" >nul 2>nul
+)
+if exist "src-tauri\target\release\_up_" (
+    xcopy /E /I /Y "dist" "src-tauri\target\release\_up_\dist" >nul 2>nul
+)
 
 echo.
 echo [5/5] در حال ساخت فایل اجرایی ویندوز (.exe) با موتور Tauri...
@@ -51,16 +59,23 @@ if exist "src-tauri\target\release\anbarmeh-enterprise.exe" (
     echo.
     color 0A
     echo ===============================================================================
-    echo [SUCCESS] فایل اجرایی اصلی ویندوز با موفقیت کامپایل و ساخته شد!
+    echo [SUCCESS] فایل اجرایی اصلی ویندوز و سرور مرکزی مستقل با موفقیت ساخته شدند!
     echo ===============================================================================
     if not exist "AnbarMeh-Windows-Setup" mkdir "AnbarMeh-Windows-Setup"
     if not exist "AnbarMeh-Windows-Setup\dist" mkdir "AnbarMeh-Windows-Setup\dist"
+    if not exist "AnbarMeh-Windows-Setup\data" mkdir "AnbarMeh-Windows-Setup\data"
     copy /Y "src-tauri\target\release\anbarmeh-enterprise.exe" "AnbarMeh-Windows-Setup\AnbarMeh-Enterprise.exe" >nul
-    if exist "dist\server.cjs" copy /Y "dist\server.cjs" "AnbarMeh-Windows-Setup\dist\server.cjs" >nul
+    xcopy /E /I /Y "dist" "AnbarMeh-Windows-Setup\dist" >nul
+    xcopy /E /I /Y "dist" "src-tauri\target\release\dist" >nul 2>nul
+    xcopy /E /I /Y "dist" "src-tauri\target\release\_up_\dist" >nul 2>nul
+    if exist "Open-Firewall-Port.bat" copy /Y "Open-Firewall-Port.bat" "AnbarMeh-Windows-Setup\Open-Firewall-Port.bat" >nul
+    if exist "Start-Central-SQL-Server-Background.bat" copy /Y "Start-Central-SQL-Server-Background.bat" "AnbarMeh-Windows-Setup\Start-Central-SQL-Server-Background.bat" >nul
+    if exist "data\anbarmeh_background_daemon.vbs" copy /Y "data\anbarmeh_background_daemon.vbs" "AnbarMeh-Windows-Setup\data\anbarmeh_background_daemon.vbs" >nul
+    if exist "data\anbarmeh_server_runner.bat" copy /Y "data\anbarmeh_server_runner.bat" "AnbarMeh-Windows-Setup\data\anbarmeh_server_runner.bat" >nul
     echo.
     echo   1) مسیر فایل اجرایی مستقیم:
     echo      src-tauri\target\release\anbarmeh-enterprise.exe
-    echo   2) پوشه آماده نصب روی هر ویندوز (همراه با سرور مرکزی):
+    echo   2) پوشه کامل و مستقل آماده نصب روی هر ویندوز (همراه با سرور مرکزی و رابط وب موبایل):
     echo      AnbarMeh-Windows-Setup\AnbarMeh-Enterprise.exe
     echo ===============================================================================
     explorer "AnbarMeh-Windows-Setup"

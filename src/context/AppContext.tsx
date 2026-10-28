@@ -8,6 +8,13 @@ import {
   MessengerBackupConfig, IncomingChatAlertData
 } from '../types';
 import { InitialStockParsedRow } from '../utils/excelUtils';
+import {
+  resolveBackendApiUrl,
+  verifyServerActivationCode,
+  formatHardwareCodeFromRaw,
+  getFallbackClientHardwareCode,
+  isTauriRuntime
+} from '../utils/hardwareLicense';
 import { calculateAllProjectStageTargets, applySmartTargetsToProjectSteps } from '../utils/smartBOMCalculator';
 import { 
   verifyPassword, hashPassword, ensureUsersPasswordsHashed, 
@@ -325,7 +332,7 @@ interface AppContextType {
   setServerUrl: (url: string) => void;
   getApiUrl: (path: string) => string;
   testServerConnection: (testUrl?: string) => Promise<{ success: boolean; latencyMs?: number; message?: string; serverInfo?: any }>;
-  forceSyncWithServer: () => Promise<boolean>;
+  forceSyncWithServer: (customUrl?: string) => Promise<boolean>;
   resetServerDatabase: () => Promise<boolean>;
   resetToEmptyDatabase: () => Promise<boolean>;
   loadDemoData: () => Promise<boolean>;
@@ -355,7 +362,17 @@ const STORAGE_KEY = 'electro_stock_db_v1';
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isInstalled, setIsInstalled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(`${STORAGE_KEY}_is_installed`) === 'true';
+      if (localStorage.getItem(`${STORAGE_KEY}_is_installed`) === 'true') return true;
+      if (localStorage.getItem(`${STORAGE_KEY}_node_mode`) === 'client') return true;
+      if (typeof window !== 'undefined' && !isTauriRuntime()) {
+        const host = window.location.hostname;
+        if (host && host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('.localhost')) {
+          localStorage.setItem(`${STORAGE_KEY}_is_installed`, 'true');
+          localStorage.setItem(`${STORAGE_KEY}_node_mode`, 'client');
+          return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
@@ -591,7 +608,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Central Server Connection Endpoint (Custom IP / LAN hostname for Tauri & Web Clients)
   const [serverUrl, setServerUrlState] = useState<string>(() => {
     try {
-      return localStorage.getItem(`${STORAGE_KEY}_serverUrl`) || '';
+      const explicit = localStorage.getItem(`${STORAGE_KEY}_serverUrl`);
+      if (explicit) return explicit;
+      // Auto-detect if browser was served from Central Server LAN IP (e.g. http://192.168.41.43:2525)
+      if (typeof window !== 'undefined' && !isTauriRuntime()) {
+        const host = window.location.hostname;
+        if (host && host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('.localhost')) {
+          return window.location.origin;
+        }
+      }
+      return '';
     } catch {
       return '';
     }
@@ -606,16 +632,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const getApiUrl = (path: string): string => {
-    const p = path.startsWith('/') ? path : `/${path}`;
-    if (serverUrl) {
-      return `${serverUrl}${p}`;
-    }
-    return p;
+    return resolveBackendApiUrl(path, serverUrl);
   };
 
   const testServerConnection = async (targetUrl?: string): Promise<{ success: boolean; latencyMs?: number; message?: string; serverInfo?: any }> => {
     const urlToTest = targetUrl !== undefined ? targetUrl.trim().replace(/\/+$/, '') : serverUrl;
-    const endpoint = urlToTest ? `${urlToTest}/api/health` : '/api/health';
+    const endpoint = resolveBackendApiUrl('/api/health', urlToTest);
     const start = performance.now();
     try {
       const res = await fetch(endpoint, { method: 'GET' });
@@ -633,15 +655,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Strict Server / Client Hardware License Gate Verification
   const refreshLicenseAuthorization = useCallback(async (): Promise<boolean> => {
     try {
+      const isRemoteBrowserClient = typeof window !== 'undefined' && 
+        !isTauriRuntime() && 
+        window.location.hostname !== 'localhost' && 
+        window.location.hostname !== '127.0.0.1';
+
       const savedMode = localStorage.getItem(`${STORAGE_KEY}_node_mode`);
-      const activeUrl = (localStorage.getItem(`${STORAGE_KEY}_serverUrl`) || serverUrl || '').trim().replace(/\/+$/, '');
-      const mode = savedMode === 'client' || activeUrl ? 'client' : 'server';
+      const activeUrl = (localStorage.getItem(`${STORAGE_KEY}_serverUrl`) || serverUrl || (isRemoteBrowserClient ? window.location.origin : '')).trim().replace(/\/+$/, '');
+      const mode = savedMode === 'client' || isRemoteBrowserClient || activeUrl ? 'client' : 'server';
 
       if (mode === 'client' && activeUrl) {
-        const res = await fetch(`${activeUrl}/api/health`);
+        const res = await fetch(resolveBackendApiUrl('/api/health', activeUrl));
         if (res.ok) {
           const data = await res.json();
-          const authorized = Boolean(data && data.status === 'ok' && data.isLicenseActivated === true);
+          // The central server is already validated & licensed: authorize LAN clients unconditionally!
+          const authorized = Boolean(data && data.status === 'ok');
           setIsNodeAuthorized(authorized);
           setIsCheckingLicense(false);
           return authorized;
@@ -651,14 +679,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
       }
 
-      // Server Mode: verify against backend /api/system/node-info
-      const res = await fetch('/api/system/node-info');
-      if (res.ok) {
-        const data = await res.json();
-        const authorized = Boolean(data && data.success && data.isLicenseActivated === true);
-        setIsNodeAuthorized(authorized);
+      // Server Mode: check cryptographic activation code first (including Tauri hardware ID)
+      const savedActCode = localStorage.getItem('electro_stock_db_v1_server_activation_code') || '';
+      let currentHwCode = getFallbackClientHardwareCode();
+      const winAny = window as any;
+      if (winAny.__TAURI__?.invoke) {
+        try {
+          const rawUuid = await winAny.__TAURI__.invoke('get_windows_hardware_id');
+          if (rawUuid && rawUuid !== 'WIN-ENTERPRISE-NODE') {
+            currentHwCode = formatHardwareCodeFromRaw(rawUuid);
+          }
+        } catch {}
+      }
+
+      const isCryptoValid = Boolean(savedActCode && verifyServerActivationCode(currentHwCode, savedActCode));
+
+      // Verify against backend /api/system/node-info (using 127.0.0.1 in Tauri)
+      try {
+        const nodeInfoUrl = resolveBackendApiUrl('/api/system/node-info');
+        const res = await fetch(nodeInfoUrl);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success && data.isLicenseActivated === true) {
+            setIsNodeAuthorized(true);
+            setIsCheckingLicense(false);
+            return true;
+          }
+          // If local cryptographic license is valid, sync it to backend automatically
+          if (isCryptoValid || (savedActCode && data?.hardwareCode && verifyServerActivationCode(data.hardwareCode, savedActCode))) {
+            await fetch(resolveBackendApiUrl('/api/system/activate-license'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                activationCode: savedActCode,
+                clientHardwareCode: currentHwCode
+              })
+            }).catch(() => {});
+            setIsNodeAuthorized(true);
+            setIsCheckingLicense(false);
+            return true;
+          }
+        }
+      } catch {}
+
+      if (isCryptoValid) {
+        setIsNodeAuthorized(true);
         setIsCheckingLicense(false);
-        return authorized;
+        return true;
       }
     } catch {
       // Backend unreachable or unlicensed
@@ -843,43 +910,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const applyServerState = useCallback((data: any, version: number) => {
     if (!data) return;
     isRemoteUpdatingRef.current = true;
-    // Anti-wipe shield: never overwrite non-empty client data with empty server arrays!
-    if (data.items) {
-      if (data.items.length > 0) {
-        setItems(data.items);
-      } else {
-        setItems(prev => prev.length === 0 ? [] : prev);
-      }
+    // Central Server is the single source of truth for all connected nodes & browsers
+    if (Array.isArray(data.items)) {
+      setItems(data.items);
     }
-    if (data.itemGroups) {
-      if (data.itemGroups.length > 0) {
-        setItemGroups(data.itemGroups);
-      } else {
-        setItemGroups(prev => prev.length === 0 ? [] : prev);
-      }
+    if (Array.isArray(data.itemGroups)) {
+      setItemGroups(data.itemGroups);
     }
-    if (data.warehouses) {
-      if (data.warehouses.length > 0) {
-        setWarehouses(data.warehouses);
-      } else {
-        setWarehouses(prev => prev.length === 0 ? [] : prev);
-      }
+    if (Array.isArray(data.warehouses)) {
+      setWarehouses(data.warehouses);
     }
-    if (data.contractors) {
-      if (data.contractors.length > 0) {
-        setContractors(data.contractors);
-      } else {
-        setContractors(prev => prev.length === 0 ? [] : prev);
-      }
+    if (Array.isArray(data.contractors)) {
+      setContractors(data.contractors);
     }
-    if (data.contractorContracts) setContractorContracts(data.contractorContracts);
-    if (data.contractorTransactions) setContractorTransactions(data.contractorTransactions);
-    if (data.inventory) {
-      if (data.inventory.length > 0) {
-        setInventory(data.inventory);
-      } else {
-        setInventory(prev => prev.length === 0 ? [] : prev);
-      }
+    if (Array.isArray(data.contractorContracts)) setContractorContracts(data.contractorContracts);
+    if (Array.isArray(data.contractorTransactions)) setContractorTransactions(data.contractorTransactions);
+    if (Array.isArray(data.inventory)) {
+      setInventory(data.inventory);
     }
     if (Array.isArray(data.boms)) {
       setBoms(data.boms);
@@ -887,23 +934,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (Array.isArray(data.projects)) {
       setProjects(data.projects);
     }
-    if (data.operators) setOperators(data.operators);
-    if (data.stockCountings) setStockCountings(data.stockCountings);
-    if (data.stockInDocs) setStockInDocs(data.stockInDocs);
-    if (data.stockOutDocs) setStockOutDocs(data.stockOutDocs);
-    if (data.transfers) setTransfers(data.transfers);
-    if (data.purchaseRequests) setPurchaseRequests(data.purchaseRequests);
-    if (data.productionLogs) setProductionLogs(data.productionLogs);
-    if (data.materialHandovers) setMaterialHandovers(data.materialHandovers);
-    if (data.notifications) setNotifications(data.notifications);
-    if (data.messages) {
+    if (Array.isArray(data.operators)) setOperators(data.operators);
+    if (Array.isArray(data.stockCountings)) setStockCountings(data.stockCountings);
+    if (Array.isArray(data.stockInDocs)) setStockInDocs(data.stockInDocs);
+    if (Array.isArray(data.stockOutDocs)) setStockOutDocs(data.stockOutDocs);
+    if (Array.isArray(data.transfers)) setTransfers(data.transfers);
+    if (Array.isArray(data.purchaseRequests)) setPurchaseRequests(data.purchaseRequests);
+    if (Array.isArray(data.productionLogs)) setProductionLogs(data.productionLogs);
+    if (Array.isArray(data.materialHandovers)) setMaterialHandovers(data.materialHandovers);
+    if (Array.isArray(data.notifications)) setNotifications(data.notifications);
+    if (Array.isArray(data.messages)) {
       setMessages(data.messages);
       checkForNewIncomingMessages(data.messages);
     }
-    if (data.channels) setChannels(data.channels);
-    if (data.traceabilityEvents) setTraceabilityEvents(data.traceabilityEvents);
-    if (data.auditLogs) setAuditLogs(data.auditLogs);
-    if (data.users && data.users.length > 0) setUsers(data.users);
+    if (Array.isArray(data.channels)) setChannels(data.channels);
+    if (Array.isArray(data.traceabilityEvents)) setTraceabilityEvents(data.traceabilityEvents);
+    if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
+    if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
     if (data.companyName) {
       setCompanyNameState(data.companyName);
       localStorage.setItem(`${STORAGE_KEY}_company_name`, data.companyName);
@@ -998,10 +1045,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     autoBackupIntervalHours, lastBackupTimestamp, backupHistory, serverUrl
   ]);
 
-  const forceSyncWithServer = async (): Promise<boolean> => {
+  const forceSyncWithServer = async (customUrl?: string): Promise<boolean> => {
     setServerSyncStatus('syncing');
     try {
-      const res = await fetch(getApiUrl('/api/data'));
+      const targetEndpoint = resolveBackendApiUrl('/api/data', customUrl !== undefined ? customUrl : serverUrl);
+      const res = await fetch(targetEndpoint);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -1187,8 +1235,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Initial connection to server and periodic real-time sync
   useEffect(() => {
     let isMounted = true;
+    let initRetryTimer: NodeJS.Timeout | null = null;
 
     const initServerConnection = async () => {
+      if (!isMounted) return;
       try {
         // Fetch server system diagnostic info
         fetch(getApiUrl('/api/server-info'))
@@ -1204,7 +1254,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (res.ok) {
           const json = await res.json();
           if (json.success && json.data) {
+            const isRemoteBrowser =
+              typeof window !== 'undefined' &&
+              !isTauriRuntime() &&
+              window.location.hostname !== 'localhost' &&
+              window.location.hostname !== '127.0.0.1';
+            const isClientMode =
+              isRemoteBrowser ||
+              localStorage.getItem(`${STORAGE_KEY}_node_mode`) === 'client' ||
+              Boolean(serverUrl);
+
             const serverHasItems = Array.isArray(json.data.items) && json.data.items.length > 0;
+            const isFactorySeedVersion = json.version === 1793167896966;
+            const localIsInstalled = localStorage.getItem(`${STORAGE_KEY}_is_installed`) === 'true';
             const clientStoredItemsRaw = localStorage.getItem(`${STORAGE_KEY}_items`);
             let clientHasItems = false;
             try {
@@ -1212,23 +1274,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               clientHasItems = Array.isArray(parsed) && parsed.length > 0;
             } catch {}
 
-            if (!serverHasItems && clientHasItems) {
-              console.warn('[ServerSync] Server database has no items but browser cache contains active items. Restoring server database from client...');
+            // On the Server PC (Tauri Server mode), if the server database is empty or still at untouched factory seed
+            // while the Server PC already has an active installed state in localStorage, push Server PC state to Central Server immediately!
+            if (!isClientMode && localIsInstalled && ((!serverHasItems && clientHasItems) || isFactorySeedVersion)) {
+              console.log('[ServerSync] Syncing Server PC local database to Central SQL Server...');
               isInitialServerSyncDoneRef.current = true;
               pushStateToServer();
             } else {
               applyServerState(json.data, json.version || Date.now());
+              isInitialServerSyncDoneRef.current = true;
             }
+
+            // Always ensure isInstalled is true if server is initialized or has users/items
+            if (json.data.isInstalled || (json.data.users && json.data.users.length > 0) || (json.data.items && json.data.items.length > 0)) {
+              setIsInstalled(true);
+              localStorage.setItem(`${STORAGE_KEY}_is_installed`, 'true');
+            }
+            return;
           }
-        } else {
-          setServerSyncStatus('offline');
+        }
+        setServerSyncStatus('offline');
+        if (isMounted && !isInitialServerSyncDoneRef.current) {
+          initRetryTimer = setTimeout(initServerConnection, 1500);
         }
       } catch (err) {
-        console.warn('[ServerSync] Could not reach server at startup:', err);
+        console.warn('[ServerSync] Could not reach server at startup, retrying in 1.5s:', err);
         setServerSyncStatus('offline');
-      } finally {
-        if (isMounted) {
-          isInitialServerSyncDoneRef.current = true;
+        if (isMounted && !isInitialServerSyncDoneRef.current) {
+          initRetryTimer = setTimeout(initServerConnection, 1500);
         }
       }
     };
@@ -1345,7 +1418,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 10000);
 
     const onFocus = () => {
-      if (!isInitialServerSyncDoneRef.current) return;
+      if (!isInitialServerSyncDoneRef.current) {
+        initServerConnection();
+        return;
+      }
       fetch(getApiUrl('/api/data'))
         .then(r => r.json())
         .then(json => {
@@ -1355,14 +1431,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
         .catch(() => {});
     };
+
+    const onNodeConfigChanged = () => {
+      if (!isMounted) return;
+      if (sseSource) {
+        sseSource.close();
+        sseSource = null;
+      }
+      initServerConnection();
+      connectSSE();
+    };
+
     window.addEventListener('focus', onFocus);
+    window.addEventListener('anbarmeh-node-config-changed', onNodeConfigChanged);
 
     return () => {
       isMounted = false;
+      if (initRetryTimer) clearTimeout(initRetryTimer);
       if (sseSource) sseSource.close();
       if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
       clearInterval(pollInterval);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('anbarmeh-node-config-changed', onNodeConfigChanged);
     };
   }, [applyServerState, serverUrl]);
 

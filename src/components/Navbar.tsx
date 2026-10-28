@@ -92,10 +92,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
     const success = await forceSyncWithServer();
     setIsSyncingManually(false);
     if (success) {
-      setSyncSuccessMessage('همگام‌سازی با سرور لینوکس با موفقیت انجام شد!');
+      setSyncSuccessMessage('همگام‌سازی با سرور مرکزی با موفقیت انجام شد!');
       setTimeout(() => setSyncSuccessMessage(null), 3000);
     } else {
-      setSyncSuccessMessage('خطا در اتصال به سرور مرکزی لینوکس.');
+      setSyncSuccessMessage('خطا در اتصال به سرور مرکزی شبکه.');
       setTimeout(() => setSyncSuccessMessage(null), 3000);
     }
   };
@@ -163,31 +163,46 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
         {/* Left Section (in RTL): Action buttons & User profile */}
         <div className="flex items-center gap-1 sm:gap-2 md:gap-3 shrink-0">
           
-          {/* Central Linux Server Sync Status Badge & Dialog Trigger */}
-          <button
-            onClick={() => setShowServerModal(true)}
-            className={`flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer shadow-2xs active:scale-95 ${
-              serverSyncStatus === 'connected'
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100/80'
-                : serverSyncStatus === 'syncing'
-                ? 'bg-amber-50 text-amber-800 border-amber-200/80 hover:bg-amber-100/80'
-                : 'bg-rose-50 text-rose-800 border-rose-200/80 hover:bg-rose-100/80'
-            }`}
-            title="وضعیت اتصال به سرور مرکزی لینوکس"
-          >
-            <span className="relative flex h-2 w-2 shrink-0">
-              {serverSyncStatus === 'connected' && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              )}
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                serverSyncStatus === 'connected' ? 'bg-emerald-500' : serverSyncStatus === 'syncing' ? 'bg-amber-500' : 'bg-rose-500'
-              }`}></span>
-            </span>
-            <Server className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden md:inline text-[11px] font-bold">
-              {serverSyncStatus === 'connected' ? (isRealtimeLive ? 'سینک آنی و زنده' : 'سرور متصل') : serverSyncStatus === 'syncing' ? 'همگام‌سازی...' : 'آفلاین'}
-            </span>
-          </button>
+          {/* Central Server Sync Status Badge & Dialog Trigger */}
+          {(() => {
+            let isServerNode = true;
+            try {
+              isServerNode = localStorage.getItem('electro_stock_db_v1_node_mode') !== 'client';
+            } catch {}
+
+            return (
+              <button
+                onClick={() => setShowServerModal(true)}
+                className={`flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer shadow-2xs active:scale-95 ${
+                  isServerNode
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100/90'
+                    : serverSyncStatus === 'connected'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100/80'
+                    : serverSyncStatus === 'syncing'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200/80 hover:bg-amber-100/80'
+                    : 'bg-rose-50 text-rose-800 border-rose-200/80 hover:bg-rose-100/80'
+                }`}
+                title={isServerNode ? 'این سیستم به عنوان سرور مرکزی و میزبان دیتابیس در شبکه فعال است' : 'وضعیت اتصال به سرور مرکزی شبکه'}
+              >
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                    isServerNode || serverSyncStatus === 'connected' ? 'bg-emerald-500' : serverSyncStatus === 'syncing' ? 'bg-amber-500' : 'bg-rose-500'
+                  }`}></span>
+                </span>
+                <Server className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden md:inline text-[11px] font-bold">
+                  {isServerNode
+                    ? 'سرور مرکزی فعال (SQL Shared)'
+                    : serverSyncStatus === 'connected'
+                    ? (isRealtimeLive ? 'سینک آنی و زنده' : 'سرور متصل')
+                    : serverSyncStatus === 'syncing'
+                    ? 'همگام‌سازی...'
+                    : 'آفلاین'}
+                </span>
+              </button>
+            );
+          })()}
 
           {/* Quick Chat Shortcut (if unread messages on mobile) */}
           {unreadMessagesCount > 0 && activeTab !== 'chat' && (

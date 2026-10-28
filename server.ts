@@ -4,9 +4,12 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import zlib from 'zlib';
 import { execSync } from 'child_process';
-import { createServer as createViteServer } from 'vite';
+import { resolveCentralDataDir } from './src/server/dataDirResolver.ts';
 import { serverStore, getDefaultServerState } from './src/server/serverStore.ts';
+import { sqliteEngine } from './src/server/sqliteEngine.ts';
+import { windowsServiceManager } from './src/server/windowsServiceManager.ts';
 import { 
   dispatchBackupToMessengers, sendTelegramMessage, sendBaleMessage, generateBackupSummary 
 } from './src/server/messengerService.ts';
@@ -41,27 +44,55 @@ import {
   contractors, boms, purchaseRequests, stockCounts, operatorLogs, projects, backups 
 } from './src/db/schema.ts';
 
-const __dirname = process.cwd();
+const SERVER_ROOT_DIR = process.cwd();
 
 // ============================================================================
 //  WINDOWS / LINUX HARDWARE FINGERPRINT, LICENSE LOCK & LAN PORT CONFIGURATION
 // ============================================================================
 interface ServerNodeConfig {
-  configuredPort: number;
+  configuredPort: number | null;
   activatedLicenseKey: string | null;
   activatedAt: string | null;
   hardwareCode: string | null;
 }
 
-const NODE_CONFIG_DIR = path.join(process.cwd(), 'data');
+const NODE_CONFIG_DIR = resolveCentralDataDir();
 const NODE_CONFIG_FILE = path.join(NODE_CONFIG_DIR, 'server_node_config.json');
+const RUNNER_BAT_FILE = path.join(NODE_CONFIG_DIR, 'anbarmeh_server_runner.bat');
+
+function extractPortFromRunnerBat(): { port: number | null; mtimeMs: number } {
+  try {
+    if (fs.existsSync(RUNNER_BAT_FILE)) {
+      const stat = fs.statSync(RUNNER_BAT_FILE);
+      const content = fs.readFileSync(RUNNER_BAT_FILE, 'utf-8');
+      const match = content.match(/set\s+PORT=(\d+)/i);
+      if (match && match[1]) {
+        const p = Number(match[1]);
+        if (!isNaN(p) && p >= 1024 && p <= 65535) {
+          return { port: p, mtimeMs: stat.mtimeMs };
+        }
+      }
+    }
+  } catch {}
+  return { port: null, mtimeMs: 0 };
+}
 
 function loadServerNodeConfig(): ServerNodeConfig {
+  let result: ServerNodeConfig = {
+    configuredPort: null,
+    activatedLicenseKey: null,
+    activatedAt: null,
+    hardwareCode: null,
+  };
+  let cfgMtimeMs = 0;
+
   try {
     if (fs.existsSync(NODE_CONFIG_FILE)) {
+      cfgMtimeMs = fs.statSync(NODE_CONFIG_FILE).mtimeMs;
       const parsed = JSON.parse(fs.readFileSync(NODE_CONFIG_FILE, 'utf-8'));
-      return {
-        configuredPort: Number(parsed.configuredPort) || 3000,
+      const portNum = Number(parsed.configuredPort);
+      result = {
+        configuredPort: !isNaN(portNum) && portNum >= 1024 && portNum <= 65535 ? portNum : null,
         activatedLicenseKey: parsed.activatedLicenseKey || null,
         activatedAt: parsed.activatedAt || null,
         hardwareCode: parsed.hardwareCode || null,
@@ -70,12 +101,14 @@ function loadServerNodeConfig(): ServerNodeConfig {
   } catch (e) {
     console.warn('[NodeConfig] Failed to read server_node_config.json:', e);
   }
-  return {
-    configuredPort: 3000,
-    activatedLicenseKey: null,
-    activatedAt: null,
-    hardwareCode: null,
-  };
+
+  // Also check if anbarmeh_server_runner.bat was updated more recently by Tauri service installer
+  const runnerInfo = extractPortFromRunnerBat();
+  if (runnerInfo.port && (!result.configuredPort || runnerInfo.mtimeMs > cfgMtimeMs + 500)) {
+    result.configuredPort = runnerInfo.port;
+  }
+
+  return result;
 }
 
 function saveServerNodeConfig(cfg: Partial<ServerNodeConfig>): ServerNodeConfig {
@@ -172,21 +205,32 @@ function getServerHardwareFingerprint() {
   return cachedHardwareInfo;
 }
 
+let cachedLanIps: string[] | null = null;
+let lastLanIpScanTime = 0;
+
 function getDetectedLanIps(): string[] {
+  const now = Date.now();
+  if (cachedLanIps && cachedLanIps.length > 0 && now - lastLanIpScanTime < 15000) {
+    return cachedLanIps;
+  }
+
   const interfaces = os.networkInterfaces();
-  const lanIps: string[] = [];
+  const preferred192: string[] = [];
+  const preferred10: string[] = [];
+  const preferred172: string[] = [];
   const otherIps: string[] = [];
 
   for (const name of Object.keys(interfaces)) {
     const list = interfaces[name] || [];
     for (const iface of list) {
-      if (!iface.internal && iface.family === 'IPv4' && iface.address) {
-        if (
-          iface.address.startsWith('192.168.') ||
-          iface.address.startsWith('10.') ||
-          /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(iface.address)
-        ) {
-          lanIps.push(iface.address);
+      const isIPv4 = iface.family === 'IPv4' || (iface as any).family === 4;
+      if (!iface.internal && isIPv4 && iface.address && !iface.address.startsWith('169.254.')) {
+        if (iface.address.startsWith('192.168.')) {
+          preferred192.push(iface.address);
+        } else if (iface.address.startsWith('10.')) {
+          preferred10.push(iface.address);
+        } else if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(iface.address)) {
+          preferred172.push(iface.address);
         } else {
           otherIps.push(iface.address);
         }
@@ -194,11 +238,42 @@ function getDetectedLanIps(): string[] {
     }
   }
 
-  const combined = [...lanIps, ...otherIps];
-  return combined.length > 0 ? Array.from(new Set(combined)) : ['127.0.0.1'];
+  // Fallback on Windows: parse ipconfig if os.networkInterfaces returned nothing
+  if (preferred192.length === 0 && preferred10.length === 0 && os.platform() === 'win32') {
+    try {
+      const out = execSync('ipconfig', { encoding: 'utf-8', timeout: 1500, windowsHide: true });
+      for (const line of out.split(/\r?\n/)) {
+        if (line.toLowerCase().includes('ipv4') || line.toLowerCase().includes('ip address')) {
+          const idx = line.indexOf(':');
+          if (idx !== -1) {
+            const ip = line.slice(idx + 1).replace('(Preferred)', '').trim();
+            if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && !ip.startsWith('127.') && !ip.startsWith('169.254.')) {
+              if (ip.startsWith('192.168.')) preferred192.push(ip);
+              else if (ip.startsWith('10.')) preferred10.push(ip);
+              else otherIps.push(ip);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  const combined = Array.from(new Set([...preferred192, ...preferred10, ...preferred172, ...otherIps]));
+  cachedLanIps = combined.length > 0 ? combined : ['192.168.1.100'];
+  lastLanIpScanTime = now;
+  return cachedLanIps;
 }
 
-let customPortServer: http.Server | null = null;
+function isServerHardwareLicenseValid(): boolean {
+  const hw = getServerHardwareFingerprint();
+  const cfg = loadServerNodeConfig();
+  if (!cfg.activatedLicenseKey) return false;
+  if (verifyServerActivationCode(hw.hardwareCode, cfg.activatedLicenseKey)) return true;
+  if (cfg.hardwareCode && verifyServerActivationCode(cfg.hardwareCode, cfg.activatedLicenseKey)) return true;
+  return false;
+}
+
+const boundPortServers = new Map<number, http.Server>();
 let activeCustomPort: number | null = null;
 
 // Global error guard to prevent any unhandled crash in production
@@ -237,9 +312,15 @@ async function startServer() {
 
   const savedNodeConfig = loadServerNodeConfig();
 
-  // Robust Port Detection: Support PORT, APP_PORT, HTTP_PORT with sanitization
-  const rawPort = process.env.PORT || process.env.APP_PORT || process.env.HTTP_PORT || '3000';
-  const PORT = parseInt(String(rawPort).trim(), 10) || 3000;
+  // Robust Port Detection: Explicit process.env.PORT takes first precedence (e.g. from background supervisor or CLI),
+  // followed by user configuredPort in server_node_config.json, falling back cleanly to 3000
+  const envPort = parseInt(String(process.env.PORT || process.env.APP_PORT || process.env.HTTP_PORT || '').trim(), 10);
+  const cfgPort = savedNodeConfig.configuredPort && savedNodeConfig.configuredPort >= 1024 && savedNodeConfig.configuredPort <= 65535
+    ? savedNodeConfig.configuredPort
+    : null;
+  const PORT = (envPort && !isNaN(envPort) && envPort >= 1024 && envPort <= 65535)
+    ? envPort
+    : (cfgPort || 3000);
 
   // 2. Security: Comprehensive OWASP Enterprise HTTP Security Headers
   app.use((req, res, next) => {
@@ -309,11 +390,12 @@ async function startServer() {
     next();
   });
 
-  // CORS headers if accessed across subnets
+  // CORS headers if accessed across subnets & Private Network Access support for Tauri / LAN clients
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Client-Version, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
@@ -349,13 +431,17 @@ async function startServer() {
 
   // API Route: Health & Configuration (Secure, no credential leaks)
   app.get('/api/health', (req, res) => {
+    const cfg = loadServerNodeConfig();
+    const effectivePort = activeCustomPort || cfg.configuredPort || PORT;
     res.json({ 
       status: 'ok', 
       serverMode: 'centralized_multiuser',
-      port: PORT, 
+      port: effectivePort, 
       env: process.env.NODE_ENV || 'development',
       uptime: process.uptime(),
       hostname: os.hostname(),
+      lanIps: getDetectedLanIps(),
+      isLicenseActivated: isServerHardwareLicenseValid(),
       serverVersion: serverStore.getState().version,
       securityShieldsActive: true
     });
@@ -364,11 +450,14 @@ async function startServer() {
   // Secure /api/config: Public system parameters ONLY, NEVER exposing passwords or database credentials
   app.get('/api/config', (req, res) => {
     const state = serverStore.getState();
+    const cfg = loadServerNodeConfig();
     res.json({
-      port: PORT,
+      port: activeCustomPort || cfg.configuredPort || PORT,
       serverMode: 'centralized_multiuser',
       companyName: state.companyName || 'سامانه انبارمه',
       version: state.version,
+      isLicenseActivated: isServerHardwareLicenseValid(),
+      lanIps: getDetectedLanIps(),
       securityActive: true,
       hasPostgreSql: Boolean(process.env.DATABASE_URL),
       hasTelegramBackup: Boolean(state.messengerConfig?.telegram?.enabled),
@@ -538,6 +627,8 @@ async function startServer() {
       isLicenseActivated,
       shareUrls: ipList.map(ip => `http://${ip}:${effectivePort}`),
       storage: storageInfo,
+      dataFile: storageInfo.filePath,
+      dataSizeKb: storageInfo.sizeKb,
       counts: {
         items: state.items?.length || 0,
         itemGroups: state.itemGroups?.length || 0,
@@ -558,24 +649,17 @@ async function startServer() {
   //  TAURI / WINDOWS SERVER HARDWARE LOCK, LAN IP & PORT MANAGEMENT ENDPOINTS
   // =========================================================================
 
-  // Helper to dynamically bind custom LAN port without dropping main port 3000
-  const bindSecondaryPortIfNeeded = (targetPort: number): Promise<{ bound: boolean; error?: string }> => {
+  // Helper to dynamically bind custom LAN port without dropping main port 3000 or other active ports
+  const bindSecondaryPortIfNeeded = (targetPort: number, setAsActive: boolean = true): Promise<{ bound: boolean; error?: string }> => {
     return new Promise((resolve) => {
-      if (!targetPort || targetPort === PORT || targetPort < 1024 || targetPort > 65535) {
-        if (customPortServer) {
-          try { customPortServer.close(); } catch {}
-          customPortServer = null;
-          activeCustomPort = null;
+      if (!targetPort || targetPort < 1024 || targetPort > 65535) {
+        return resolve({ bound: false, error: 'شماره پورت نامعتبر است.' });
+      }
+      if (targetPort === PORT || boundPortServers.has(targetPort)) {
+        if (setAsActive) {
+          activeCustomPort = targetPort;
         }
         return resolve({ bound: true });
-      }
-      if (activeCustomPort === targetPort && customPortServer) {
-        return resolve({ bound: true });
-      }
-      if (customPortServer) {
-        try { customPortServer.close(); } catch {}
-        customPortServer = null;
-        activeCustomPort = null;
       }
 
       try {
@@ -585,8 +669,10 @@ async function startServer() {
           resolve({ bound: false, error: err?.code === 'EADDRINUSE' ? `پورت ${targetPort} در حال حاضر توسط برنامه دیگری اشغال شده است.` : err?.message });
         });
         srv.listen(targetPort, '0.0.0.0', () => {
-          customPortServer = srv;
-          activeCustomPort = targetPort;
+          boundPortServers.set(targetPort, srv);
+          if (setAsActive) {
+            activeCustomPort = targetPort;
+          }
           console.log(`[CustomPort] Central Server also listening on 0.0.0.0:${targetPort}`);
           resolve({ bound: true });
         });
@@ -596,22 +682,41 @@ async function startServer() {
     });
   };
 
-  // Start secondary port if previously configured
-  if (savedNodeConfig.configuredPort && savedNodeConfig.configuredPort !== PORT) {
-    bindSecondaryPortIfNeeded(savedNodeConfig.configuredPort).catch(() => {});
+  // Ensure both configuredPort (e.g. 5050) and standard port 3000 are concurrently active on 0.0.0.0
+  if (PORT !== 3000) {
+    activeCustomPort = PORT;
+    bindSecondaryPortIfNeeded(3000, false).catch(() => {});
+  } else if (savedNodeConfig.configuredPort && savedNodeConfig.configuredPort !== 3000) {
+    bindSecondaryPortIfNeeded(savedNodeConfig.configuredPort, true).catch(() => {});
   }
 
-  // 1. GET /api/system/node-info - Hardware ID, LAN IPs, License status & Port info
+  // Real-time Disk Config Watcher: if Tauri writes a new port to server_node_config.json or anbarmeh_server_runner.bat,
+  // bind that port on 0.0.0.0 automatically within 1.5 seconds!
+  setInterval(() => {
+    try {
+      const cfg = loadServerNodeConfig();
+      const target = cfg.configuredPort;
+      if (target && target >= 1024 && target <= 65535) {
+        if (target !== PORT && !boundPortServers.has(target)) {
+          console.log(`[AutoPortWatcher] Detected new configured port ${target} on disk. Binding 0.0.0.0:${target}...`);
+          bindSecondaryPortIfNeeded(target, true).catch(() => {});
+        } else if (activeCustomPort !== target) {
+          activeCustomPort = target;
+        }
+      }
+    } catch {}
+  }, 1500);
+
+  // 1. GET /api/system/node-info - Hardware ID, LAN IPs, License status, SQLite & Background Service info
   app.get('/api/system/node-info', (req, res) => {
     const hw = getServerHardwareFingerprint();
     const cfg = loadServerNodeConfig();
     const lanIps = getDetectedLanIps();
-    const primaryLanIp = lanIps[0] || '127.0.0.1';
+    const primaryLanIp = lanIps[0] || '192.168.1.100';
     const effectivePort = activeCustomPort || cfg.configuredPort || PORT;
-    const isLicenseActivated = Boolean(
-      cfg.activatedLicenseKey &&
-      verifyServerActivationCode(hw.hardwareCode, cfg.activatedLicenseKey)
-    );
+    const isLicenseActivated = isServerHardwareLicenseValid();
+    const sqlDiag = sqliteEngine.getDiagnostics(serverStore.getState());
+    const bgStatus = windowsServiceManager.getStatus(effectivePort);
 
     const maskedLicenseKey = cfg.activatedLicenseKey
       ? `${cfg.activatedLicenseKey.slice(0, 8)}-****-****-${cfg.activatedLicenseKey.slice(-4)}`
@@ -630,11 +735,27 @@ async function startServer() {
       isLicenseActivated,
       activatedAt: cfg.activatedAt,
       maskedLicenseKey,
-      firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${effectivePort})" dir=in action=allow protocol=TCP localport=${effectivePort}`
+      sqliteEngine: {
+        enabled: sqlDiag.active,
+        engine: sqlDiag.engineName,
+        sqliteFile: sqlDiag.dbFilePath,
+        sqliteSizeKb: sqlDiag.dbSizeKb,
+      },
+      backgroundService: {
+        isWindows: os.platform() === 'win32',
+        isServiceInstalled: bgStatus.isServiceRegistered,
+        isRunningInBackground: true,
+        configuredPort: effectivePort,
+        sqlitePath: sqlDiag.dbFilePath,
+        runnerScriptPath: bgStatus.runnerBatPath,
+        vbsLauncherPath: bgStatus.daemonVbsPath,
+      },
+      firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${effectivePort})" dir=in action=allow protocol=TCP localport=${effectivePort} profile=any`,
+      elevatedFirewallCommand: `powershell -Command "Start-Process cmd -ArgumentList '/c netsh advfirewall firewall add rule name=\\\"AnbarMeh Central Server (TCP ${effectivePort})\\\" dir=in action=allow protocol=TCP localport=${effectivePort} profile=any & netsh advfirewall firewall add rule name=\\\"AnbarMeh Central Server (TCP 3000)\\\" dir=in action=allow protocol=TCP localport=3000 profile=any' -Verb RunAs"`
     });
   });
 
-  // 2. POST /api/system/activate-license - Verify Seller Activation Code against Hardware ID
+  // 2. POST /api/system/activate-license - Verify Seller Activation Code against Hardware ID & install SQL background service
   app.post('/api/system/activate-license', (req, res) => {
     try {
       const { activationCode, clientHardwareCode } = req.body || {};
@@ -655,20 +776,25 @@ async function startServer() {
         });
       }
 
-      const normalizedLicense = generateActivationCodeForHardware(isValidForServer ? targetHwCode : clientHardwareCode);
+      const matchedHwCode = isValidForServer ? targetHwCode : clientHardwareCode;
+      const normalizedLicense = generateActivationCodeForHardware(matchedHwCode);
       const activatedAt = new Date().toLocaleString('fa-IR');
-      saveServerNodeConfig({
+      const cfg = saveServerNodeConfig({
         activatedLicenseKey: normalizedLicense,
         activatedAt,
-        hardwareCode: isValidForServer ? targetHwCode : clientHardwareCode,
+        hardwareCode: matchedHwCode,
       });
+
+      const effectivePort = activeCustomPort || cfg.configuredPort || PORT;
+      sqliteEngine.syncStateToSqlite(serverStore.getState());
+      windowsServiceManager.registerAndStartBackgroundService(effectivePort);
 
       res.json({
         success: true,
         isLicenseActivated: true,
-        hardwareCode: isValidForServer ? targetHwCode : clientHardwareCode,
+        hardwareCode: matchedHwCode,
         activatedAt,
-        message: 'لایسنس سرور مرکزی با موفقیت بر روی سخت‌افزار این سیستم فعال شد!'
+        message: 'قفل سخت‌افزاری تایید شد، دیتابیس سبک SQL و سرویس پس‌زمینه همیشه‌روشن ویندوز روی این سیستم فعال گردید!'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message || 'خطا در بررسی کد فعال‌سازی' });
@@ -695,61 +821,103 @@ async function startServer() {
       }
 
       saveServerNodeConfig({ configuredPort: rawNewPort });
+      windowsServiceManager.registerAndStartBackgroundService(rawNewPort);
+
       const lanIps = getDetectedLanIps();
-      const primaryLanIp = lanIps[0] || '127.0.0.1';
+      const customLanIp = typeof req.body?.customLanIp === 'string' && req.body.customLanIp.trim() ? req.body.customLanIp.trim() : null;
+      const primaryLanIp = customLanIp || lanIps[0] || '192.168.1.100';
+      const allIps = customLanIp && !lanIps.includes(customLanIp) ? [customLanIp, ...lanIps] : lanIps;
 
       res.json({
         success: true,
         configuredPort: rawNewPort,
         activePort: rawNewPort,
-        lanIps,
+        lanIps: allIps,
         primaryLanIp,
-        shareUrls: lanIps.map(ip => `http://${ip}:${rawNewPort}`),
+        shareUrls: allIps.map(ip => `http://${ip}:${rawNewPort}`),
         primaryShareUrl: `http://${primaryLanIp}:${rawNewPort}`,
-        firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${rawNewPort})" dir=in action=allow protocol=TCP localport=${rawNewPort}`,
-        message: `پورت سرور مرکزی با موفقیت روی ${rawNewPort} تنظیم و در شبکه محلی فعال شد.`
+        firewallCommand: `netsh advfirewall firewall add rule name="AnbarMeh Central Server (TCP ${rawNewPort})" dir=in action=allow protocol=TCP localport=${rawNewPort} profile=any`,
+        elevatedFirewallCommand: `powershell -Command "Start-Process cmd -ArgumentList '/c netsh advfirewall firewall add rule name=\\\"AnbarMeh Central Server (TCP ${rawNewPort})\\\" dir=in action=allow protocol=TCP localport=${rawNewPort} profile=any & netsh advfirewall firewall add rule name=\\\"AnbarMeh Central Server (TCP 3000)\\\" dir=in action=allow protocol=TCP localport=3000 profile=any' -Verb RunAs"`,
+        message: `پورت سرور مرکزی با موفقیت روی ${rawNewPort} تنظیم شد و آدرس http://${primaryLanIp}:${rawNewPort} در شبکه محلی فعال گردید.`
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message || 'خطا در تنظیم پورت سرور' });
     }
   });
 
-  // 4. POST /api/system/seller-keygen - Seller Utility to generate Activation Code from Customer Hardware Code
-  app.post('/api/system/seller-keygen', (req, res) => {
+  // 4. POST /api/system/background-service - Install / Verify Always-On Windows Background Service & SQLite Engine
+  app.post('/api/system/background-service', (req, res) => {
     try {
-      const { customerHardwareCode, sellerPin } = req.body || {};
-      // Master Seller PIN verification
-      const validPins = ['AMH-SELLER-2026', '14042026', 'SELLER2026', 'ADMIN123'];
-      if (!sellerPin || !validPins.includes(String(sellerPin).trim().toUpperCase())) {
-        return res.status(403).json({
-          success: false,
-          error: 'رمز امنیتی فروشنده (Seller PIN) نامعتبر است.'
-        });
-      }
+      const cfg = loadServerNodeConfig();
+      const effectivePort = Number(req.body?.port) || activeCustomPort || cfg.configuredPort || PORT;
+      sqliteEngine.syncStateToSqlite(serverStore.getState());
+      const result = windowsServiceManager.registerAndStartBackgroundService(effectivePort);
+      const sqlDiag = sqliteEngine.getDiagnostics(serverStore.getState());
 
-      if (!customerHardwareCode || String(customerHardwareCode).trim().length < 6) {
-        return res.status(400).json({
-          success: false,
-          error: 'لطفاً کد سخت‌افزاری مشتری (مثال: AMH-XXXX-XXXX-XXXX) را به درستی وارد نمایید.'
-        });
-      }
+      res.json({
+        success: true,
+        message: result.message,
+        backgroundService: {
+          isWindows: os.platform() === 'win32',
+          isServiceInstalled: result.status.isServiceRegistered,
+          isRunningInBackground: true,
+          configuredPort: effectivePort,
+          sqlitePath: sqlDiag.dbFilePath,
+          runnerScriptPath: result.status.runnerBatPath,
+          vbsLauncherPath: result.status.daemonVbsPath,
+        },
+        sqliteEngine: {
+          enabled: sqlDiag.active,
+          engine: sqlDiag.engineName,
+          sqliteFile: sqlDiag.dbFilePath,
+          sqliteSizeKb: sqlDiag.dbSizeKb,
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'خطا در ثبت سرویس پس‌زمینه ویندوز' });
+    }
+  });
 
-      const activationCode = generateActivationCodeForHardware(String(customerHardwareCode));
-      if (!activationCode) {
-        return res.status(400).json({
-          success: false,
-          error: 'فرمت کد سخت‌افزاری وارد شده نامعتبر است.'
-        });
+  // 5. POST /api/system/open-firewall - Open Windows Firewall for configured port using elevated PowerShell
+  app.post('/api/system/open-firewall', (req, res) => {
+    try {
+      const cfg = loadServerNodeConfig();
+      const effectivePort = Number(req.body?.port) || activeCustomPort || cfg.configuredPort || PORT;
+      const isWin = os.platform() === 'win32';
+      
+      const script = [
+        `Remove-NetFirewallRule -DisplayName 'AnbarMeh-TCP-${effectivePort}' -ErrorAction SilentlyContinue`,
+        `New-NetFirewallRule -DisplayName 'AnbarMeh-TCP-${effectivePort}' -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${effectivePort} -Profile Any -Enabled True`,
+        `Remove-NetFirewallRule -DisplayName 'AnbarMeh-TCP-3000' -ErrorAction SilentlyContinue`,
+        `New-NetFirewallRule -DisplayName 'AnbarMeh-TCP-3000' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3000 -Profile Any -Enabled True`,
+        `netsh advfirewall firewall delete rule name=AnbarMeh-TCP-${effectivePort} 2>$null`,
+        `netsh advfirewall firewall add rule name=AnbarMeh-TCP-${effectivePort} dir=in action=allow protocol=TCP localport=${effectivePort} profile=any 2>$null`,
+        `netsh advfirewall firewall delete rule name=AnbarMeh-TCP-3000 2>$null`,
+        `netsh advfirewall firewall add rule name=AnbarMeh-TCP-3000 dir=in action=allow protocol=TCP localport=3000 profile=any 2>$null`,
+        `netsh advfirewall firewall add rule name=AnbarMeh-Node dir=in action=allow program="node.exe" profile=any 2>$null`,
+        `Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -eq 'Public' } | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue`
+      ].join('; ');
+
+      const b64 = Buffer.from(script, 'utf16le').toString('base64');
+      const launcherCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -EncodedCommand ${b64}' -Verb RunAs"`;
+
+      if (isWin) {
+        try {
+          execSync(launcherCmd, { timeout: 4500, windowsHide: true });
+        } catch (e) {
+          console.warn('[OpenFirewall] Elevation trigger notice:', e);
+        }
       }
 
       res.json({
         success: true,
-        customerHardwareCode: String(customerHardwareCode).trim().toUpperCase(),
-        activationCode,
-        message: 'کد فعال‌سازی اختصاصی سرور با موفقیت تولید شد.'
+        port: effectivePort,
+        powershellCommand: launcherCmd,
+        manualCommand: `netsh advfirewall firewall add rule name=AnbarMeh-TCP-${effectivePort} dir=in action=allow protocol=TCP localport=${effectivePort} profile=any`,
+        message: `دستور بازگشایی پورت ${effectivePort} در فایروال ویندوز صادر شد. پنجره تایید UAC ویندوز (Yes/No) را تایید نمایید.`
       });
     } catch (err: any) {
-      res.status(500).json({ success: false, error: err?.message || 'خطا در تولید کد فعال‌سازی' });
+      res.status(500).json({ success: false, error: err?.message || 'خطا در صدور دستور فایروال' });
     }
   });
 
@@ -1679,35 +1847,77 @@ async function startServer() {
   }, AUTO_CHECK_INTERVAL_MS);
 
   // Mount Static Assets or Vite Middleware
-  // Auto-detect production mode: check if running bundled file, NODE_ENV=production, or dist/index.html exists
+  // Auto-detect production mode: check if running bundled file, NODE_ENV=production, dist/index.html on disk, or embedded bundle in RAM
   const isBundled = typeof __filename !== 'undefined' && __filename.endsWith('.cjs');
+  const scriptDir = typeof __filename !== 'undefined' ? path.dirname(__filename) : SERVER_ROOT_DIR;
   const possibleDistDirs = [
-    path.resolve(process.cwd(), 'dist'),
-    path.resolve(__dirname, 'dist'),
-    path.resolve(__dirname),
+    path.resolve(SERVER_ROOT_DIR, 'dist'),
+    path.resolve(scriptDir),
+    path.resolve(scriptDir, 'dist'),
+    path.resolve(scriptDir, '..', 'dist'),
+    path.resolve(scriptDir, '..', '..', '..', 'dist'),
+    path.resolve(scriptDir, '..', '..', '..', '..', 'dist'),
+    path.resolve(NODE_CONFIG_DIR, '..', 'dist'),
   ];
   const activeDistPath = possibleDistDirs.find(d => fs.existsSync(path.join(d, 'index.html'))) || possibleDistDirs[0];
   const hasStaticDist = fs.existsSync(path.join(activeDistPath, 'index.html'));
+  const embeddedStaticMap: Record<string, { mime: string; gz: string; size: number }> | undefined =
+    (global as any).__ANBARMEH_EMBEDDED_STATIC__;
+  const hasEmbeddedStatic = Boolean(embeddedStaticMap && embeddedStaticMap['/index.html']);
   const isExplicitProduction = process.env.NODE_ENV === 'production';
-  const shouldServeStatic = isExplicitProduction || isBundled || hasStaticDist;
+  const shouldServeStatic = isExplicitProduction || isBundled || hasStaticDist || hasEmbeddedStatic;
 
-  if (shouldServeStatic && hasStaticDist) {
-    console.log(`[Production] Serving static files from: ${activeDistPath}`);
-    app.use(express.static(activeDistPath, { maxAge: '1d', index: false }));
+  const serveEmbeddedAsset = (req: express.Request, res: express.Response, assetKey: string): boolean => {
+    if (!embeddedStaticMap || !embeddedStaticMap[assetKey]) return false;
+    const entry = embeddedStaticMap[assetKey];
+    res.setHeader('Content-Type', entry.mime);
+    if (assetKey.startsWith('/assets/')) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+    const gzBuffer = Buffer.from(entry.gz, 'base64');
+    const acceptEncoding = String(req.headers['accept-encoding'] || '');
+    if (acceptEncoding.includes('gzip')) {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.send(gzBuffer);
+    } else {
+      res.send(zlib.gunzipSync(gzBuffer));
+    }
+    return true;
+  };
+
+  if (shouldServeStatic && (hasStaticDist || hasEmbeddedStatic)) {
+    if (hasStaticDist) {
+      console.log(`[Production] Serving static files from disk: ${activeDistPath}`);
+      app.use(express.static(activeDistPath, { maxAge: '1d', index: 'index.html' }));
+    }
+    if (hasEmbeddedStatic) {
+      console.log(`[Production] Embedded Web UI active in memory (${Object.keys(embeddedStaticMap!).length} files ready for LAN clients)`);
+      app.use((req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+        if (req.path.startsWith('/api/')) return next();
+        const lookupKey = req.path === '/' ? '/index.html' : req.path;
+        if (serveEmbeddedAsset(req, res, lookupKey)) return;
+        next();
+      });
+    }
     app.get('*', (req, res, next) => {
-      // Don't intercept API routes
       if (req.path.startsWith('/api/')) return next();
       const indexPath = path.join(activeDistPath, 'index.html');
       if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        res.status(404).send('Application build not found. Please run: npm run build');
+        return res.sendFile(indexPath);
       }
+      if (serveEmbeddedAsset(req, res, '/index.html')) {
+        return;
+      }
+      res.status(404).send('Application build not found. Please run: npm run build');
     });
-  } else {
-    // Development mode with Vite middleware
+  } else if (!isBundled && !isExplicitProduction) {
+    // Development mode with Vite middleware (loaded dynamically so bundled server.cjs never requires vite)
     try {
       console.log(`[Development] Initializing Vite middleware...`);
+      const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: 'spa',
@@ -1720,6 +1930,12 @@ async function startServer() {
         app.get('*', (req, res) => res.sendFile(path.join(activeDistPath, 'index.html')));
       }
     }
+  } else {
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      if (serveEmbeddedAsset(req, res, '/index.html')) return;
+      res.status(200).send('AnbarMeh Central SQL Server is active.');
+    });
   }
 
   // Global Express Error Handler
@@ -1777,11 +1993,12 @@ async function startServer() {
 
   serverInstance.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`[CRITICAL] Port ${PORT} is already in use by another process!`);
-      console.error(`Please either stop the existing process or set a different PORT:`);
-      console.error(`  fuser -k ${PORT}/tcp   (to kill the existing process)`);
-      console.error(`  PORT=${PORT + 1} npm start (to run on another port)`);
-      process.exit(1);
+      if (boundPortServers.size > 0) {
+        console.warn(`[Server] Port ${PORT} is already in use, but server is actively listening on secondary port(s): ${Array.from(boundPortServers.keys()).join(', ')}`);
+      } else {
+        console.error(`[CRITICAL] Port ${PORT} is already in use by another process!`);
+        process.exit(1);
+      }
     } else {
       console.error('[Server Fatal Error]:', err);
       process.exit(1);
