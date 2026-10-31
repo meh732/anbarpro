@@ -1711,38 +1711,21 @@ async function startServer() {
     }
   });
 
-  // Automatic SQL Backup Creation
+  // Create & Persist Official Backup File on Server Disk (Linux & Windows)
   app.post('/api/backups/create', async (req, res) => {
     try {
-      const { backupType = 'MANUAL' } = req.body;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupName = `backup_${backupType}_${timestamp}.json`;
-      const state = serverStore.getState();
+      const { backupType = 'Manual', payload } = req.body || {};
+      const normalizedType: 'Manual' | 'Auto' =
+        String(backupType).toLowerCase() === 'auto' ? 'Auto' : 'Manual';
 
-      const dumpPayload = {
-        meta: { timestamp, backupName, backupType, version: state.version },
-        data: state
-      };
-
-      const record = {
-        id: `bk-${Date.now()}`,
-        timestamp: new Date().toLocaleString('fa-IR'),
-        fileName: backupName,
-        sizeKb: Math.round(JSON.stringify(dumpPayload).length / 1024),
-        type: backupType as 'Manual' | 'Auto'
-      };
-
-      const updatedHistory = [record, ...(state.backupHistory || [])];
-      serverStore.updateState({ 
-        lastBackupTimestamp: record.timestamp,
-        backupHistory: updatedHistory 
-      });
+      const { record, filePath } = serverStore.createOfficialBackupFile(normalizedType, payload);
 
       res.json({
         success: true,
-        message: 'بکاپ با موفقیت در سرور ثبت و ایجاد گردید',
+        message: 'فایل پشتیبان با موفقیت در دیسک سرور ذخیره و ثبت گردید.',
         backup: record,
-        snapshot: dumpPayload
+        filePath,
+        backupsDir: serverStore.getBackupsDir(),
       });
     } catch (err: any) {
       res.status(500).json({ error: 'خطا در ایجاد فایل بکاپ', details: err.message });
@@ -1757,6 +1740,89 @@ async function startServer() {
     }
   });
 
+  app.get('/api/backups/list', (req, res) => {
+    try {
+      res.json({
+        success: true,
+        backupsDir: serverStore.getBackupsDir(),
+        history: serverStore.getState().backupHistory || [],
+        diskFiles: serverStore.listDiskBackups(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Direct HTTP attachment download endpoint (works seamlessly in Linux browsers, Windows Tauri WebView2, and Mobile)
+  app.get('/api/backups/download-file', (req, res) => {
+    try {
+      const requestedFile = req.query.fileName ? path.basename(String(req.query.fileName)) : '';
+      if (requestedFile) {
+        const targetPath = path.join(serverStore.getBackupsDir(), requestedFile);
+        if (fs.existsSync(targetPath)) {
+          res.setHeader('Content-Disposition', `attachment; filename="${requestedFile}"`);
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          return res.sendFile(targetPath);
+        }
+      }
+
+      const type: 'Manual' | 'Auto' =
+        String(req.query.type || 'Manual').toLowerCase() === 'auto' ? 'Auto' : 'Manual';
+      const includeChats = req.query.includeChats !== 'false';
+      const includeAttachments = req.query.includeAttachments !== 'false';
+
+      const state = serverStore.getState();
+      let exportedMessages = state.messages || [];
+      if (!includeChats) {
+        exportedMessages = [];
+      } else if (!includeAttachments) {
+        exportedMessages = exportedMessages.map((msg: any) => ({
+          ...msg,
+          attachments: msg.attachments ? msg.attachments.filter((att: any) => att.type !== 'file') : [],
+        }));
+      }
+
+      const customPayload = {
+        ...state,
+        exportedAt: new Date().toISOString(),
+        messages: exportedMessages,
+        channels: includeChats ? state.channels || [] : [],
+      };
+
+      const { record, jsonContent } = serverStore.createOfficialBackupFile(type, customPayload);
+      res.setHeader('Content-Disposition', `attachment; filename="${record.fileName}"`);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.send(jsonContent);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Restore directly from a saved backup file in data/backups/
+  app.post('/api/backups/restore-disk', (req, res) => {
+    try {
+      const { fileName } = req.body || {};
+      if (!fileName) {
+        return res.status(400).json({ success: false, error: 'نام فایل پشتیبان مشخص نشده است.' });
+      }
+      const restored = serverStore.restoreFromDiskBackup(String(fileName));
+      if (!restored) {
+        return res.status(404).json({
+          success: false,
+          error: 'فایل پشتیبان موردنظر در پوشه data/backups سرور یافت نشد.',
+        });
+      }
+      return res.json({
+        success: true,
+        message: `پایگاه داده با موفقیت از فایل «${fileName}» بازیابی و همگام‌سازی شد.`,
+        version: restored.version,
+        data: restored,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Serve Installer Scripts Download
   app.get('/api/installer/script', (req, res) => {
     const batPath = path.join(__dirname, 'setup.bat');
@@ -1768,12 +1834,27 @@ async function startServer() {
   });
 
   // =========================================================================
-  //  AUTOMATIC BACKGROUND MESSENGER BACKUP SCHEDULER (Telegram & Bale)
+  //  24/7 AUTOMATIC SERVER DISK & MESSENGER BACKUP SCHEDULER (Linux & Windows)
   // =========================================================================
-  const AUTO_CHECK_INTERVAL_MS = 15 * 60 * 1000; // Check every 15 minutes
+  let lastServerDiskAutoBackupMs = Date.now();
+  const AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
   setInterval(async () => {
     try {
       const state = serverStore.getState();
+      const now = Date.now();
+
+      // 1. Server-side Scheduled Local Disk Auto-Backup (runs even if all browser/Tauri windows are closed)
+      const autoHours = Number(state.autoBackupIntervalHours || 0);
+      if (autoHours > 0) {
+        const autoIntervalMs = autoHours * 60 * 60 * 1000;
+        if (now - lastServerDiskAutoBackupMs >= autoIntervalMs) {
+          lastServerDiskAutoBackupMs = now;
+          const { record, filePath } = serverStore.createOfficialBackupFile('Auto');
+          console.log(`[AutoBackup-Disk] Created scheduled ${autoHours}h disk backup: ${record.fileName} at ${filePath}`);
+        }
+      }
+
+      // 2. Messenger Offsite Auto-Backup (Telegram & Bale)
       const config = state.messengerConfig;
       if (!config) return;
 
@@ -1784,7 +1865,6 @@ async function startServer() {
 
       const intervalHours = config.autoSendIntervalHours || 24;
       const intervalMs = intervalHours * 60 * 60 * 1000;
-      const now = Date.now();
 
       let shouldSendTelegram = false;
       let shouldSendBale = false;
@@ -1842,7 +1922,7 @@ async function startServer() {
         console.log(`[AutoBackup] Completed messenger backup dispatch.`);
       }
     } catch (schedulerErr) {
-      console.error('[AutoBackup] Error in automated messenger backup loop:', schedulerErr);
+      console.error('[AutoBackup] Error in automated backup loop:', schedulerErr);
     }
   }, AUTO_CHECK_INTERVAL_MS);
 

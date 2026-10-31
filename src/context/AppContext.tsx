@@ -4456,17 +4456,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const jsonContent = JSON.stringify(fullDb, null, 2);
-    const sizeKb = Math.round(jsonContent.length / 1024);
-    const nowIso = new Date().toISOString();
-    const fileName = `AnbarPro_Backup_${type}_${nowIso.substring(0, 10)}.json`;
+    const sizeKb = Math.max(1, Math.round(jsonContent.length / 1024));
+    const nowIso = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+    const fileName = `AnbarMeh_Backup_${type}_${nowIso}.json`;
 
-    const blob = new Blob([jsonContent], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
+    // 1. Always persist official backup copy on the Central Server disk (Linux & Windows data/backups/)
+    fetch(getApiUrl('/api/backups/create'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        backupType: type,
+        payload: fullDb,
+      }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.success && res?.backup?.fileName && isTauriRuntime() && type === 'Manual') {
+          // In Windows Tauri WebView2, trigger native HTTP attachment download from server
+          const dlUrl = getApiUrl(`/api/backups/download-file?fileName=${encodeURIComponent(res.backup.fileName)}`);
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = dlUrl;
+          document.body.appendChild(iframe);
+          setTimeout(() => {
+            try {
+              document.body.removeChild(iframe);
+            } catch {}
+          }, 8000);
+        }
+      })
+      .catch(() => {});
+
+    // 2. In standard browser (or manual trigger), also trigger immediate Blob download
+    if (!isTauriRuntime() || type === 'Manual') {
+      try {
+        const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      } catch {}
+    }
 
     // Save backup metadata & timestamp
     const nowStr = new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
@@ -4482,7 +4516,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setBackupHistory(prev => {
-      const updated = [newHistoryItem, ...prev].slice(0, 20);
+      const updated = [newHistoryItem, ...prev.filter(h => h.fileName !== fileName)].slice(0, 50);
       localStorage.setItem(`${STORAGE_KEY}_backupHistory`, JSON.stringify(updated));
       return updated;
     });
@@ -4491,7 +4525,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type === 'Auto' ? 'پشتیبان‌گیری خودکار زمان‌بندی شده' : 'پشتیبان‌گیری دستی از داده‌ها', 
       'System', 
       'JSON', 
-      `تهیه فایل پشتیبان کامل (${sizeKb} KB) - شامل گفتگوها: ${includeChats ? 'بله' : 'خیر'}، پیوست‌ها: ${includeAttachments ? 'بله' : 'خیر'}`
+      `تهیه فایل پشتیبان کامل (${sizeKb} KB) در دیسک سرور و دانلود - شامل گفتگوها: ${includeChats ? 'بله' : 'خیر'}، پیوست‌ها: ${includeAttachments ? 'بله' : 'خیر'}`
     );
   };
 
@@ -4511,45 +4545,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const parsed = JSON.parse(jsonStr);
       const data = parsed.data || parsed;
-      if (data && (data.items || data.warehouses || data.inventory || data.users)) {
-        if (data.items) setItems(data.items);
-        if (data.itemGroups) setItemGroups(data.itemGroups);
-        if (data.warehouses) setWarehouses(data.warehouses);
-        if (data.inventory) setInventory(data.inventory);
-        if (data.boms) setBoms(data.boms);
-        if (data.projects) setProjects(data.projects);
-        if (data.operators) setOperators(data.operators);
-        if (data.contractors) setContractors(data.contractors);
-        if (data.contractorContracts) setContractorContracts(data.contractorContracts);
-        if (data.contractorTransactions) setContractorTransactions(data.contractorTransactions);
-        if (data.stockCountings) setStockCountings(data.stockCountings);
-        if (data.stockInDocs) setStockInDocs(data.stockInDocs);
-        if (data.stockOutDocs) setStockOutDocs(data.stockOutDocs);
-        if (data.transfers) setTransfers(data.transfers);
-        if (data.purchaseRequests) setPurchaseRequests(data.purchaseRequests);
-        if (data.productionLogs) setProductionLogs(data.productionLogs);
-        if (data.materialHandovers) setMaterialHandovers(data.materialHandovers);
-        if (data.notifications) setNotifications(data.notifications);
-        if (data.messages) setMessages(data.messages);
-        if (data.channels) setChannels(data.channels);
-        if (data.users && Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
+      if (data && typeof data === 'object' && (data.items !== undefined || data.warehouses !== undefined || data.inventory !== undefined || data.users !== undefined)) {
+        isRemoteUpdatingRef.current = true;
+        if (Array.isArray(data.items)) setItems(data.items);
+        if (Array.isArray(data.itemGroups)) setItemGroups(data.itemGroups);
+        if (Array.isArray(data.warehouses)) setWarehouses(data.warehouses);
+        if (Array.isArray(data.inventory)) setInventory(data.inventory);
+        if (Array.isArray(data.boms)) setBoms(data.boms);
+        if (Array.isArray(data.projects)) setProjects(data.projects);
+        if (Array.isArray(data.operators)) setOperators(data.operators);
+        if (Array.isArray(data.contractors)) setContractors(data.contractors);
+        if (Array.isArray(data.contractorContracts)) setContractorContracts(data.contractorContracts);
+        if (Array.isArray(data.contractorTransactions)) setContractorTransactions(data.contractorTransactions);
+        if (Array.isArray(data.stockCountings)) setStockCountings(data.stockCountings);
+        if (Array.isArray(data.stockInDocs)) setStockInDocs(data.stockInDocs);
+        if (Array.isArray(data.stockOutDocs)) setStockOutDocs(data.stockOutDocs);
+        if (Array.isArray(data.transfers)) setTransfers(data.transfers);
+        if (Array.isArray(data.purchaseRequests)) setPurchaseRequests(data.purchaseRequests);
+        if (Array.isArray(data.productionLogs)) setProductionLogs(data.productionLogs);
+        if (Array.isArray(data.materialHandovers)) setMaterialHandovers(data.materialHandovers);
+        if (Array.isArray(data.notifications)) setNotifications(data.notifications);
+        if (Array.isArray(data.messages)) setMessages(data.messages);
+        if (Array.isArray(data.channels)) setChannels(data.channels);
+        if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
         if (data.companyName) setCompanyName(data.companyName);
         if (data.messengerConfig) setMessengerConfigState(data.messengerConfig);
-        if (data.traceabilityEvents) setTraceabilityEvents(data.traceabilityEvents);
-        if (data.auditLogs) setAuditLogs(data.auditLogs);
+        if (Array.isArray(data.traceabilityEvents)) setTraceabilityEvents(data.traceabilityEvents);
+        if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
         addAudit('بازیابی داده‌ها از فایل پشتیبان', 'System', 'JSON', 'بارگذاری کامل داده‌ها، کاربران، گفتگوها و ساختار انبار از فایل پشتیبان');
 
-        // Also push imported backup to Linux server
+        // Push imported backup to Central Server (Linux / Windows SQLite & JSON)
         fetch(getApiUrl('/api/import-data'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jsonStr })
-        }).catch(() => {});
+          body: JSON.stringify({ data })
+        })
+          .then(r => r.json())
+          .then(res => {
+            if (res?.version) {
+              serverVersionRef.current = res.version;
+              setServerVersion(res.version);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            setTimeout(() => {
+              isRemoteUpdatingRef.current = false;
+            }, 400);
+          });
 
         return true;
       }
       return false;
     } catch {
+      isRemoteUpdatingRef.current = false;
       return false;
     }
   };

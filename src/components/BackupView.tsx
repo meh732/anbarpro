@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Database, Download, Upload, Clock, ShieldCheck, CheckCircle2, 
@@ -17,7 +17,7 @@ export const BackupView: React.FC = () => {
     autoBackupIntervalHours, setAutoBackupIntervalHours, 
     lastBackupTimestamp, backupHistory, t, language,
     serverSyncStatus, lastSyncTime, serverVersion, serverInfo, forceSyncWithServer,
-    serverUrl, setServerUrl, testServerConnection,
+    serverUrl, setServerUrl, testServerConnection, getApiUrl,
     resetToEmptyDatabase, loadDemoData, resetToSetupWizard,
     items, warehouses, projects, boms, currentUser
   } = useApp();
@@ -51,8 +51,78 @@ export const BackupView: React.FC = () => {
 
   const [includeChats, setIncludeChats] = useState(true);
   const [includeAttachments, setIncludeAttachments] = useState(true);
+  const [serverBackupsDir, setServerBackupsDir] = useState<string>('data/backups');
+  const [diskBackups, setDiskBackups] = useState<Array<{
+    fileName: string;
+    filePath: string;
+    sizeKb: number;
+    timestamp: string;
+    type: 'Manual' | 'Auto';
+  }>>([]);
+  const [restoringFileName, setRestoringFileName] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchServerDiskBackups = useCallback(async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/backups/list'));
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.backupsDir) setServerBackupsDir(data.backupsDir);
+        if (Array.isArray(data?.diskFiles)) setDiskBackups(data.diskFiles);
+      }
+    } catch {}
+  }, [getApiUrl]);
+
+  useEffect(() => {
+    fetchServerDiskBackups();
+  }, [fetchServerDiskBackups, backupHistory]);
+
+  const handleDownloadDiskBackup = (fileName: string) => {
+    const dlUrl = getApiUrl(`/api/backups/download-file?fileName=${encodeURIComponent(fileName)}`);
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = dlUrl;
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      try {
+        document.body.removeChild(iframe);
+      } catch {}
+    }, 8000);
+  };
+
+  const handleRestoreDiskBackup = async (fileName: string) => {
+    setRestoringFileName(fileName);
+    setActionAlert(null);
+    try {
+      const res = await fetch(getApiUrl('/api/backups/restore-disk'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName }),
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.success) {
+        await forceSyncWithServer();
+        await fetchServerDiskBackups();
+        setActionAlert({
+          type: 'success',
+          text: json.message || `پایگاه داده با موفقیت از فایل «${fileName}» بازیابی شد.`,
+        });
+      } else {
+        setActionAlert({
+          type: 'error',
+          text: json?.error || 'خطا در بازیابی فایل پشتیبان از دیسک سرور.',
+        });
+      }
+    } catch {
+      setActionAlert({
+        type: 'error',
+        text: 'خطا در برقراری ارتباط با سرور جهت بازیابی پشتیبان.',
+      });
+    } finally {
+      setRestoringFileName(null);
+    }
+  };
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -1062,11 +1132,14 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
               </div>
 
               <button
-                onClick={() => exportDatabaseJSON('Manual', { includeChats, includeAttachments })}
+                onClick={() => {
+                  exportDatabaseJSON('Manual', { includeChats, includeAttachments });
+                  setTimeout(fetchServerDiskBackups, 600);
+                }}
                 className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-2xs cursor-pointer"
               >
                 <Download className="w-4 h-4" />
-                {t('downloadBackup', 'دانلود فایل پشتیبان (JSON)')}
+                {t('downloadBackup', 'دانلود فایل پشتیبان (JSON) + ذخیره در دیسک سرور')}
               </button>
             </div>
 
@@ -1184,49 +1257,104 @@ echo "SUCCESS! Service is LIVE at http://\${DOMAIN} or https://\${DOMAIN}"
 
           {/* Backup History Table */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <History className="w-4 h-4 text-indigo-600" />
-              {t('backupHistory', 'تاریخچه نسخه‌های پشتیبان')}
-            </h3>
-
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-right text-xs text-slate-700">
-                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="whitespace-nowrap p-3">تاریخ و زمان</th>
-                    <th className="whitespace-nowrap p-3">نام فایل</th>
-                    <th className="whitespace-nowrap p-3">نوع پشتیبان‌گیری</th>
-                    <th className="whitespace-nowrap p-3">حجم فایل</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {backupHistory.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="p-8 text-center text-slate-400">
-                        تاکنون هیچ پشتیبان‌گیری ثبتی انجام نشده است.
-                      </td>
-                    </tr>
-                  ) : (
-                    backupHistory.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="whitespace-nowrap p-3 font-mono text-slate-600">{item.timestamp}</td>
-                        <td className="whitespace-nowrap p-3 font-mono text-indigo-600 font-medium">{item.fileName}</td>
-                        <td className="whitespace-nowrap p-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                            item.type === 'Auto' 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                              : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                          }`}>
-                            {item.type === 'Auto' ? 'خودکار' : 'دستی'}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap p-3 font-mono text-slate-700">{item.sizeKb} KB</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <History className="w-4 h-4 text-indigo-600" />
+                  {t('backupHistory', 'تاریخچه نسخه‌های پشتیبان (ذخیره‌شده در دیسک سرور مرکزی)')}
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-mono dir-ltr text-right">
+                  مسیر پوشه بکاپ روی سرور: <strong className="text-indigo-700">{serverBackupsDir}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fetchServerDiskBackups}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>بروزرسانی لیست دیسک</span>
+              </button>
             </div>
+
+            {(() => {
+              const mergedList = diskBackups.length > 0
+                ? diskBackups.map((d, idx) => ({
+                    id: `disk-${idx}-${d.fileName}`,
+                    timestamp: d.timestamp,
+                    fileName: d.fileName,
+                    sizeKb: d.sizeKb,
+                    type: d.type,
+                    onDisk: true,
+                  }))
+                : backupHistory.map((b) => ({
+                    ...b,
+                    onDisk: false,
+                  }));
+
+              return (
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-right text-xs text-slate-700">
+                    <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="whitespace-nowrap p-3">تاریخ و زمان</th>
+                        <th className="whitespace-nowrap p-3">نام فایل در سرور</th>
+                        <th className="whitespace-nowrap p-3">نوع پشتیبان‌گیری</th>
+                        <th className="whitespace-nowrap p-3">حجم فایل</th>
+                        <th className="whitespace-nowrap p-3 text-left">عملیات (دانلود / بازیابی)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {mergedList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-slate-400">
+                            تاکنون هیچ پشتیبان‌گیری ثبتی انجام نشده است.
+                          </td>
+                        </tr>
+                      ) : (
+                        mergedList.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="whitespace-nowrap p-3 font-mono text-slate-600">{item.timestamp}</td>
+                            <td className="whitespace-nowrap p-3 font-mono text-indigo-600 font-medium dir-ltr text-right">{item.fileName}</td>
+                            <td className="whitespace-nowrap p-3">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                item.type === 'Auto' 
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                  : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              }`}>
+                                {item.type === 'Auto' ? 'خودکار (سرور)' : 'دستی'}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap p-3 font-mono text-slate-700">{item.sizeKb} KB</td>
+                            <td className="whitespace-nowrap p-3 text-left">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadDiskBackup(item.fileName)}
+                                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>دانلود</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={restoringFileName === item.fileName}
+                                  onClick={() => handleRestoreDiskBackup(item.fileName)}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                                >
+                                  <RotateCcw className={`w-3.5 h-3.5 ${restoringFileName === item.fileName ? 'animate-spin' : ''}`} />
+                                  <span>بازیابی فوری</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         </>
       )}
