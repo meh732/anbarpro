@@ -7,13 +7,14 @@ import {
   INITIAL_USERS, INITIAL_STOCK_COUNTINGS, INITIAL_STOCK_IN_DOCS, 
   INITIAL_STOCK_OUT_DOCS, INITIAL_TRANSFERS, INITIAL_PURCHASE_REQUESTS, 
   INITIAL_PRODUCTION_LOGS, INITIAL_MATERIAL_HANDOVERS, INITIAL_NOTIFICATIONS, 
-  INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS, INITIAL_CHANNELS, INITIAL_MESSAGES 
+  INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS, INITIAL_CHANNELS, INITIAL_MESSAGES,
+  INITIAL_FISCAL_YEARS
 } from '../data/mockData';
 import {
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, Operator, User,
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog,
   MaterialHandover, TraceabilityEvent, SystemNotification, AuditLog, Contractor,
-  StockCountingSession, ChatMessage, ChatChannel, MessengerBackupConfig
+  StockCountingSession, ChatMessage, ChatChannel, MessengerBackupConfig, FiscalYear
 } from '../types';
 import { resolveCentralDataDir } from './dataDirResolver.ts';
 import { sqliteEngine } from './sqliteEngine.ts';
@@ -50,6 +51,7 @@ export interface ServerDatabaseState {
   channels: ChatChannel[];
   traceabilityEvents: TraceabilityEvent[];
   auditLogs: AuditLog[];
+  fiscalYears?: FiscalYear[];
 }
 
 export function getDefaultServerState(): ServerDatabaseState {
@@ -129,6 +131,7 @@ export function getDefaultServerState(): ServerDatabaseState {
     channels: INITIAL_CHANNELS || [],
     traceabilityEvents: INITIAL_TRACEABILITY || [],
     auditLogs: INITIAL_AUDIT_LOGS || [],
+    fiscalYears: INITIAL_FISCAL_YEARS || [],
   };
 }
 
@@ -252,6 +255,7 @@ class ServerStoreManager {
             channels: activeSource.channels !== undefined ? activeSource.channels : defaultState.channels,
             traceabilityEvents: activeSource.traceabilityEvents !== undefined ? activeSource.traceabilityEvents : defaultState.traceabilityEvents,
             auditLogs: activeSource.auditLogs !== undefined ? activeSource.auditLogs : defaultState.auditLogs,
+            fiscalYears: activeSource.fiscalYears !== undefined ? activeSource.fiscalYears : (defaultState.fiscalYears || []),
             isInstalled: true,
             version: activeSource.version || Date.now(),
             lastUpdated: activeSource.lastUpdated || new Date().toISOString(),
@@ -431,6 +435,7 @@ class ServerStoreManager {
       channels: newState.channels !== undefined ? newState.channels : defaultState.channels,
       traceabilityEvents: newState.traceabilityEvents !== undefined ? newState.traceabilityEvents : defaultState.traceabilityEvents,
       auditLogs: newState.auditLogs !== undefined ? newState.auditLogs : defaultState.auditLogs,
+      fiscalYears: newState.fiscalYears !== undefined ? newState.fiscalYears : (this.state.fiscalYears || defaultState.fiscalYears || []),
       version: newVersion,
       lastUpdated: new Date().toISOString(),
     };
@@ -510,6 +515,7 @@ class ServerStoreManager {
       messages: [],
       channels: [],
       traceabilityEvents: [],
+      fiscalYears: INITIAL_FISCAL_YEARS || [],
       auditLogs: [{
         id: `log-${Date.now()}-wipe`,
         timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),

@@ -2,23 +2,28 @@ import {
   Item, ItemGroup, Warehouse, InventoryBalance, BOM, Project, Operator, User, 
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
   TraceabilityEvent, SystemNotification, AuditLog, Contractor, StockCountingSession,
-  ContractorWageContract, ContractorFinancialTransaction
+  ContractorWageContract, ContractorFinancialTransaction, FiscalYear
 } from '../types';
 
 // =================================================================
-//  Initial Tree Item Categories
+//  Initial Tree Item Categories (Electronic + Mechanical + Industrial)
 // =================================================================
 
 export const INITIAL_ITEM_GROUPS: ItemGroup[] = [
-  { id: 'cat-elec', name: 'قطعات الکترونیک', subGroups: ['میکروکنترلر', 'دیود و ترانزیستور', 'مقاومت و خازن', 'سنسور'] },
-  { id: 'cat-mech', name: 'قطعات مکانیکی و بدنه', subGroups: ['قالب و قاب پلاستیکی', 'پیچ و مهره و اتصالات', 'شاسی فلزی'] },
-  { id: 'cat-pcb', name: 'برد و فیبر چاپی', subGroups: ['PCB چندلایه', 'PCB تک‌لایه', 'برد متالیزه'] },
-  { id: 'cat-semi', name: 'مجموعه نیمه‌ساخته', subGroups: ['برد مونتاژ شده SMD', 'ماژول تست شده'] },
-  { id: 'cat-finish', name: 'محصولات نهایی', subGroups: ['کنتور هوشمند', 'دستگاه کنترلر صنعتی', 'سنسور محیطی'] },
+  { id: 'cat-elec', code: 'GRP-ELEC', name: 'قطعات الکترونیک', description: 'قطعات الکترونیکی SMD و DIP، آی‌سی‌ها و نیمه‌هادی‌ها', subGroups: ['میکروکنترلر و پردازنده', 'دیود و ترانزیستور', 'مقاومت و خازن', 'سنسور و ماژول', 'آی‌سی تغذیه و رگولاتور', 'کانکتور و ترمینال'] },
+  { id: 'cat-mech', code: 'GRP-MECH', name: 'قطعات مکانیکی و صنعتی', description: 'اجزای مکانیکی، انتقال قدرت، یاتاقان و قطعات ماشین‌کاری', subGroups: ['بلبرینگ، رولبرینگ و یاتاقان', 'شفت، کوپلینگ و چرخ‌دنده', 'فنر، پیم و خار صنعتی', 'واشر، اورینگ و کاسه‌نمد'] },
+  { id: 'cat-fastener', code: 'GRP-FAST', name: 'پیچ و مهره و اتصالات', description: 'انواع پیچ، مهره، واشر و اتصالات مکانیکی استاندارد', subGroups: ['پیچ آلن و شش‌گوش', 'مهره کاسه‌نمددار و قفلی', 'واشر تخت و فنری', 'پرچ، اسپیسر و استادبولت'] },
+  { id: 'cat-body', code: 'GRP-BODY', name: 'بدنه، شاسی و ورق‌کاری', description: 'قاب‌ها، شاسی‌های فلزی، رک‌ها و قطعات تزریق پلاستیک', subGroups: ['قالب و قاب پلاستیکی', 'شاسی فلزی و رک', 'هیت‌سینک و خنک‌کننده', 'پنل و فریم صنعتی'] },
+  { id: 'cat-motor', code: 'GRP-MOT', name: 'موتور، گیربکس و محرک‌ها', description: 'الکتروموتورها، استپ‌موتور، سروو، گیربکس و جک‌های صنعتی', subGroups: ['الکتروموتور و استپ‌موتور', 'گیربکس صنعتی', 'جک پنوماتیک و هیدرولیک', 'شیر برقی و عملگرها'] },
+  { id: 'cat-raw-mat', code: 'GRP-RAW', name: 'متریال خام فلزی و پلیمری', description: 'مواد اولیه خام فلزی، پروفیل، ورق و پلیمرهای مهندسی', subGroups: ['ورق آهن، استیل و گالوانیزه', 'میلگرد، شفت خام و پروفیل آلومینیوم', 'گرانول، تفلون و پلی‌آمید', 'سیم، کابل و شینه مسی'] },
+  { id: 'cat-pcb', code: 'GRP-PCB', name: 'برد و فیبر مدار چاپی (PCB)', description: 'انواع فیبر مدار چاپی خام تک‌لایه و چندلایه', subGroups: ['PCB چندلایه', 'PCB تک‌لایه', 'برد متالیزه و آلومینیومی'] },
+  { id: 'cat-tools', code: 'GRP-TOOL', name: 'ابزارآلات و ملزومات مصرفی', description: 'ابزارهای تراشکاری و مونتاژ، مواد مصرفی خط تولید و بسته‌بندی', subGroups: ['ابزار برش، مته و قلاویز', 'سیم قلع، خمیر قلع و فلکس', 'روان‌کار، چسب و رزین صنعتی', 'کارتن، فوم و ملزومات بسته‌بندی'] },
+  { id: 'cat-semi', code: 'GRP-SEMI', name: 'مجموعه نیمه‌ساخته', description: 'زیرمجموعه‌های مونتاژ شده مکانیکی و بردهای مونتاژ شده الکترونیکی', subGroups: ['برد مونتاژ شده SMD', 'مکانیزم مونتاژ شده مکانیکی', 'ماژول تست شده'] },
+  { id: 'cat-finish', code: 'GRP-FIN', name: 'محصولات نهایی', description: 'دستگاه‌ها و محصولات نهایی آماده تحویل به مشتری', subGroups: ['کنتور هوشمند', 'دستگاه کنترلر صنعتی', 'تجهیزات و ماشین‌آلات صنعتی', 'سنسور محیطی'] },
 ];
 
 // =================================================================
-//  Tree Multi-Warehouse Structure (انبار مرکزی، تولید، QC، محصول، پیمانکار)
+//  Tree Multi-Warehouse Structure (انبار مرکزی، مکانیک، الکترونیک، تولید، QC، محصول، پیمانکار)
 // =================================================================
 
 export const INITIAL_WAREHOUSES: Warehouse[] = [
@@ -28,7 +33,7 @@ export const INITIAL_WAREHOUSES: Warehouse[] = [
     name: 'انبار مرکزی کارخانه',
     group: 'انبارهای اصلی',
     subGroup: 'انبار مادر',
-    description: 'انبار مادر جهت دریافت، انبارش اولیه و تفکیک قطعات الکترونیک و مکانیکی',
+    description: 'انبار مادر جهت دریافت، انبارش اولیه و تفکیک قطعات مکانیکی، الکترونیکی و صنعتی',
     manager: 'مهندس رضایی',
     warehouseType: 'Central',
     location: 'سوله اصلی - ضلع شمالی',
@@ -37,13 +42,25 @@ export const INITIAL_WAREHOUSES: Warehouse[] = [
     id: 'wh-raw',
     code: 'WH-101',
     parentId: 'wh-central',
-    name: 'انبار قطعات الکترونیک و مواد اولیه',
+    name: 'انبار قطعات الکترونیک و بردها',
     group: 'انبارهای اصلی',
     subGroup: 'قطعات الکترونیک و SMD',
-    description: 'زیرمجموعه انبار مرکزی - قطعات SMD، DIP و ریزقطعات',
+    description: 'زیرمجموعه انبار مرکزی - قطعات SMD، DIP، آی‌سی، برد خام و ریزقطعات الکترونیکی',
     manager: 'علی کاظمی',
     warehouseType: 'Central',
     location: 'سالن ۱ - طبقه همکف',
+  },
+  {
+    id: 'wh-mech',
+    code: 'WH-102',
+    parentId: 'wh-central',
+    name: 'انبار قطعات مکانیکی، شاسی و اتصالات صنعتی',
+    group: 'انبارهای اصلی',
+    subGroup: 'قطعات مکانیکی و صنعتی',
+    description: 'زیرمجموعه انبار مرکزی - بلبرینگ، شفت، پیچ و مهره، شاسی، بدنه، موتور و متریال فلزی',
+    manager: 'مهندس اکبری',
+    warehouseType: 'Central',
+    location: 'سالن ۱ - بخش مکانیک و متریال',
   },
   {
     id: 'wh-prod',
@@ -912,5 +929,19 @@ export const INITIAL_MESSAGES: import('../types').ChatMessage[] = [
 
 export const INITIAL_TRACEABILITY: TraceabilityEvent[] = [];
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [];
+
+export const INITIAL_FISCAL_YEARS: FiscalYear[] = [
+  {
+    id: 'fy-1404',
+    yearCode: '1404',
+    title: 'سال مالی ۱۴۰۴',
+    startDate: '1404/01/01',
+    endDate: '1404/12/29',
+    status: 'Active',
+    notes: 'دوره مالی جاری شرکت - فعال جهت ثبت اسناد انبار و تولید',
+    createdAt: '2025-03-21',
+  }
+];
+
 
 

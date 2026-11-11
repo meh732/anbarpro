@@ -73,7 +73,7 @@ export interface InventoryBalance {
   lastUpdated: string;
 }
 
-export type StockInType = 'Purchase' | 'ProductionReturn' | 'CustomerReturn' | 'TransferIn' | 'StockAdjustment';
+export type StockInType = 'Purchase' | 'ProductionReturn' | 'CustomerReturn' | 'TransferIn' | 'StockAdjustment' | 'OpeningBalance';
 
 export interface StockInDoc {
   id: string;
@@ -86,6 +86,7 @@ export interface StockInDoc {
   warehouseId: string;
   warehouseName?: string;
   entryType: StockInType;
+  fiscalYearId?: string;
   items: {
     itemId: string;
     quantity: number;
@@ -98,7 +99,7 @@ export interface StockInDoc {
   createdAt: string;
 }
 
-export type StockOutType = 'ProjectConsumption' | 'TransferOut' | 'Sale' | 'Scrap' | 'StockAdjustment';
+export type StockOutType = 'ProjectConsumption' | 'TransferOut' | 'Sale' | 'Scrap' | 'StockAdjustment' | 'ClosingBalance';
 
 export interface StockOutDoc {
   id: string;
@@ -591,4 +592,24 @@ export interface MessengerBackupConfig {
   lastTelegramStatus?: { success: boolean; time: string; message: string } | null;
   lastBaleStatus?: { success: boolean; time: string; message: string } | null;
 }
+
+export interface FiscalYear {
+  id: string;
+  yearCode: string; // e.g. '1404', '1405'
+  title: string; // e.g. 'سال مالی ۱۴۰۴'
+  startDate: string; // e.g. '1404/01/01'
+  endDate: string; // e.g. '1404/12/29'
+  status: 'Active' | 'Closed' | 'Archived';
+  closedAt?: string;
+  closedBy?: string;
+  closingDocNumbers?: string[];
+  openingDocNumbers?: string[];
+  totalEndingItemsCount?: number;
+  totalEndingQuantity?: number;
+  totalEndingValuation?: number;
+  snapshotBalances?: InventoryBalance[];
+  notes?: string;
+  createdAt: string;
+}
+
 

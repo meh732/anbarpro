@@ -8,7 +8,7 @@ import {
   Info, X, Trash2, Printer, Eye, EyeOff, Tag, Scale, FileBadge, Lock,
   TrendingDown, TrendingUp, Percent, ShieldCheck, ChevronDown, CheckSquare, Sparkles
 } from 'lucide-react';
-import { formatCurrency } from '../utils/security';
+import { formatCurrency, toEnglishDigits } from '../utils/security';
 import { printElement } from '../utils/printEngine';
 
 export const StockCountingView: React.FC = () => {
@@ -16,7 +16,8 @@ export const StockCountingView: React.FC = () => {
     stockCountings, warehouses, items, inventory, createStockCountingSession, 
     updateStockCountItem, updateStockCountingSession, applyStockCountingAdjustments, 
     deleteStockCountingSession, currentUser, language, t,
-    projects, boms, itemGroups, companyName
+    projects, boms, itemGroups, companyName,
+    fiscalYears, closeFiscalYearAndRollover
   } = useApp();
 
   // Price visibility permission check
@@ -55,11 +56,31 @@ export const StockCountingView: React.FC = () => {
   const [scanMessage, setScanMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
-  // Official Modals (Print Tags, Print Minutes, Reconcile Document)
+  // Official Modals (Print Tags, Print Minutes, Reconcile Document, Fiscal Year Rollover)
   const [showTagsModal, setShowTagsModal] = useState<boolean>(false);
   const [showMinutesModal, setShowMinutesModal] = useState<boolean>(false);
   const [showReconcileModal, setShowReconcileModal] = useState<boolean>(false);
   const [reconcileAccepted, setReconcileAccepted] = useState<boolean>(false);
+  const [showFiscalYearModal, setShowFiscalYearModal] = useState<boolean>(false);
+  const [nextYearCode, setNextYearCode] = useState<string>('1405');
+  const [nextYearTitle, setNextYearTitle] = useState<string>('سال مالی ۱۴۰۵');
+  const [nextYearStartDate, setNextYearStartDate] = useState<string>('1405/01/01');
+  const [nextYearEndDate, setNextYearEndDate] = useState<string>('1405/12/29');
+  const [fyNotes, setFyNotes] = useState<string>('بستن حساب‌های انبار پایان سال و انتقال قطعی موجودی به سال مالی جدید');
+  const [fyConfirmChecked, setFyConfirmChecked] = useState<boolean>(false);
+  const [fyResultMsg, setFyResultMsg] = useState<{ success: boolean; message: string } | null>(null);
+
+  const activeFiscalYear = useMemo(() => {
+    return fiscalYears.find(f => f.status === 'Active') || fiscalYears[0];
+  }, [fiscalYears]);
+
+  const totalWarehouseValuation = useMemo(() => {
+    return inventory.reduce((sum, inv) => {
+      if (inv.quantity <= 0) return sum;
+      const itemObj = items.find(i => i.id === inv.itemId);
+      return sum + inv.quantity * (itemObj?.unitPrice || 0);
+    }, 0);
+  }, [inventory, items]);
 
   // Editable Cell state
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -175,17 +196,18 @@ export const StockCountingView: React.FC = () => {
     }
   };
 
-  // Handle Quick Barcode / Serial Scan Submit
+  // Handle Quick Barcode / Serial Scan Submit (with Persian/Arabic digit normalization)
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSession || selectedSession.status === 'Applied' || !barcodeInput.trim()) return;
 
-    const scannedText = barcodeInput.trim();
+    const rawText = barcodeInput.trim();
+    const scannedText = toEnglishDigits(rawText).trim();
     // Look up item inside session items (by barcode, itemCode, or tagNumber)
     const foundItemIndex = selectedSession.items.findIndex(
-      it => it.itemCode.toLowerCase() === scannedText.toLowerCase() || 
-            (it.barcode && it.barcode.toLowerCase() === scannedText.toLowerCase()) ||
-            (it.tagNumber && it.tagNumber.toLowerCase() === scannedText.toLowerCase())
+      it => toEnglishDigits(it.itemCode).toLowerCase() === scannedText.toLowerCase() || 
+            (it.barcode && toEnglishDigits(it.barcode).toLowerCase() === scannedText.toLowerCase()) ||
+            (it.tagNumber && toEnglishDigits(it.tagNumber).toLowerCase() === scannedText.toLowerCase())
     );
 
     if (foundItemIndex !== -1) {
@@ -502,9 +524,24 @@ export const StockCountingView: React.FC = () => {
                   {selectedSession.status === 'Applied' ? 'سند تعدیل صادر شده ✅' : selectedSession.status === 'PendingReview' ? 'در انتظار تایید ممیزی' : 'در حال شمارش فعال ⏱️'}
                 </span>
               )}
+              {selectedSession?.surplusDocNumber && (
+                <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  سند مازاد: {selectedSession.surplusDocNumber}
+                </span>
+              )}
+              {selectedSession?.deficitDocNumber && (
+                <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                  سند کسری: {selectedSession.deficitDocNumber}
+                </span>
+              )}
+              {activeFiscalYear && (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300">
+                  {activeFiscalYear.title} ({activeFiscalYear.status === 'Active' ? 'فعال' : 'بسته شده'})
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
-              مدیریت دوره‌های شمارش ۳ مرحله‌ای، داوری مغایرت، چاپ تگ پالت و صدور اسناد تعدیل کسری و مازاد
+              مدیریت دوره‌های شمارش ۳ مرحله‌ای با بارکدخوان، داوری مغایرت، صدور اسناد تعدیل و بستن سال مالی (اختتامیه/افتتاحیه)
             </p>
           </div>
         </div>
@@ -524,6 +561,26 @@ export const StockCountingView: React.FC = () => {
               ))}
             </select>
           )}
+
+          <button
+            onClick={() => {
+              if (activeFiscalYear) {
+                const nextNum = (parseInt(toEnglishDigits(activeFiscalYear.yearCode), 10) || 1404) + 1;
+                setNextYearCode(String(nextNum));
+                setNextYearTitle(`سال مالی ${nextNum.toLocaleString('fa-IR', { useGrouping: false })}`);
+                setNextYearStartDate(`${nextNum}/01/01`);
+                setNextYearEndDate(`${nextNum}/12/29`);
+              }
+              setFyResultMsg(null);
+              setFyConfirmChecked(false);
+              setShowFiscalYearModal(true);
+            }}
+            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black px-3.5 py-2 rounded-xl transition-all shadow-md shadow-amber-600/20 cursor-pointer active:scale-95 shrink-0"
+            title="بستن سال مالی جاری، آرشیو موجودی پایان دوره و صدور خودکار سند اختتامیه و افتتاحیه سال جدید"
+          >
+            <Lock className="w-4 h-4" />
+            <span>بستن سال مالی (اختتامیه/افتتاحیه)</span>
+          </button>
 
           <button
             onClick={() => setShowCreateModal(true)}
@@ -1705,6 +1762,210 @@ export const StockCountingView: React.FC = () => {
                 <Check className="w-4 h-4" />
                 <span>ثبت سند و اصلاح کل موجودی انبار</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 10. MODAL: FISCAL YEAR CLOSING & OPENING VOUCHER ROLLOVER */}
+      {/* ========================================================================= */}
+      {showFiscalYearModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl sm:rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-300 space-y-5 my-auto animate-fadeIn max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 shrink-0">
+              <h3 className="font-black text-sm sm:text-base text-slate-900 flex items-center gap-2">
+                <Lock className="w-5 h-5 text-amber-600" />
+                <span>عملیات بستن سال مالی و صدور خودکار اسناد اختتامیه و افتتاحیه</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => printElement('printable-fiscal-year-certificate', { title: 'سند رسمی اختتامیه و افتتاحیه سال مالی', orientation: 'portrait' })}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>چاپ گواهی اختتامیه/افتتاحیه</span>
+                </button>
+                <button
+                  onClick={() => setShowFiscalYearModal(false)}
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto space-y-4 text-xs text-slate-700 flex-1 custom-scrollbar pr-1">
+              {fyResultMsg && (
+                <div className={`p-3.5 rounded-xl border font-bold flex items-center gap-2 ${
+                  fyResultMsg.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}>
+                  {fyResultMsg.success ? <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />}
+                  <span>{fyResultMsg.message}</span>
+                </div>
+              )}
+
+              <div id="printable-fiscal-year-certificate" className="space-y-4">
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[11px] text-amber-800 font-bold block">سال مالی فعال کنونی:</span>
+                      <h4 className="font-black text-sm text-slate-900">{activeFiscalYear?.title || 'سال مالی ۱۴۰۴'} (کد: {activeFiscalYear?.yearCode || '1404'})</h4>
+                    </div>
+                    <div className="text-left">
+                      <span className="text-[11px] text-slate-500 block">ارزش کل موجودی فعلی انبارها:</span>
+                      <strong className="font-mono font-black text-sm text-indigo-700">{formatCurrency(totalWarehouseValuation)}</strong>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    با اجرای این فرآیند، مانده قطعی تمام انبارها در پایان <strong>{activeFiscalYear?.title}</strong> آرشیو شده، برای هر انبار یک <strong>سند اختتامیه رسمی (CLS)</strong> صادر می‌گردد و بلافاصله همان مقادیر به عنوان <strong>سند افتتاحیه (OPN)</strong> در سال مالی جدید ثبت می‌شود.
+                  </p>
+                </div>
+
+                {/* History of Fiscal Years */}
+                <div className="space-y-2">
+                  <h4 className="font-bold text-slate-800 text-xs">فهرست دوره‌ها و سال‌های مالی ثبت شده در سامانه:</h4>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">کد سال</th>
+                          <th className="p-2.5">عنوان سال مالی</th>
+                          <th className="p-2.5">بازه زمانی</th>
+                          <th className="p-2.5">وضعیت</th>
+                          <th className="p-2.5">اسناد اختتامیه / افتتاحیه</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {fiscalYears.map(fy => (
+                          <tr key={fy.id} className="hover:bg-slate-50">
+                            <td className="p-2.5 font-mono font-bold text-indigo-700">{fy.yearCode}</td>
+                            <td className="p-2.5 font-bold text-slate-800">{fy.title}</td>
+                            <td className="p-2.5 font-mono text-slate-500">{fy.startDate} الی {fy.endDate}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                fy.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {fy.status === 'Active' ? 'سال مالی جاری (فعال)' : `بسته شده در ${fy.closedAt || ''}`}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-mono text-[10px] text-slate-600">
+                              {fy.closingDocNumbers && fy.closingDocNumbers.length > 0 && (
+                                <div>اختتامیه: {fy.closingDocNumbers.join(' , ')}</div>
+                              )}
+                              {fy.openingDocNumbers && fy.openingDocNumbers.length > 0 && (
+                                <div className="text-emerald-700">افتتاحیه: {fy.openingDocNumbers.join(' , ')}</div>
+                              )}
+                              {(!fy.closingDocNumbers?.length && !fy.openingDocNumbers?.length) && '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* New Fiscal Year Form */}
+              {activeFiscalYear && activeFiscalYear.status === 'Active' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                  <h4 className="font-bold text-indigo-900 text-xs">مشخصات سال مالی جدید (جهت صدور سند افتتاحیه):</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">کد سال جدید*</label>
+                      <input
+                        type="text"
+                        value={nextYearCode}
+                        onChange={(e) => setNextYearCode(toEnglishDigits(e.target.value))}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">عنوان سال مالی جدید*</label>
+                      <input
+                        type="text"
+                        value={nextYearTitle}
+                        onChange={(e) => setNextYearTitle(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">تاریخ شروع سال جدید*</label>
+                      <input
+                        type="text"
+                        value={nextYearStartDate}
+                        onChange={(e) => setNextYearStartDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">تاریخ پایان سال جدید*</label>
+                      <input
+                        type="text"
+                        value={nextYearEndDate}
+                        onChange={(e) => setNextYearEndDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono text-slate-800"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">شرح سند اختتامیه و افتتاحیه</label>
+                    <input
+                      type="text"
+                      value={fyNotes}
+                      onChange={(e) => setFyNotes(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2.5 p-3 bg-white border border-amber-300 rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fyConfirmChecked}
+                      onChange={(e) => setFyConfirmChecked(e.target.checked)}
+                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-4 h-4"
+                    />
+                    <span className="font-bold text-slate-800">
+                      تایید می‌نمایم انبارگردانی پایان سال تکمیل شده و دستور صدور خودکار سند اختتامیه «{activeFiscalYear.title}» و سند افتتاحیه «{nextYearTitle}» را صادر می‌کنم.
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowFiscalYearModal(false)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold text-xs cursor-pointer"
+              >
+                بستن پنجره
+              </button>
+              {activeFiscalYear && activeFiscalYear.status === 'Active' && (
+                <button
+                  type="button"
+                  disabled={!fyConfirmChecked || !nextYearCode.trim()}
+                  onClick={() => {
+                    const res = closeFiscalYearAndRollover({
+                      closingYearId: activeFiscalYear.id,
+                      nextYearCode: nextYearCode.trim(),
+                      nextYearTitle: nextYearTitle.trim() || `سال مالی ${nextYearCode}`,
+                      nextYearStartDate: nextYearStartDate.trim(),
+                      nextYearEndDate: nextYearEndDate.trim(),
+                      notes: fyNotes.trim()
+                    });
+                    setFyResultMsg({ success: res.success, message: res.message });
+                    setFyConfirmChecked(false);
+                  }}
+                  className={`px-5 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                    fyConfirmChecked ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>اجرای قطعی بستن سال مالی و صدور اسناد اختتامیه / افتتاحیه</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

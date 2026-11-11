@@ -35,7 +35,7 @@ const BarcodeVisual: React.FC<{ code: string; name?: string; location?: string }
 export const ItemsView: React.FC = () => {
   const { 
     items, itemGroups, inventory, warehouses, addItem, updateItem, deleteItem, deleteItemsBatch,
-    addItemGroup, updateItemGroup, deleteItemGroup,
+    addItemGroup, updateItemGroup, deleteItemGroup, restoreDefaultItemGroups,
     searchQuery, setSearchQuery, language, t, hasActionPermission,
     traceabilityEvents
   } = useApp();
@@ -196,8 +196,8 @@ export const ItemsView: React.FC = () => {
   });
 
   const typeLabels: Record<ItemType, string> = {
-    RawMaterial: isFa ? 'مواد اولیه' : 'Raw Materials',
-    Component: isFa ? 'قطعه الکترونیک' : 'Electronics Component',
+    RawMaterial: isFa ? 'مواد اولیه (فلزی/پلیمری/شیمیایی)' : 'Raw Materials',
+    Component: isFa ? 'قطعه (الکترونیکی / مکانیکی)' : 'Component (Elec / Mech)',
     SemiFinished: isFa ? 'برد نیمه ساخته' : 'Semi-finished Board',
     Finished: isFa ? 'محصول نهایی' : 'Finished Product',
     Tool: isFa ? 'ابزار' : 'Tooling',
@@ -498,19 +498,18 @@ export const ItemsView: React.FC = () => {
   };
 
   const handleDeleteGroup = (groupId: string, groupName: string) => {
-    // Check if group has sub-categories
     const hasChildren = itemGroups.some(g => g.parentId === groupId);
     if (hasChildren) {
-      alert(isFa ? 'امکان حذف این گروه وجود ندارد زیرا دارای زیرگروه‌های فعال سلسله‌مراتبی می‌باشد.' : 'Cannot delete group because it has active nested sub-categories.');
+      alert(isFa ? 'ابتدا زیرشاخه‌های وابسته به این گروه مادر را حذف یا ویرایش نمایید.' : 'Please delete or reassign child sub-categories first.');
       return;
     }
 
     const itemsInGroup = items.filter(i => i.group === groupName || i.subGroup === groupName);
-    if (itemsInGroup.length > 0) {
-      alert(`امکان حذف این گروه وجود ندارد، زیرا تعداد ${itemsInGroup.length} کالا در این گروه تعریف شده‌اند.`);
-      return;
-    }
-    if (confirm(`آیا از حذف گروه کالای "${groupName}" اطمینان دارید؟`)) {
+    const confirmMsg = itemsInGroup.length > 0
+      ? `در گروه "${groupName}" تعداد ${itemsInGroup.length} کالا قرار دارد. با حذف این سرفصل، گروه آن کالاها به صورت خودکار به «عمومی» تغییر می‌یابد. آیا از حذف این گروه اطمینان دارید؟`
+      : `آیا از حذف سرفصل/گروه کالای "${groupName}" اطمینان دارید؟`;
+
+    if (confirm(confirmMsg)) {
       deleteItemGroup(groupId);
       if (editingGroupId === groupId) {
         setEditingGroupId(null);
@@ -622,10 +621,10 @@ export const ItemsView: React.FC = () => {
         <div>
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Boxes className="w-5 h-5 text-indigo-600" />
-            {t('itemsTitle', 'ساختار و کاتالوگ جامع قطعات و محصولات الکترونیکی')}
+            {t('itemsTitle', 'ساختار و کاتالوگ جامع قطعات (مکانیکی، صنعتی و الکترونیکی)')}
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            {t('itemsSubtitle', 'تعریف مواد اولیه، قطعات DIP/SMD، گروه و زیرگروه‌بندی کالاها به صورت سلسله‌مراتب درختی نامحدود، نیمه‌ساخته‌ها و محصولات')}
+            {t('itemsSubtitle', 'تعریف آزادانه سرفصل‌های مکانیکی، صنعتی و الکترونیکی، مواد اولیه، اتصالات، مجموعه‌های نیمه‌ساخته و محصولات نهایی با بارکد اختصاصی')}
           </p>
         </div>
 
@@ -1021,12 +1020,24 @@ export const ItemsView: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl shadow-xl overflow-hidden flex flex-col max-h-[92vh] my-auto animate-fadeIn">
             {/* Modal Header */}
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
               <h3 className="font-bold text-sm text-indigo-700 flex items-center gap-2">
                 <FolderTree className="w-5 h-5 text-indigo-600" />
-                <span>تعریف و مهندسی ساختار درختی گروه‌های کالا</span>
+                <span>تعریف، ویرایش و مدیریت آزادانه سرفصل‌های کالا (مکانیکی، صنعتی و الکترونیکی)</span>
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = restoreDefaultItemGroups();
+                    alert(res.message);
+                  }}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="افزودن خودکار سرفصل‌های استاندارد قطعات مکانیکی، اتصالات، موتورها، ورق‌کاری و الکترونیک"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-600" />
+                  <span>افزودن سرفصل‌های استاندارد مکانیکی و صنعتی</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -1258,12 +1269,12 @@ export const ItemsView: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, itemType: e.target.value as ItemType })}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
                   >
-                    <option value="RawMaterial">مواد اولیه</option>
-                    <option value="Component">قطعه (DIP/SMD)</option>
-                    <option value="SemiFinished">نیمه ساخته</option>
+                    <option value="Component">قطعه (مکانیکی / الکترونیکی / صنعتی)</option>
+                    <option value="RawMaterial">مواد اولیه (فلزی / پلیمری / شیمیایی)</option>
+                    <option value="SemiFinished">مجموعه نیمه‌ساخته / زیرمجموعه مونتاژی</option>
                     <option value="Finished">محصول نهایی</option>
-                    <option value="Consumable">مصرفی</option>
-                    <option value="Tool">ابزار</option>
+                    <option value="Consumable">ملزومات مصرفی</option>
+                    <option value="Tool">ابزارآلات و تجهیزات</option>
                   </select>
                 </div>
 
@@ -1310,10 +1321,16 @@ export const ItemsView: React.FC = () => {
                   >
                     <option value="عدد">عدد</option>
                     <option value="دستگاه">دستگاه</option>
-                    <option value="رول">رول (تسمه SMD)</option>
-                    <option value="قوطی">قوطی</option>
-                    <option value="متر">متر</option>
+                    <option value="ست / دست">ست / دست (مجموعه)</option>
+                    <option value="کیلوگرم">کیلوگرم</option>
                     <option value="گرم">گرم</option>
+                    <option value="متر">متر</option>
+                    <option value="شاخه">شاخه (پروفیل / میلگرد)</option>
+                    <option value="ورق">ورق (فلزی / پلیمری)</option>
+                    <option value="بسته">بسته (پیچ و مهره / اتصالات)</option>
+                    <option value="رول">رول (تسمه SMD / سیم)</option>
+                    <option value="لیتر">لیتر / گالن</option>
+                    <option value="قوطی">قوطی</option>
                   </select>
                 </div>
 

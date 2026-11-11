@@ -5,7 +5,7 @@ import {
   StockInDoc, StockOutDoc, WarehouseTransfer, PurchaseRequest, ProductionLog, MaterialHandover,
   TraceabilityEvent, SystemNotification, NotificationType, AuditLog, Contractor, StockCountingSession, StockCountingItem,
   ChatMessage, ChatChannel, ChatAttachment, ContractorWageContract, ContractorFinancialTransaction,
-  MessengerBackupConfig, IncomingChatAlertData
+  MessengerBackupConfig, IncomingChatAlertData, FiscalYear
 } from '../types';
 import { InitialStockParsedRow } from '../utils/excelUtils';
 import {
@@ -30,7 +30,7 @@ import {
   INITIAL_PROJECTS, INITIAL_OPERATORS, INITIAL_USERS, INITIAL_STOCK_COUNTINGS, INITIAL_STOCK_IN_DOCS, 
   INITIAL_STOCK_OUT_DOCS, INITIAL_TRANSFERS, INITIAL_PURCHASE_REQUESTS, 
   INITIAL_PRODUCTION_LOGS, INITIAL_MATERIAL_HANDOVERS, INITIAL_NOTIFICATIONS, INITIAL_TRACEABILITY, INITIAL_AUDIT_LOGS,
-  INITIAL_CHANNELS, INITIAL_MESSAGES, INITIAL_CONTRACTOR_CONTRACTS, INITIAL_CONTRACTOR_TRANSACTIONS
+  INITIAL_CHANNELS, INITIAL_MESSAGES, INITIAL_CONTRACTOR_CONTRACTS, INITIAL_CONTRACTOR_TRANSACTIONS, INITIAL_FISCAL_YEARS
 } from '../data/mockData';
 
 interface AppContextType {
@@ -76,6 +76,7 @@ interface AppContextType {
   channels: ChatChannel[];
   traceabilityEvents: TraceabilityEvent[];
   auditLogs: AuditLog[];
+  fiscalYears: FiscalYear[];
   
   // Instant Messaging & Chat
   sendChatMessage: (data: { message: string; channelId?: string; recipientId?: string; attachments?: ChatAttachment[]; replyToId?: string }) => Promise<boolean>;
@@ -124,6 +125,7 @@ interface AppContextType {
   addItemGroup: (group: Omit<ItemGroup, 'id'>) => void;
   updateItemGroup: (id: string, updated: Partial<ItemGroup>) => void;
   deleteItemGroup: (id: string) => void;
+  restoreDefaultItemGroups: () => { addedCount: number; message: string };
   
   addWarehouse: (wh: Omit<Warehouse, 'id'>) => void;
   updateWarehouse: (id: string, updated: Partial<Warehouse>) => void;
@@ -234,6 +236,23 @@ interface AppContextType {
   updateStockCountingSession: (sessionId: string, updated: Partial<StockCountingSession>) => void;
   deleteStockCountingSession: (sessionId: string) => void;
   applyStockCountingAdjustments: (sessionId: string) => void;
+
+  // Fiscal Year & Year-End Closing / Opening Vouchers
+  createFiscalYear: (fy: Omit<FiscalYear, 'id' | 'createdAt'>) => void;
+  closeFiscalYearAndRollover: (data: {
+    closingYearId: string;
+    nextYearCode: string;
+    nextYearTitle: string;
+    nextYearStartDate: string;
+    nextYearEndDate: string;
+    notes?: string;
+  }) => {
+    success: boolean;
+    message: string;
+    closingDocsCount: number;
+    openingDocsCount: number;
+    totalValuation: number;
+  };
   
   // Core Inventory & Production Operations
   createStockInDoc: (doc: Omit<StockInDoc, 'id' | 'createdAt'>) => void;
@@ -503,6 +522,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(soundEngine.isSoundEnabled());
   const [traceabilityEvents, setTraceabilityEvents] = useState<TraceabilityEvent[]>(() => loadStorage('traceabilityEvents', []));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => loadStorage('auditLogs', []));
+  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(() => {
+    const loaded = loadStorage('fiscalYears', INITIAL_FISCAL_YEARS);
+    return Array.isArray(loaded) && loaded.length > 0 ? loaded : INITIAL_FISCAL_YEARS;
+  });
   const [incomingChatAlert, setIncomingChatAlert] = useState<IncomingChatAlertData | null>(null);
   const [activeChatRecipientId, setActiveChatRecipientId] = useState<string | null>(null);
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
@@ -891,6 +914,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem(`${STORAGE_KEY}_messages`, JSON.stringify(messages));
         localStorage.setItem(`${STORAGE_KEY}_traceabilityEvents`, JSON.stringify(traceabilityEvents));
         localStorage.setItem(`${STORAGE_KEY}_auditLogs`, JSON.stringify(auditLogs));
+        localStorage.setItem(`${STORAGE_KEY}_fiscalYears`, JSON.stringify(fiscalYears));
       } catch (e) {
         console.warn('[Cache] LocalStorage non-blocking write error:', e);
       }
@@ -900,7 +924,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [
     items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
-    productionLogs, materialHandovers, notifications, messages, traceabilityEvents, auditLogs
+    productionLogs, materialHandovers, notifications, messages, traceabilityEvents, auditLogs, fiscalYears
   ]);
 
   // =========================================================================
@@ -950,6 +974,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (Array.isArray(data.channels)) setChannels(data.channels);
     if (Array.isArray(data.traceabilityEvents)) setTraceabilityEvents(data.traceabilityEvents);
     if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
+    if (Array.isArray(data.fiscalYears) && data.fiscalYears.length > 0) setFiscalYears(data.fiscalYears);
     if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
     if (data.companyName) {
       setCompanyNameState(data.companyName);
@@ -1006,7 +1031,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         operators, stockCountings, stockInDocs, stockOutDocs, transfers,
         purchaseRequests, productionLogs, materialHandovers, notifications,
         messages, channels,
-        traceabilityEvents, auditLogs, users, isInstalled, companyName,
+        traceabilityEvents, auditLogs, fiscalYears, users, isInstalled, companyName,
         autoBackupIntervalHours, lastBackupTimestamp, backupHistory, messengerConfig
       };
 
@@ -1041,7 +1066,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects,
     operators, stockCountings, stockInDocs, stockOutDocs, transfers,
     purchaseRequests, productionLogs, materialHandovers, notifications,
-    traceabilityEvents, auditLogs, users, isInstalled, companyName,
+    traceabilityEvents, auditLogs, fiscalYears, users, isInstalled, companyName,
     autoBackupIntervalHours, lastBackupTimestamp, backupHistory, serverUrl
   ]);
 
@@ -1177,6 +1202,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setNotifications(INITIAL_NOTIFICATIONS);
       setTraceabilityEvents(INITIAL_TRACEABILITY);
       setAuditLogs(INITIAL_AUDIT_LOGS);
+      setFiscalYears(INITIAL_FISCAL_YEARS);
 
       const res = await fetch(getApiUrl('/api/reset-demo'), { method: 'POST' });
       if (res.ok) {
@@ -1469,7 +1495,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [
     items, itemGroups, warehouses, contractors, inventory, boms, projects, operators, 
     stockCountings, stockInDocs, stockOutDocs, transfers, purchaseRequests, 
-    productionLogs, materialHandovers, notifications, traceabilityEvents, auditLogs,
+    productionLogs, materialHandovers, notifications, traceabilityEvents, auditLogs, fiscalYears,
     users, isInstalled, companyName, autoBackupIntervalHours, lastBackupTimestamp, backupHistory,
     pushStateToServer
   ]);
@@ -2253,14 +2279,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateItemGroup = (id: string, updated: Partial<ItemGroup>) => {
+    const oldGroup = itemGroups.find(g => g.id === id);
     setItemGroups(prev => prev.map(g => g.id === id ? { ...g, ...updated } : g));
-    addAudit('ویرایش گروه کالا', 'ItemGroup', id, 'تغییر مشخصات یا زیرگروه‌های کالا');
+    if (oldGroup && updated.name && updated.name !== oldGroup.name) {
+      setItems(prev => prev.map(it => it.group === oldGroup.name ? { ...it, group: updated.name! } : it));
+    }
+    addAudit('ویرایش گروه کالا', 'ItemGroup', id, `تغییر مشخصات گروه کالا (${updated.name || oldGroup?.name || id})`);
   };
 
   const deleteItemGroup = (id: string) => {
     const target = itemGroups.find(g => g.id === id);
     setItemGroups(prev => prev.filter(g => g.id !== id));
+    if (target) {
+      setItems(prev => prev.map(it => it.group === target.name ? { ...it, group: 'عمومی' } : it));
+    }
     addAudit('حذف گروه کالا', 'ItemGroup', id, `حذف گروه ${target?.name || id}`);
+  };
+
+  const restoreDefaultItemGroups = () => {
+    let addedCount = 0;
+    setItemGroups(prev => {
+      const next = [...prev];
+      INITIAL_ITEM_GROUPS.forEach(defGroup => {
+        const existingIdx = next.findIndex(g => g.name.trim() === defGroup.name.trim() || g.id === defGroup.id);
+        if (existingIdx === -1) {
+          next.push({ ...defGroup });
+          addedCount++;
+        } else {
+          const mergedSubs = Array.from(new Set([...(next[existingIdx].subGroups || []), ...(defGroup.subGroups || [])]));
+          if (mergedSubs.length !== (next[existingIdx].subGroups || []).length) {
+            next[existingIdx] = { ...next[existingIdx], subGroups: mergedSubs };
+            addedCount++;
+          }
+        }
+      });
+      return next;
+    });
+    addAudit('بازیابی سرفصل‌های استاندارد کالا', 'ItemGroup', 'DEFAULTS', 'افزودن و تکمیل سرفصل‌های استاندارد الکترونیکی، مکانیکی و صنعتی');
+    return {
+      addedCount,
+      message: addedCount > 0
+        ? `${addedCount} سرفصل و زیرگروه استاندارد مکانیکی، صنعتی و الکترونیکی با موفقیت به سامانه اضافه شد.`
+        : 'تمامی سرفصل‌های استاندارد مکانیکی و الکترونیکی هم‌اکنون در سامانه موجود هستند.'
+    };
   };
 
   // Warehouse Management
@@ -3199,6 +3260,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (s.subSteps && s.subSteps.length > 0) {
             return { ...s, subSteps: updateStepRec(s.subSteps) };
           }
+          if (s.children && s.children.length > 0) {
+            return { ...s, children: updateStepRec(s.children) };
+          }
           return s;
         });
       };
@@ -3240,8 +3304,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const findStepRec = (steps: ProjectStep[]): ProjectStep | undefined => {
       for (const s of steps) {
         if (s.id === data.stepId) return s;
-        if (s.subSteps && s.subSteps.length > 0) {
-          const found = findStepRec(s.subSteps);
+        const nested = (s.subSteps && s.subSteps.length > 0) ? s.subSteps : s.children;
+        if (nested && nested.length > 0) {
+          const found = findStepRec(nested);
           if (found) return found;
         }
       }
@@ -3343,7 +3408,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
           }
           if (s.subSteps && s.subSteps.length > 0) {
-            return { ...s, subSteps: updateStepProgressRec(s.subSteps) };
+            const newSubs = updateStepProgressRec(s.subSteps);
+            const allSubsDone = newSubs.every(sub => sub.status === 'Completed' || (sub.progressPercent || 0) >= 100);
+            const avgSubPrg = Math.round(newSubs.reduce((acc, sub) => acc + (sub.progressPercent || 0), 0) / newSubs.length);
+            return {
+              ...s,
+              subSteps: newSubs,
+              progressPercent: s.completedQuantity ? s.progressPercent : avgSubPrg,
+              status: allSubsDone ? 'Completed' : (avgSubPrg > 0 ? 'InProgress' : s.status),
+              completedDate: allSubsDone ? (s.completedDate || today) : s.completedDate
+            };
+          }
+          if (s.children && s.children.length > 0) {
+            const newChildren = updateStepProgressRec(s.children);
+            const allChildDone = newChildren.every(sub => sub.status === 'Completed' || (sub.progressPercent || 0) >= 100);
+            const avgChildPrg = Math.round(newChildren.reduce((acc, sub) => acc + (sub.progressPercent || 0), 0) / newChildren.length);
+            return {
+              ...s,
+              children: newChildren,
+              progressPercent: s.completedQuantity ? s.progressPercent : avgChildPrg,
+              status: allChildDone ? 'Completed' : (avgChildPrg > 0 ? 'InProgress' : s.status),
+              completedDate: allChildDone ? (s.completedDate || today) : s.completedDate
+            };
           }
           return s;
         });
@@ -3359,8 +3445,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const done = s.completedQuantity || (s.status === 'Completed' ? stepTarget : 0);
           const prg = s.status === 'Completed' ? 100 : (s.progressPercent !== undefined ? s.progressPercent : Math.min(100, Math.round((done / stepTarget) * 100)));
           list.push(prg);
-          if (s.subSteps && s.subSteps.length > 0) {
-            list = list.concat(collectStepProgresses(s.subSteps));
+          const nested = (s.subSteps && s.subSteps.length > 0) ? s.subSteps : s.children;
+          if (nested && nested.length > 0) {
+            list = list.concat(collectStepProgresses(nested));
           }
         });
         return list;
@@ -3562,10 +3649,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetSession = stockCountings.find(s => s.id === sessionId);
     if (!targetSession || targetSession.status === 'Applied') return;
 
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const todayIso = new Date().toISOString().substring(0, 10);
+    const surplusItems: { itemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
+    const deficitItems: { itemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
+
     // Apply inventory adjustments for each difference
     targetSession.items.forEach(it => {
-      if (it.difference !== 0) {
-        adjustStock(it.itemId, targetSession.warehouseId, it.difference);
+      const diff = (it.finalCount !== undefined ? it.finalCount : it.physicalQuantity) - it.systemQuantity;
+      if (diff !== 0) {
+        adjustStock(it.itemId, targetSession.warehouseId, diff);
+        const itemObj = items.find(i => i.id === it.itemId);
+        const uPrice = itemObj?.unitPrice || 0;
+        if (diff > 0) {
+          surplusItems.push({
+            itemId: it.itemId,
+            quantity: diff,
+            unitPrice: uPrice,
+            notes: `مازاد شمارش انبارگردانی (${targetSession.sessionNumber}) - تگ: ${it.tagNumber || '-'}`
+          });
+        } else {
+          deficitItems.push({
+            itemId: it.itemId,
+            quantity: Math.abs(diff),
+            unitPrice: uPrice,
+            notes: `کسری شمارش انبارگردانی (${targetSession.sessionNumber}) - تگ: ${it.tagNumber || '-'}`
+          });
+        }
         // Log traceability event
         const trace: TraceabilityEvent = {
           id: `trc-${Date.now()}-${Math.random().toString(36).substring(2,5)}`,
@@ -3574,16 +3684,254 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           eventType: 'Adjustment',
           targetWarehouseId: targetSession.warehouseId,
           docNumber: targetSession.sessionNumber,
-          quantity: Math.abs(it.difference),
-          details: `تطبیق انبارگردانی (${it.difference > 0 ? '+' : ''}${it.difference} عدد)`,
+          quantity: Math.abs(diff),
+          details: `تطبیق انبارگردانی (${diff > 0 ? '+' : ''}${diff} عدد)`,
           performedBy: currentUser.fullName,
         };
         setTraceabilityEvents(t => [trace, ...t]);
       }
     });
 
-    setStockCountings(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'Applied' } : s));
-    addAudit('اعمال مغایرت‌های انبارگردانی', 'StockCounting', targetSession.sessionNumber, `اعمال اصلاحات موجودی انبار ${targetSession.warehouseId}`);
+    let surplusDocNumber: string | undefined;
+    let deficitDocNumber: string | undefined;
+
+    if (surplusItems.length > 0) {
+      surplusDocNumber = `ADJ-IN-${targetSession.sessionNumber}`;
+      const surplusDoc: StockInDoc = {
+        id: `in-adj-${Date.now()}`,
+        docNumber: surplusDocNumber,
+        date: todayFa,
+        supplier: `سند تعدیل مازاد انبارگردانی (${targetSession.sessionNumber})`,
+        registeredBy: currentUser.fullName,
+        warehouseId: targetSession.warehouseId,
+        warehouseName: targetSession.warehouseName,
+        entryType: 'StockAdjustment',
+        status: 'Confirmed',
+        items: surplusItems,
+        notes: `صادر شده به صورت خودکار بابت مازاد انبارگردانی دوره ${targetSession.title}`,
+        createdAt: todayIso
+      };
+      setStockInDocs(prev => [surplusDoc, ...prev]);
+    }
+
+    if (deficitItems.length > 0) {
+      deficitDocNumber = `ADJ-OUT-${targetSession.sessionNumber}`;
+      const deficitDoc: StockOutDoc = {
+        id: `out-adj-${Date.now()}`,
+        docNumber: deficitDocNumber,
+        date: todayFa,
+        recipient: `سند تعدیل کسری انبارگردانی (${targetSession.sessionNumber})`,
+        registeredBy: currentUser.fullName,
+        warehouseId: targetSession.warehouseId,
+        exitType: 'StockAdjustment',
+        status: 'Confirmed',
+        items: deficitItems,
+        notes: `صادر شده به صورت خودکار بابت کسری انبارگردانی دوره ${targetSession.title}`,
+        createdAt: todayIso
+      };
+      setStockOutDocs(prev => [deficitDoc, ...prev]);
+    }
+
+    setStockCountings(prev => prev.map(s => s.id === sessionId ? {
+      ...s,
+      status: 'Applied',
+      endDate: s.endDate || todayFa,
+      surplusDocNumber: surplusDocNumber || s.surplusDocNumber,
+      deficitDocNumber: deficitDocNumber || s.deficitDocNumber
+    } : s));
+    addAudit(
+      'اعمال مغایرت‌های انبارگردانی و صدور سند تعدیل',
+      'StockCounting',
+      targetSession.sessionNumber,
+      `اعمال اصلاحات موجودی انبار ${targetSession.warehouseName} (سند مازاد: ${surplusDocNumber || 'ندارد'} | سند کسری: ${deficitDocNumber || 'ندارد'})`
+    );
+  };
+
+  // Fiscal Year & Automated Year-End Rollover Engine
+  const createFiscalYear = (fyData: Omit<FiscalYear, 'id' | 'createdAt'>) => {
+    const newFy: FiscalYear = {
+      ...fyData,
+      id: `fy-${fyData.yearCode}-${Date.now()}`,
+      createdAt: new Date().toISOString().substring(0, 10)
+    };
+    setFiscalYears(prev => [newFy, ...prev]);
+    addAudit('تعریف سال مالی جدید', 'FiscalYear', newFy.yearCode, `ایجاد ${newFy.title}`);
+  };
+
+  const closeFiscalYearAndRollover = (data: {
+    closingYearId: string;
+    nextYearCode: string;
+    nextYearTitle: string;
+    nextYearStartDate: string;
+    nextYearEndDate: string;
+    notes?: string;
+  }) => {
+    const targetFy = fiscalYears.find(f => f.id === data.closingYearId);
+    if (!targetFy) {
+      return {
+        success: false,
+        message: 'سال مالی مورد نظر یافت نشد.',
+        closingDocsCount: 0,
+        openingDocsCount: 0,
+        totalValuation: 0
+      };
+    }
+
+    if (targetFy.status === 'Closed') {
+      return {
+        success: false,
+        message: 'این سال مالی قبلاً بسته شده است.',
+        closingDocsCount: 0,
+        openingDocsCount: 0,
+        totalValuation: 0
+      };
+    }
+
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const todayIso = new Date().toISOString().substring(0, 10);
+
+    // Group positive inventory balances by warehouse
+    const activeBalances = inventory.filter(inv => inv.quantity > 0);
+    const snapshotBalances: InventoryBalance[] = activeBalances.map(inv => ({ ...inv }));
+
+    let totalEndingQuantity = 0;
+    let totalEndingValuation = 0;
+    const distinctItemIds = new Set<string>();
+
+    const closingDocs: StockOutDoc[] = [];
+    const openingDocs: StockInDoc[] = [];
+    const closingDocNumbers: string[] = [];
+    const openingDocNumbers: string[] = [];
+    const newTraceEvents: TraceabilityEvent[] = [];
+
+    warehouses.forEach(wh => {
+      const whBalances = activeBalances.filter(b => b.warehouseId === wh.id);
+      if (whBalances.length === 0) return;
+
+      const docItems = whBalances.map(b => {
+        const itemObj = items.find(i => i.id === b.itemId);
+        const uPrice = itemObj?.unitPrice || 0;
+        totalEndingQuantity += b.quantity;
+        totalEndingValuation += b.quantity * uPrice;
+        distinctItemIds.add(b.itemId);
+        return {
+          itemId: b.itemId,
+          quantity: b.quantity,
+          unitPrice: uPrice,
+          notes: `مانده قطعی انتقال یافته از ${targetFy.title} به ${data.nextYearTitle}`
+        };
+      });
+
+      const clsDocNum = `CLS-${targetFy.yearCode}-${wh.code}`;
+      const opnDocNum = `OPN-${data.nextYearCode}-${wh.code}`;
+      closingDocNumbers.push(clsDocNum);
+      openingDocNumbers.push(opnDocNum);
+
+      closingDocs.push({
+        id: `out-cls-${targetFy.yearCode}-${wh.id}-${Date.now()}`,
+        docNumber: clsDocNum,
+        date: targetFy.endDate || todayFa,
+        recipient: `سند اختتامیه ${targetFy.title} (انتقال به ${data.nextYearTitle})`,
+        registeredBy: currentUser.fullName,
+        warehouseId: wh.id,
+        exitType: 'ClosingBalance',
+        status: 'Confirmed',
+        items: docItems,
+        notes: data.notes || `سند اختتامیه پایان دوره مالی ${targetFy.title} برای انبار ${wh.name}`,
+        createdAt: todayIso
+      });
+
+      openingDocs.push({
+        id: `in-opn-${data.nextYearCode}-${wh.id}-${Date.now()}`,
+        docNumber: opnDocNum,
+        date: data.nextYearStartDate || todayFa,
+        supplier: `سند افتتاحیه ${data.nextYearTitle} (منتقل شده از ${targetFy.title})`,
+        registeredBy: currentUser.fullName,
+        warehouseId: wh.id,
+        warehouseName: wh.name,
+        entryType: 'OpeningBalance',
+        fiscalYearId: `fy-${data.nextYearCode}`,
+        status: 'Confirmed',
+        items: docItems,
+        notes: data.notes || `سند افتتاحیه ابتدای دوره مالی ${data.nextYearTitle} برای انبار ${wh.name}`,
+        createdAt: todayIso
+      });
+
+      docItems.forEach(di => {
+        newTraceEvents.push({
+          id: `trc-fy-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          itemId: di.itemId,
+          timestamp: `${todayFa}`,
+          eventType: 'Adjustment',
+          sourceWarehouseId: wh.id,
+          targetWarehouseId: wh.id,
+          docNumber: `${clsDocNum} -> ${opnDocNum}`,
+          quantity: di.quantity,
+          details: `بستن سال مالی ${targetFy.yearCode} (اختتامیه ${clsDocNum}) و انتقال مانده به افتتاحیه ${data.nextYearCode} (${opnDocNum})`,
+          performedBy: currentUser.fullName
+        });
+      });
+    });
+
+    if (closingDocs.length > 0) {
+      setStockOutDocs(prev => [...closingDocs, ...prev]);
+    }
+    if (openingDocs.length > 0) {
+      setStockInDocs(prev => [...openingDocs, ...prev]);
+    }
+    if (newTraceEvents.length > 0) {
+      setTraceabilityEvents(prev => [...newTraceEvents, ...prev]);
+    }
+
+    const newActiveFy: FiscalYear = {
+      id: `fy-${data.nextYearCode}`,
+      yearCode: data.nextYearCode,
+      title: data.nextYearTitle,
+      startDate: data.nextYearStartDate,
+      endDate: data.nextYearEndDate,
+      status: 'Active',
+      openingDocNumbers,
+      notes: `افتتاح خودکار پس از بستن ${targetFy.title}`,
+      createdAt: todayIso
+    };
+
+    setFiscalYears(prev => {
+      const updated = prev.map(f => {
+        if (f.id !== data.closingYearId) return f;
+        return {
+          ...f,
+          status: 'Closed' as const,
+          closedAt: todayFa,
+          closedBy: currentUser.fullName,
+          closingDocNumbers,
+          openingDocNumbers,
+          totalEndingItemsCount: distinctItemIds.size,
+          totalEndingQuantity,
+          totalEndingValuation,
+          snapshotBalances,
+          notes: data.notes || f.notes
+        };
+      });
+      const existsNext = updated.some(f => f.yearCode === data.nextYearCode);
+      return existsNext
+        ? updated.map(f => f.yearCode === data.nextYearCode ? { ...f, status: 'Active' as const, openingDocNumbers } : f)
+        : [newActiveFy, ...updated];
+    });
+
+    addAudit(
+      'بستن سال مالی و صدور اسناد اختتامیه و افتتاحیه',
+      'FiscalYear',
+      `${targetFy.yearCode}->${data.nextYearCode}`,
+      `بستن ${targetFy.title} و صدور ${closingDocs.length} سند اختتامیه و ${openingDocs.length} سند افتتاحیه برای ${data.nextYearTitle} به ارزش کل ${totalEndingValuation.toLocaleString('fa-IR')} ریال`
+    );
+
+    return {
+      success: true,
+      message: `سال مالی «${targetFy.title}» با موفقیت بسته و آرشیو شد. تعداد ${closingDocs.length} سند اختتامیه و ${openingDocs.length} سند افتتاحیه برای «${data.nextYearTitle}» به صورت خودکار صادر گردید.`,
+      closingDocsCount: closingDocs.length,
+      openingDocsCount: openingDocs.length,
+      totalValuation: totalEndingValuation
+    };
   };
 
   const updateStockCountingSession = (sessionId: string, updated: Partial<StockCountingSession>) => {
@@ -4055,14 +4403,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'کالای تولیدی انتخاب شده در سیستم یافت نشد.' };
     }
 
-    // Find active BOM
-    const activeBom = boms.find(b => b.finishedItemId === data.finishedItemId && b.isActive);
-    
+    // Find target project and step (supporting nested subSteps / children)
+    const targetProject = projects.find(p => p.id === data.projectId);
+    const findStepRecursive = (steps: ProjectStep[]): ProjectStep | undefined => {
+      for (const s of steps) {
+        if (s.id === data.stepId) return s;
+        const nested = (s.subSteps && s.subSteps.length > 0) ? s.subSteps : s.children;
+        if (nested && nested.length > 0) {
+          const found = findStepRecursive(nested);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+    const targetStep = targetProject ? findStepRecursive(targetProject.steps) : undefined;
+
+    // Resolve BOM components: priority 1 = step-specific BOM in boms table, priority 2 = inline step.bomItems, priority 3 = finishedItemId BOM
+    const stepBom = boms.find(b => b.projectStepId === data.stepId && b.isActive);
+    const productBom = boms.find(b => b.finishedItemId === data.finishedItemId && b.isActive);
+    const effectiveBomItems = stepBom?.items || (targetStep?.bomItems && targetStep.bomItems.length > 0 ? targetStep.bomItems : productBom?.items) || [];
+
     const shortages: { itemName: string; required: number; available: number }[] = [];
 
-    if (activeBom) {
+    if (effectiveBomItems.length > 0) {
       // Check for raw material inventory in sourceWarehouseId
-      activeBom.items.forEach(bomItem => {
+      effectiveBomItems.forEach(bomItem => {
         const totalNeeded = bomItem.quantityNeeded * (data.quantityProduced + data.quantityScrapped);
         const availableQty = getItemQuantityInWarehouse(bomItem.itemId, data.sourceWarehouseId);
         if (availableQty < totalNeeded) {
@@ -4085,8 +4450,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Execute Stock Deductions for BOM components
-    if (activeBom) {
-      activeBom.items.forEach(bomItem => {
+    if (effectiveBomItems.length > 0) {
+      effectiveBomItems.forEach(bomItem => {
         const totalNeeded = bomItem.quantityNeeded * (data.quantityProduced + data.quantityScrapped);
         adjustStock(bomItem.itemId, data.sourceWarehouseId, -totalNeeded);
 
@@ -4100,7 +4465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projectId: data.projectId,
           operatorName: data.operatorName,
           quantity: totalNeeded,
-          details: `کسر خودکار بر اساس فرمول ساخت BOM جهت تولید ${data.quantityProduced} عدد ${finishedItem.name}`,
+          details: `کسر خودکار بر اساس فرمول ساخت BOM جهت تولید ${data.quantityProduced} عدد ${finishedItem.name}${targetStep ? ` (مرحله: ${targetStep.name})` : ''}`,
           performedBy: currentUser.fullName,
         };
         setTraceabilityEvents(t => [rawTrace, ...t]);
@@ -4149,7 +4514,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return op;
     }));
 
-    // Update Project Progress & Output & Step completedQuantity
+    // Update Project Progress & Output & Step completedQuantity (including nested subSteps / children)
     setProjects(prev => prev.map(p => {
       if (p.id === data.projectId) {
         const updateStepRec = (steps: ProjectStep[]): ProjectStep[] => {
@@ -4170,7 +4535,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               };
             }
             if (s.subSteps && s.subSteps.length > 0) {
-              return { ...s, subSteps: updateStepRec(s.subSteps) };
+              const newSubs = updateStepRec(s.subSteps);
+              const allSubsDone = newSubs.every(sub => sub.status === 'Completed' || (sub.progressPercent || 0) >= 100);
+              const avgSubPrg = Math.round(newSubs.reduce((acc, sub) => acc + (sub.progressPercent || 0), 0) / newSubs.length);
+              return {
+                ...s,
+                subSteps: newSubs,
+                progressPercent: s.completedQuantity ? s.progressPercent : avgSubPrg,
+                status: allSubsDone ? 'Completed' : (avgSubPrg > 0 ? 'InProgress' : s.status),
+                completedDate: allSubsDone ? (s.completedDate || data.date) : s.completedDate,
+              };
+            }
+            if (s.children && s.children.length > 0) {
+              const newChildren = updateStepRec(s.children);
+              const allChildDone = newChildren.every(sub => sub.status === 'Completed' || (sub.progressPercent || 0) >= 100);
+              const avgChildPrg = Math.round(newChildren.reduce((acc, sub) => acc + (sub.progressPercent || 0), 0) / newChildren.length);
+              return {
+                ...s,
+                children: newChildren,
+                progressPercent: s.completedQuantity ? s.progressPercent : avgChildPrg,
+                status: allChildDone ? 'Completed' : (avgChildPrg > 0 ? 'InProgress' : s.status),
+                completedDate: allChildDone ? (s.completedDate || data.date) : s.completedDate,
+              };
             }
             return s;
           });
@@ -4186,8 +4572,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const done = s.completedQuantity || (s.status === 'Completed' ? stepTarget : 0);
             const prg = s.status === 'Completed' ? 100 : (s.progressPercent !== undefined ? s.progressPercent : Math.min(100, Math.round((done / stepTarget) * 100)));
             list.push(prg);
-            if (s.subSteps && s.subSteps.length > 0) {
-              list = list.concat(collectStepProgresses(s.subSteps));
+            const nested = (s.subSteps && s.subSteps.length > 0) ? s.subSteps : s.children;
+            if (nested && nested.length > 0) {
+              list = list.concat(collectStepProgresses(nested));
             }
           });
           return list;
@@ -4449,6 +4836,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notifications,
       traceabilityEvents,
       auditLogs,
+      fiscalYears,
 
       // Chat Data (Filtered based on options)
       messages: exportedMessages,
@@ -4572,6 +4960,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data.messengerConfig) setMessengerConfigState(data.messengerConfig);
         if (Array.isArray(data.traceabilityEvents)) setTraceabilityEvents(data.traceabilityEvents);
         if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
+        if (Array.isArray(data.fiscalYears) && data.fiscalYears.length > 0) setFiscalYears(data.fiscalYears);
         addAudit('بازیابی داده‌ها از فایل پشتیبان', 'System', 'JSON', 'بارگذاری کامل داده‌ها، کاربران، گفتگوها و ساختار انبار از فایل پشتیبان');
 
         // Push imported backup to Central Server (Linux / Windows SQLite & JSON)
@@ -4707,14 +5096,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       items, itemGroups, warehouses, contractors, contractorContracts, contractorTransactions, inventory, boms, projects, operators, stockCountings,
       stockInDocs, stockOutDocs, transfers, purchaseRequests,
       productionLogs, materialHandovers, notifications: userNotifications, messages, channels,
-      traceabilityEvents, auditLogs,
+      traceabilityEvents, auditLogs, fiscalYears,
       sendChatMessage, deleteChatMessage, toggleMessageReaction, markChatAsRead, unreadMessagesCount,
       sendSystemNotification, browserNotificationPermission, requestNotificationPermission,
       soundEnabled, setSoundEnabled, testBrowserNotification, testIncomingMessageAlert, unreadCount,
       incomingChatAlert, dismissIncomingChatAlert, openChatWithUser, activeChatRecipientId, setActiveChatRecipientId,
       addMaterialHandover, deleteMaterialHandover, handoverStepMaterials, recordStepOutputReceipt, calculateProjectProgressSummary,
       addItem, updateItem, deleteItem, deleteItemsBatch,
-      addItemGroup, updateItemGroup, deleteItemGroup,
+      addItemGroup, updateItemGroup, deleteItemGroup, restoreDefaultItemGroups,
       addWarehouse, updateWarehouse, deleteWarehouse,
       addContractor, updateContractor, deleteContractor,
       addContractorContract, updateContractorContract, deleteContractorContract,
@@ -4724,6 +5113,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       importItemsBatch, importInitialStockBatch, importBOMsBatch, applySmartStageTargetsToProject,
       addProject, updateProject, deleteProject, duplicateProject, updateProjectStep, updateProjectStepDetails, addProjectSubStep, deleteProjectStep,
       createStockCountingSession, updateStockCountItem, updateStockCountingSession, deleteStockCountingSession, applyStockCountingAdjustments,
+      createFiscalYear, closeFiscalYearAndRollover,
       createStockInDoc, updateStockInDoc, deleteStockInDoc,
       createStockOutDoc, updateStockOutDoc, deleteStockOutDoc,
       createTransfer, updateTransfer, updateTransferStatus, dispatchTransfer, receiveTransfer, rejectTransfer, deleteTransfer,

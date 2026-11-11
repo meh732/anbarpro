@@ -63,17 +63,49 @@ export const OperatorLoggerView: React.FC = () => {
   const selectedProdProject = projects.find(p => p.id === prodProjectId);
   const selectedProdOperator = operators.find(o => o.id === prodOperatorId);
 
-  // Auto populate checklist items from project BOM
-  const handleLoadBOMChecklist = (overrideProjectId?: string, overrideQty?: number) => {
+  const flattenProjectSteps = (steps: any[] = [], level = 0): { step: any; level: number; label: string }[] => {
+    let result: { step: any; level: number; label: string }[] = [];
+    steps.forEach(s => {
+      const done = s.completedQuantity || 0;
+      const target = s.outputQuantity || s.targetQuantity || 0;
+      const prg = s.status === 'Completed' ? 100 : (s.progressPercent ?? (target > 0 ? Math.min(100, Math.round((done / target) * 100)) : 0));
+      const prefix = level > 0 ? `${'—'.repeat(level)} ↳ زیرمرحله ` : `مرحله ${s.stepNumber}: `;
+      const statusTag = s.status === 'Completed' ? ' [تکمیل شده ✓]' : ` [${done}/${target || '?'} - ${prg}%]`;
+      result.push({
+        step: s,
+        level,
+        label: `${prefix}${s.name || s.title}${statusTag}`
+      });
+      const nested = (s.subSteps && s.subSteps.length > 0) ? s.subSteps : s.children;
+      if (nested && nested.length > 0) {
+        result = result.concat(flattenProjectSteps(nested, level + 1));
+      }
+    });
+    return result;
+  };
+
+  const flatHandoverSteps = flattenProjectSteps(selectedHandoverProject?.steps || []);
+  const flatProdSteps = flattenProjectSteps(selectedProdProject?.steps || []);
+  const activeProdStep = flatProdSteps.find(x => x.step.id === prodStepId)?.step || flatProdSteps[0]?.step;
+
+  // Auto populate checklist items from step BOM or project BOM
+  const handleLoadBOMChecklist = (overrideProjectId?: string, overrideQty?: number, overrideStepId?: string) => {
     const proj = projects.find(p => p.id === (overrideProjectId || handoverProjectId));
     if (!proj) return;
 
-    const targetItem = items.find(i => i.id === proj.targetFinishedItemId);
-    const activeBom = boms.find(b => b.finishedItemId === targetItem?.id && b.isActive);
-    const multiplier = overrideQty !== undefined ? overrideQty : (handoverBatchQty || proj.targetQuantity || 50);
+    const targetStepId = overrideStepId || handoverStepId;
+    const flatSteps = flattenProjectSteps(proj.steps || []);
+    const chosenStep = flatSteps.find(x => x.step.id === targetStepId)?.step;
 
-    if (activeBom && activeBom.items.length > 0) {
-      const populated = activeBom.items.map(bi => ({
+    const stepBom = boms.find(b => b.projectStepId === targetStepId && b.isActive);
+    const targetItem = items.find(i => i.id === (chosenStep?.outputItemId || proj.targetFinishedItemId));
+    const activeBom = boms.find(b => b.finishedItemId === targetItem?.id && b.isActive);
+    const bomItemsToUse = stepBom?.items || (chosenStep?.bomItems && chosenStep.bomItems.length > 0 ? chosenStep.bomItems : activeBom?.items) || [];
+
+    const multiplier = overrideQty !== undefined ? overrideQty : (handoverBatchQty || chosenStep?.targetQuantity || proj.targetQuantity || 50);
+
+    if (bomItemsToUse.length > 0) {
+      const populated = bomItemsToUse.map((bi: any) => ({
         itemId: bi.itemId,
         quantity: bi.quantityNeeded * multiplier,
         notes: `طبق فرمول BOM (تیراژ ${multiplier} عدد)`
@@ -81,7 +113,7 @@ export const OperatorLoggerView: React.FC = () => {
       setChecklistItems(populated);
     } else {
       if (!overrideProjectId) {
-        alert('فرمول ساخت (BOM) برای این محصول یافت نشد. می‌توانید قطعات را دستی اضافه کنید.');
+        alert('فرمول ساخت (BOM) برای این مرحله/محصول یافت نشد. می‌توانید قطعات را دستی اضافه کنید.');
       }
     }
   };
@@ -366,14 +398,18 @@ export const OperatorLoggerView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">مرحله تولید*</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">مرحله یا زیرمرحله تولید*</label>
                 <select
                   value={handoverStepId}
-                  onChange={(e) => setHandoverStepId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  onChange={(e) => {
+                    const sid = e.target.value;
+                    setHandoverStepId(sid);
+                    handleLoadBOMChecklist(handoverProjectId, handoverBatchQty, sid);
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 font-semibold"
                 >
-                  {selectedHandoverProject?.steps.map(s => (
-                    <option key={s.id} value={s.id}>مرحله {s.stepNumber}: {s.name}</option>
+                  {flatHandoverSteps.map(({ step: s, label }) => (
+                    <option key={s.id} value={s.id}>{label}</option>
                   ))}
                 </select>
               </div>
@@ -654,14 +690,21 @@ export const OperatorLoggerView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">مرحله خط تولید*</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">مرحله یا زیرمرحله خط تولید*</label>
                 <select
                   value={prodStepId}
-                  onChange={(e) => setProdStepId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  onChange={(e) => {
+                    const sid = e.target.value;
+                    setProdStepId(sid);
+                    const chosen = flatProdSteps.find(x => x.step.id === sid)?.step;
+                    if (chosen?.outputItemId) {
+                      setProdFinishedItemId(chosen.outputItemId);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-indigo-500 font-semibold"
                 >
-                  {selectedProdProject?.steps.map(s => (
-                    <option key={s.id} value={s.id}>مرحله {s.stepNumber}: {s.name}</option>
+                  {flatProdSteps.map(({ step: s, label }) => (
+                    <option key={s.id} value={s.id}>{label}</option>
                   ))}
                 </select>
               </div>
@@ -674,7 +717,7 @@ export const OperatorLoggerView: React.FC = () => {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-bold focus:bg-white focus:border-indigo-500"
                 >
                   {items.map(i => (
-                    <option key={i.id} value={i.id}>{i.name} ({i.code}) - {i.itemType === 'SemiFinished' ? 'نیمه‌ساخته' : 'محصول نهایی'}</option>
+                    <option key={i.id} value={i.id}>{i.name} ({i.code}) - {i.itemType === 'SemiFinished' ? 'نیمه‌ساخته' : i.itemType === 'Finished' ? 'محصول نهایی' : 'قطعه / کالا'}</option>
                   ))}
                 </select>
               </div>
@@ -790,6 +833,34 @@ export const OperatorLoggerView: React.FC = () => {
             </div>
 
             <div className="space-y-2 text-xs">
+              {activeProdStep && (() => {
+                const currentDone = activeProdStep.completedQuantity || 0;
+                const stepTarget = activeProdStep.outputQuantity || activeProdStep.targetQuantity || selectedProdProject?.targetQuantity || 1;
+                const currentPrg = Math.min(100, Math.round((currentDone / stepTarget) * 100));
+                const projectedDone = currentDone + Number(prodQuantityProduced || 0);
+                const projectedPrg = Math.min(100, Math.round((projectedDone / stepTarget) * 100));
+                const willComplete = projectedDone >= stepTarget;
+
+                return (
+                  <div className="p-3 bg-indigo-50/80 rounded-xl border border-indigo-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-indigo-900">وضعیت پیشرفت خودکار مرحله:</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${willComplete ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-indigo-100 text-indigo-800'}`}>
+                        {willComplete ? 'تکمیل خودکار مرحله (۱۰۰٪)' : `افزایش به ${projectedPrg}٪`}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-700 font-semibold">{activeProdStep.name}</div>
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div className={`h-full transition-all ${willComplete ? 'bg-emerald-600' : 'bg-indigo-600'}`} style={{ width: `${projectedPrg}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono text-slate-600">
+                      <span>قبلی: {currentDone.toLocaleString('fa-IR')} ({currentPrg}٪)</span>
+                      <span className="font-bold text-indigo-900">پس از ثبت: {projectedDone.toLocaleString('fa-IR')} از {stepTarget.toLocaleString('fa-IR')}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 space-y-1">
                 <span className="text-[10px] text-slate-500 block">کالای نیمه‌ساخته/نهایی تحویلی:</span>
                 <strong className="text-emerald-700 font-bold block">{items.find(i => i.id === prodFinishedItemId)?.name}</strong>
@@ -802,19 +873,21 @@ export const OperatorLoggerView: React.FC = () => {
                 <span className="text-[11px] font-bold text-slate-700 block">قطعات کسر شده بر اساس فرمول ساخت (BOM):</span>
                 {(() => {
                   const targetItem = items.find(i => i.id === prodFinishedItemId);
-                  const activeBom = boms.find(b => b.finishedItemId === targetItem?.id && b.isActive);
+                  const stepBom = boms.find(b => b.projectStepId === prodStepId && b.isActive);
+                  const productBom = boms.find(b => b.finishedItemId === targetItem?.id && b.isActive);
+                  const effectiveBomItems = stepBom?.items || (activeProdStep?.bomItems && activeProdStep.bomItems.length > 0 ? activeProdStep.bomItems : productBom?.items) || [];
 
-                  if (!activeBom) {
+                  if (effectiveBomItems.length === 0) {
                     return (
                       <div className="p-3 text-amber-700 bg-amber-50 rounded-lg text-[11px]">
-                        هیچ فرمول ساخت (BOM) برای این قطعه ثبت نشده است. کسر مواد اولیه انجام نخواهد شد.
+                        هیچ فرمول ساخت (BOM) برای این مرحله یا قطعه ثبت نشده است. کسر مواد اولیه انجام نخواهد شد.
                       </div>
                     );
                   }
 
                   return (
                     <div className="text-[11px] text-slate-600 space-y-1">
-                      {activeBom.items.map((bi, idx) => {
+                      {effectiveBomItems.map((bi: any, idx: number) => {
                         const rawItem = items.find(i => i.id === bi.itemId);
                         const totalDeduction = bi.quantityNeeded * (prodQuantityProduced + prodQuantityScrapped);
 

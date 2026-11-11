@@ -55,6 +55,7 @@ export const StockMovementView: React.FC = () => {
     CustomerReturn: 'برگشت از مشتری',
     TransferIn: 'انتقال ورودی',
     StockAdjustment: 'اصلاح موجودی (افزایشی)',
+    OpeningBalance: 'موجودی اول دوره (سند افتتاحیه)',
   };
 
   const stockOutTypeLabels: Record<StockOutType, string> = {
@@ -63,6 +64,7 @@ export const StockMovementView: React.FC = () => {
     Sale: 'فروش محصول',
     Scrap: 'ضایعات و سوخته',
     StockAdjustment: 'اصلاح موجودی (کاهشی)',
+    ClosingBalance: 'بستن سال مالی (سند اختتامیه)',
   };
 
   // Fast item & warehouse maps for multi-field search
