@@ -204,7 +204,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [4/4] Building Windows .EXE and Setup with Tauri...
-call npx @tauri-apps/cli build
+call npx --yes @tauri-apps/cli@1.5 build
 if %errorlevel% neq 0 (
     echo [ERROR] Tauri build encountered an issue.
     pause
@@ -259,7 +259,7 @@ Write-Host "✓ Frontend built successfully into /dist" -ForegroundColor Green
 
 # Build Tauri EXE
 Write-Host "[4/4] Compiling Windows Standalone .EXE and MSI Setup..." -ForegroundColor Blue
-npx @tauri-apps/cli build
+npx --yes @tauri-apps/cli@1.5 build
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "==============================================================================" -ForegroundColor Green

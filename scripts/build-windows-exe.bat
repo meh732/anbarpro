@@ -38,7 +38,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [4/4] Building Windows .EXE and Setup with Tauri...
-call npx @tauri-apps/cli build
+call npx --yes @tauri-apps/cli@1.5 build
 if %errorlevel% neq 0 (
     echo [ERROR] Tauri build encountered an issue.
     pause
